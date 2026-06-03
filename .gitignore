@@ -1,6 +1,7 @@
 # Local notes / config (contain the install path — keep private)
 CLAUDE.md
 CLAUDE.local.md
+config.py
 
 # Oodle runtime — RAD/Ubisoft copyright, do NOT redistribute
 oo2core_*.dll

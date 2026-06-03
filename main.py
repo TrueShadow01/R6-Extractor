@@ -1,8 +1,10 @@
+import os
 from src.parser import read_container
+from config import GAME_DIR
 
 print("R6 Forge Extractor")
 
-path = r"D:\SteamLibrary\steamapps\common\Tom Clancy's Rainbow Six Siege\datapc64_dmtx_bnk_textures3.forge"
+path = os.path.join(GAME_DIR, "datapc64_dmtx_bnk_textures3.forge")
 with open(path, "rb") as f:
     data = f.read()
 
