@@ -28,6 +28,16 @@ A tool for extracting game assets (meshes, textures, audio) from Ubisoft
 - `oo2core_*_win64.dll` placed in the project root (the Oodle runtime; sourced
   from any game that ships it — not redistributed here).
 
+## Setup
+
+Create a `config.py` in the project root with your local game install path
+(this file is gitignored and never committed):
+
+```python
+# config.py
+GAME_DIR = r"C:\Path\To\Tom Clancy's Rainbow Six Siege"
+```
+
 ## Usage
 
 ```
