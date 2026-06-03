@@ -1,4 +1,4 @@
-from src.decompress import oodle_decompress
+from src.parser import read_container
 
 print("R6 Forge Extractor")
 
@@ -6,6 +6,5 @@ path = r"D:\SteamLibrary\steamapps\common\Tom Clancy's Rainbow Six Siege\datapc6
 with open(path, "rb") as f:
     data = f.read()
 
-blob = data[0x3066:0x3066 + 103990]
-out = oodle_decompress(blob, 262144)
-print("Decompressed:", len(out), "bytes, head:", out[:8].hex())
+out = read_container(data, 0x303F)
+print("Total:", len(out), "bytes")
