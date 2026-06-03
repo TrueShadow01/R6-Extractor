@@ -1,0 +1,24 @@
+# Local notes / config (contain the install path — keep private)
+CLAUDE.md
+CLAUDE.local.md
+
+# Oodle runtime — RAD/Ubisoft copyright, do NOT redistribute
+oo2core_*.dll
+
+# Extracted game assets — Ubisoft copyright, never commit
+/output/
+/extracted/
+*.dds
+*.png
+*.gltf
+*.glb
+*.obj
+*.bnk
+*.pck
+*.wem
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
