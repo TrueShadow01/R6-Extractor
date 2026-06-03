@@ -1,39 +1,40 @@
-import os
 import struct
 
+from src.decompress import oodle_decompress
+
+CONTAINER_MAGIC = bytes.fromhex("37aafb5799fa1510")
+
 def parse_header(path):
-    f = open(path, "rb")
-    if f.read(9) == b"scimitar\x00":
-        print("Magic OK")
+    with open(path, "rb") as f:
+        if f.read(9) != b"scimitar\x00":
+            raise ValueError("Magic invalid, not a scimitar file")
+    print("Magic OK")
 
-        f.seek(0)
-        data = f.read()
-        magic = b'\x37\xAA\xFB\x57'
-        pos = 0
-        found = 0
-        while found < 5:
-            idx = data.find(magic, pos)
-            if idx == -1:
-                break
-            print(f"Container magic at 0x{idx:X} ({idx})")
-            pos = idx + 4
-            found += 1
+def read_container(data, offset):
+    p = offset + 8 # skip container magic
+    p += 2 # u16 type
+    p += 2 # u16 (0x0F)
+    p += 1 # u8 (0)
+    p += 2 # u16 xD
 
-        for addr in [0x7A, 0x100, 0x1000, 0x5000, 0xF000, 0x12FF8]:
-            f.seek(addr)
-            print(f"0x{addr:X}: {f.read(32).hex()}")
+    num_chunks = struct.unpack("<I", data[p:p + 4])[0]
+    p += 4
 
-        f.seek(0)
-        data = f.read(0x13000)
+    chunks = []
+    for _ in range(num_chunks):
+        unpacked = struct.unpack("<I", data[p:p + 4])[0]
+        packed = struct.unpack("<I", data[p + 4:p + 8])[0]
+        chunks.append((unpacked, packed))
+        p += 8
 
-        for target in [0x13000, 0x14000, 0x15000]:
-            b = struct.pack("<I", target) # 4 byte LE
-            pos = 0
-            while True:
-                idx = data.find(b, pos)
-                if idx == -1:
-                    break
-                print(f"Value 0x{target:X} found at file offset 0x{idx:X}")
-                pos = idx + 1
-    else:
-        raise ValueError("Magic invalid, not a scimitar file")
+        out = bytearray()
+        for unpacked, packed in chunks:
+            p += 4 # u32 hash 
+            blob = data[p:p + packed]
+            p += packed
+            if unpacked > packed:
+                out += oodle_decompress(blob, unpacked)
+            else:
+                out += blob
+        
+        return bytes(out)
