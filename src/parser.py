@@ -27,14 +27,14 @@ def read_container(data, offset):
         chunks.append((unpacked, packed))
         p += 8
 
-        out = bytearray()
-        for unpacked, packed in chunks:
-            p += 4 # u32 hash 
-            blob = data[p:p + packed]
-            p += packed
-            if unpacked > packed:
-                out += oodle_decompress(blob, unpacked)
-            else:
-                out += blob
+    out = bytearray()
+    for unpacked, packed in chunks:
+        p += 4 # u32 hash 
+        blob = data[p:p + packed]
+        p += packed
+        if unpacked > packed:
+            out += oodle_decompress(blob, unpacked)
+        else:
+            out += blob
         
-        return bytes(out)
+    return bytes(out)
