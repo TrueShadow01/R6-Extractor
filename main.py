@@ -1,6 +1,6 @@
 import os
 from src.parser import read_container, CONTAINER_MAGIC
-from src.dds import write_dds_dxt1
+from src.texture import save_png
 from config import GAME_DIR
 
 print("R6 Forge Extractor")
@@ -36,5 +36,5 @@ width, height = 1024, 512
 surface = tex[0x60:0x60 + width * height // 2] # BC1 = 0.5bytes per pixel
 
 os.makedirs("output", exist_ok=True)
-write_dds_dxt1("output/tex_303F.dds", width, height, surface)
-print("Wrote output/tex_303F.dds, surface=", len(surface), "bytes")
+save_png("output/tex_303F.png", surface, width, height)
+print("Wrote output/tex_303F.png")
