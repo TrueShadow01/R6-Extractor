@@ -1,6 +1,6 @@
 import os
 from src.parser import read_container, CONTAINER_MAGIC
-from src.texture import save_png
+from src.texture import save_png, parse_texture
 from config import GAME_DIR
 
 print("R6 Forge Extractor")
@@ -9,32 +9,22 @@ path = os.path.join(GAME_DIR, "datapc64_dmtx_bnk_textures3.forge")
 with open(path, "rb") as f:
     data = f.read()
 
-out = read_container(data, 0x303F)
-print("Total:", len(out), "bytes")
+os.makedirs("output", exist_ok=True)
 
-offsets = []
 i = 0
 while True:
     j = data.find(CONTAINER_MAGIC, i)
     if j == -1:
         break
-    offsets.append(j)
     i = j + 8
+    payload = read_container(data, j)
+    if len(payload) < 2000:
+        continue # skip small meta blocks
 
-print(f"Found {len(offsets)} containers")
-
-for off in offsets:
     try:
-        out = read_container(data, off)
-        print(f"0x{off:<8X} size={len(out):>8} head={out[:8].hex()}")
-    except Exception as e:
-        print(f"0x{off:<8X} ERROR: {e}")
+        w, h, surface = parse_texture(payload)
+    except ValueError:
+        continue
 
-tex = read_container(data, 0x303F)
-
-width, height = 1024, 512
-surface = tex[0x60:0x60 + width * height // 2] # BC1 = 0.5bytes per pixel
-
-os.makedirs("output", exist_ok=True)
-save_png("output/tex_303F.png", surface, width, height)
-print("Wrote output/tex_303F.png")
+    save_png(f"output/tex{j:X}.png", surface, w, h)
+    print(f"0x{j:X}: {w}x{h}  -> output/tex{j:X}.png")

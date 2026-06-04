@@ -1,6 +1,30 @@
 import struct
 from PIL import Image
 
+POW2 = {64, 126, 256, 512, 1024, 2048, 4096}
+TEXMAPDATA_MAGIC = bytes.fromhex("3d4b0cc3")
+
+def parse_texture(payload):
+    mi = payload.find(TEXMAPDATA_MAGIC)
+    if mi == -1:
+        raise ValueError("Not a texture payload")
+    pixel_start = mi + 12 # skip magic + data1 + numBlocks + data2 + 0x30
+
+    tail = payload[-96:]
+    width = height = None
+    for k in range(len(tail) - 8):
+        a = struct.unpack("<I", tail[k:k + 4])[0]
+        b = struct.unpack("<I", tail[k + 4:k + 8])[0]
+        if a in POW2 and b in POW2:
+            width, height = a, b
+            break
+
+    if width is None:
+        raise ValueError("Could not find dimensions")
+    
+    surface = payload[pixel_start:pixel_start + width * height // 2]
+    return width, height, surface
+
 def decode_bc1(surface, width, height):
     img = bytearray(width * height * 4)
     blocks_x = width // 4
