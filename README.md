@@ -8,8 +8,8 @@ A tool for extracting game assets (meshes, textures, audio) from Ubisoft
 - [x] Parse container header and locate entries
 - [x] Oodle (Kraken) chunk decompression via `oo2core`
 - [x] Reassemble full asset payloads from chunks
-- [ ] Identify asset types by magic / structure
-- [ ] Convert: textures -> DDS/PNG, meshes -> glTF/OBJ
+- [x] Identify asset types by magic / structure
+- [~] Convert: textures -> DDS/PNG (BC1 working), meshes -> glTF/OBJ
 
 ## Format notes
 
