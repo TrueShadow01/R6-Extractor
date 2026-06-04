@@ -1,6 +1,6 @@
 import os
 from src.parser import read_container, CONTAINER_MAGIC
-from src.texture import save_png, parse_texture
+from src.texture import save_png
 from config import GAME_DIR
 
 print("R6 Forge Extractor")
@@ -22,9 +22,7 @@ while True:
         continue # skip small meta blocks
 
     try:
-        w, h, surface = parse_texture(payload)
-    except ValueError:
-        continue
-
-    save_png(f"output/tex{j:X}.png", surface, w, h)
-    print(f"0x{j:X}: {w}x{h}  -> output/tex{j:X}.png")
+        w, h, fmt = save_png(f"output/tex{j:X}.png", payload)
+        print(f"0x{j:X}: {w}x{h} fmt={fmt} -> output/tex{j:X}.png")
+    except ValueError as e:
+        print(f"0x{j:X}: skip ({e})")

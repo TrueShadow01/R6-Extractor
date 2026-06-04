@@ -1,8 +1,16 @@
 import struct
+import io
 from PIL import Image
 
 POW2 = {64, 126, 256, 512, 1024, 2048, 4096}
 TEXMAPDATA_MAGIC = bytes.fromhex("3d4b0cc3")
+
+FORMATS = {
+    2: (71, 8), # BC1UNORM (diffuse)
+    5: (77, 16), # BC3UNORM (diffuse + alpha)
+    6: (83, 16), # BC5UNORM (normal maps)
+    14: (80, 8) # BC4 UNORM (single channel mask)
+}
 
 def parse_texture(payload):
     mi = payload.find(TEXMAPDATA_MAGIC)
@@ -10,55 +18,49 @@ def parse_texture(payload):
         raise ValueError("Not a texture payload")
     pixel_start = mi + 12 # skip magic + data1 + numBlocks + data2 + 0x30
 
-    tail = payload[-96:]
-    width = height = None
+    tail = payload[-120:]
+    base = len(payload) - len(tail)
+    dpos = width = height = None
     for k in range(len(tail) - 8):
         a = struct.unpack("<I", tail[k:k + 4])[0]
         b = struct.unpack("<I", tail[k + 4:k + 8])[0]
         if a in POW2 and b in POW2:
-            width, height = a, b
+            width, height, dpos = a, b, base + k
             break
 
-    if width is None:
+    if dpos is None:
         raise ValueError("Could not find dimensions")
     
-    surface = payload[pixel_start:pixel_start + width * height // 2]
-    return width, height, surface
+    fmt = struct.unpack("<I", payload[dpos + 32:dpos + 36])[0]
+    surface = payload[pixel_start:dpos]
+    return width, height, fmt, surface
 
-def decode_bc1(surface, width, height):
-    img = bytearray(width * height * 4)
-    blocks_x = width // 4
+def _dds_dx10(width, height, surface, dxgi):
+    flags = 0x1 | 0x2 | 0x4 | 0x1000 | 0x80000
 
-    def rgb565(c):
-        r = (c >> 11) & 0x1F
-        g = (c >> 5) & 0x3F
-        b = c & 0x1F
-        return(r << 3 | r >> 2, g << 2 | g >> 4, b << 3 | b >> 2)
+    h = b"DDS "
+    h += struct.pack("<I", 124) + struct.pack("<I", flags)
+    h += struct.pack("<I", height) + struct.pack("<I", width)
+    h += struct.pack("<I", len(surface)) + struct.pack("<I", 0) + struct.pack("<I", 1)
+    h += b"\x00" * 44 # reserved
+    h += struct.pack("<I", 32) + struct.pack("<I", 0x4) + b"DX10" + b"\x00" * 20
+    h += struct.pack("<I", 0x1000) + b"\x00" * 16
+    # DX10 header: dxgiFormat, dimension=TEXTURE2D(3), miscFlag, arraySize, miscFlags2
+    h += struct.pack("<I", dxgi) + struct.pack("<I", 3)
+    h += struct.pack("<I", 0) + struct.pack("<I", 1) + struct.pack("<I", 0)
+    return h + surface
+
+
+def save_png(path, payload):
+    width, height, fmt, surface = parse_texture(payload)
+    if fmt not in FORMATS:
+        raise ValueError(f"unsupported format code {fmt}")
     
-    for i in range(len(surface) // 8):
-        block = surface[i * 8:i * 8 + 8]
-        c0, c1 = struct.unpack("<HH", block[:4]) # 2 RGB565 endpoint colors
-        bits = struct.unpack("<I", block[4:8])[0] # 16 * 2bit pixel indices
+    dxgi, block = FORMATS[fmt]
+    expected = (width // 4) * (height // 4) * block
+    if len(surface) != expected:
+        raise ValueError(f"partial tier ({len(surface)} != {expected})")
 
-        colors = [rgb565(c0), rgb565(c1)]
-        if c0 > c1: # 4 color block, interpolate the 2 colors
-            colors.append(tuple((2 * colors[0][k] + colors[1][k]) // 3 for k in range(3)))
-            colors.append(tuple((colors[0][k] + 2 * colors[1][k]) // 3 for k in range(3)))
-        else: # 3 color block, 1 interpolated + transparent black
-            colors.append(tuple((colors[0][k] + colors[1][k]) // 2 for k in range(3)))
-            colors.append((0, 0, 0))
-        
-        ox = (i % blocks_x) * 4
-        oy = (i // blocks_x) * 4
-        for py in range(4):
-            for px in range(4):
-                idx = (bits >> (2 * (py * 4 + px))) & 3
-                o = ((oy + py) * width + (ox + px)) * 4
-                img[o:o + 3] = bytes(colors[idx])
-                img[o + 3] = 255
-
-    return bytes(img)
-
-def save_png(path, surface, width, height):
-    rgba = decode_bc1(surface, width, height)
-    Image.frombytes("RGBA", (width, height), rgba).save(path)
+    dds = _dds_dx10(width, height, surface, dxgi)
+    Image.open(io.BytesIO(dds)).convert("RGBA").save(path)
+    return width, height, fmt
