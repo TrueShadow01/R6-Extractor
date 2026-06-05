@@ -2,7 +2,7 @@ import struct
 import io
 from PIL import Image
 
-POW2 = {64, 126, 256, 512, 1024, 2048, 4096}
+POW2 = {64, 128, 256, 512, 1024, 2048, 4096}
 TEXMAPDATA_MAGIC = bytes.fromhex("3d4b0cc3")
 
 FORMATS = {

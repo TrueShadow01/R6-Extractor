@@ -3,7 +3,7 @@ import struct
 def write_dds_dxt1(path, width, height, surface):
     flags = 0x1 | 0x2 | 0x4 | 0x1000 | 0x80000 # caps, height, width, pixelformat, linearsize
 
-    h = b"DDS"
+    h = b"DDS "
     h += struct.pack("<I", 124) # dwSize
     h += struct.pack("<I", flags) # dwFlags
     h += struct.pack("<I", height)
