@@ -13,27 +13,24 @@ FORMATS = {
 }
 
 def parse_texture(payload):
-    mi = payload.find(TEXMAPDATA_MAGIC)
-    if mi == -1:
+    tPayload = payload.find(TEXMAPDATA_MAGIC)
+    if tPayload == -1:
         raise ValueError("Not a texture payload")
-    pixel_start = mi + 12 # skip magic + data1 + numBlocks + data2 + 0x30
+    pixel_start = tPayload + 12 # skip magic + data1 + numBlocks + data2 + 0x30
 
-    tail = payload[-120:]
-    base = len(payload) - len(tail)
-    dpos = width = height = None
-    for k in range(len(tail) - 8):
-        a = struct.unpack("<I", tail[k:k + 4])[0]
-        b = struct.unpack("<I", tail[k + 4:k + 8])[0]
-        if a in POW2 and b in POW2:
-            width, height, dpos = a, b, base + k
-            break
-
-    if dpos is None:
-        raise ValueError("Could not find dimensions")
+    tail_start = max(pixel_start, len(payload) - 200)
+    for dpos in range(tail_start, len(payload) - 36):
+        w = int.from_bytes(payload[dpos:dpos + 4], "little")
+        h = int.from_bytes(payload[dpos + 4:dpos + 8], "little")
+        if w not in POW2 or h not in POW2:
+            continue
+        surf = dpos - pixel_start
+        blocks = (w // 4) * (h // 4)
+        if surf == blocks * 8 or surf == blocks * 16: # dimensions confirmed by size
+            fmt = int.from_bytes(payload[dpos + 32:dpos + 36], "little")
+            return w, h, fmt, payload[pixel_start:dpos]
     
-    fmt = struct.unpack("<I", payload[dpos + 32:dpos + 36])[0]
-    surface = payload[pixel_start:dpos]
-    return width, height, fmt, surface
+    raise ValueError("No Full Tier Surface (partial tier or unrecognized)")
 
 def _dds_dx10(width, height, surface, dxgi):
     flags = 0x1 | 0x2 | 0x4 | 0x1000 | 0x80000
@@ -52,15 +49,10 @@ def _dds_dx10(width, height, surface, dxgi):
 
 
 def save_png(path, payload):
-    width, height, fmt, surface = parse_texture(payload)
+    w, h, fmt, surface = parse_texture(payload)
     if fmt not in FORMATS:
-        raise ValueError(f"unsupported format code {fmt}")
-    
-    dxgi, block = FORMATS[fmt]
-    expected = (width // 4) * (height // 4) * block
-    if len(surface) != expected:
-        raise ValueError(f"partial tier ({len(surface)} != {expected})")
-
-    dds = _dds_dx10(width, height, surface, dxgi)
+        raise ValueError(f"Unsupported Format Code {fmt} ({w}x{h})")
+    dxgi, _ = FORMATS[fmt]
+    dds = _dds_dx10(w, h, surface, dxgi)
     Image.open(io.BytesIO(dds)).convert("RGBA").save(path)
-    return width, height, fmt
+    return w, h, fmt

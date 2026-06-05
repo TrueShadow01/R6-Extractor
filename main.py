@@ -5,7 +5,7 @@ from config import GAME_DIR
 
 print("R6 Forge Extractor")
 
-path = os.path.join(GAME_DIR, "datapc64_dmtx_bnk_textures3.forge")
+path = os.path.join(GAME_DIR, "datapc64_merged_bnk_textures3.forge")
 with open(path, "rb") as f:
     data = f.read()
 
