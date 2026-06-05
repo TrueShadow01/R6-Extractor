@@ -10,8 +10,20 @@ A tool for extracting game assets (meshes, textures, audio) from Ubisoft
 - [x] Reassemble full asset payloads from chunks
 - [x] Identify asset types by magic / structure
 - [x] Textures -> PNG (BC1/BC3/BC4/BC5, format auto-detected, full-tier)
-- [~] Meshes -> OBJ (header parsing done; vertices/faces next)
+- [~] Meshes -> OBJ (in progress, see below)
 - [ ] Audio (Wwise .bnk/.pck)
+
+### Mesh progress (in progress)
+
+Cracked so far: the `CompiledMesh` (`0xFC9E1595`) header, all block lengths, the
+data-block layout (`VertBlockOffset = len - sum(block lengths)`), interleaved
+float32x3 vertex positions, and a face-index block that validates (indices in range).
+
+Open problems before a full OBJ works:
+- Meshes are multi-island / multi-LOD; vertex+face data is partitioned per island
+  and the per-island header array isn't where the reference puts it in this build
+- Face indices look like triangle strips (adjacent repeats), not a plain list,
+  decoding them as a list scrambles connectivity.
 
 Known limitation: streamed/virtual-texture tiers (a minority of texture entries)
 are skipped, they use a tiled layout, not the standard surface+trailer one.
