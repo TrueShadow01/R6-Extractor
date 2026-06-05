@@ -1,3 +1,7 @@
+# Oodle Kraken decompression via a sourced oo2core DLL
+# Sieges chunks are Oodle (header type 0x8C). The oo2core runtime isn't shipped standalone (static-linked into RainbowSix.exe),
+# so an oo2core_*_win64.dll from any game that ships it is loaded here
+
 import ctypes
 import os
 
@@ -16,6 +20,7 @@ _oodle.OodleLZ_Decompress.argtypes = [
     ctypes.c_int32 # threadPhase
 ]
 
+# OodleLZ_Decompress with no fuzz/check/callbacks, single-threaded (phase 3)
 def oodle_decompress(src: bytes, dst_size: int) -> bytes:
     dst = ctypes.create_string_buffer(dst_size)
     n = _oodle.OodleLZ_Decompress(

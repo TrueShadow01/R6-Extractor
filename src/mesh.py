@@ -1,7 +1,10 @@
+# Parse .forge mesh payloads. WIP
+
 import struct
 
 COMPILED_MESH = struct.pack("<I", 0xFC9E1595)
 
+# Anchor on CompiledMesh (0xFC9E1595), the header u32 fields follow the magic
 def parse_mesh_header(payload):
     md = payload.find(COMPILED_MESH)
     if md == -1:

@@ -1,3 +1,5 @@
+# Parse Ubisofte Scimitar .forge containers and reassemble entry payloads
+
 import struct
 
 from src.decompress import oodle_decompress
@@ -10,6 +12,12 @@ def parse_header(path):
             raise ValueError("Magic invalid, not a scimitar file")
     print("Magic OK")
 
+# Reassamble one container's payload from its chunk table
+# Layout after the 8byte container magic:
+#   u16 type, u16, u8, u16, u32 num_chunks,
+#   num_chunks x [u32 unpacked, u32 packed], all sizes first
+#   per chunk: [u32 hash][packed bytes]
+# Chunk is Oodle compressed when unpacked or packed, else stored raw
 def read_container(data, offset):
     p = offset + 8 # skip container magic
     p += 2 # u16 type

@@ -1,3 +1,5 @@
+# Standalone DXT1 DDS write, legacy code, replaced by texture._dds_dx10
+
 import struct
 
 def write_dds_dxt1(path, width, height, surface):

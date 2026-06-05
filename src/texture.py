@@ -1,3 +1,5 @@
+# Decode .forge texture payloads (BCn compressed) to PNG via DDS -> Pillow
+
 import struct
 import io
 from PIL import Image
@@ -5,6 +7,8 @@ from PIL import Image
 POW2 = {64, 128, 256, 512, 1024, 2048, 4096}
 TEXMAPDATA_MAGIC = bytes.fromhex("3d4b0cc3")
 
+# Siege texture format code (DXGI format, bytes per 4x4 block)
+# Code is read from the trailer at dims_pos + 32
 FORMATS = {
     2: (71, 8), # BC1 (diffuse)
     3: (71, 8), # BC1 (sRGB variant)
@@ -13,6 +17,11 @@ FORMATS = {
     14: (80, 8) # BC4 (single channel mask)
 }
 
+# Return (width, height, format_code, surface) from a texture payload
+# Pixel data starts 12 bytes after the CompiledTextureMapData magic,
+# width/height live in the trailer, we accepd a power-of-two (w, h)
+# pair only when the surface size equals (w/4) * (h/4) * blocksize,
+# that size check refects coincidental matches. (prevents most false positives)
 def parse_texture(payload):
     tPayload = payload.find(TEXMAPDATA_MAGIC)
     if tPayload == -1:
@@ -33,6 +42,7 @@ def parse_texture(payload):
     
     raise ValueError("No Full Tier Surface (partial tier or unrecognized)")
 
+# Wrap a raw BCn surface in DX10-header DDS so Pillow can decode it
 def _dds_dx10(width, height, surface, dxgi):
     flags = 0x1 | 0x2 | 0x4 | 0x1000 | 0x80000
 
