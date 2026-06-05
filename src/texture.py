@@ -6,10 +6,11 @@ POW2 = {64, 126, 256, 512, 1024, 2048, 4096}
 TEXMAPDATA_MAGIC = bytes.fromhex("3d4b0cc3")
 
 FORMATS = {
-    2: (71, 8), # BC1UNORM (diffuse)
-    5: (77, 16), # BC3UNORM (diffuse + alpha)
-    6: (83, 16), # BC5UNORM (normal maps)
-    14: (80, 8) # BC4 UNORM (single channel mask)
+    2: (71, 8), # BC1 (diffuse)
+    3: (71, 8), # BC1 (sRGB variant)
+    5: (77, 16), # BC3 (diffuse + alpha)
+    6: (83, 16), # BC5 (normal maps)
+    14: (80, 8) # BC4 (single channel mask)
 }
 
 def parse_texture(payload):
