@@ -12,7 +12,7 @@ def parse_header(path):
             raise ValueError("Magic invalid, not a scimitar file")
     print("Magic OK")
 
-# Reassamble one container's payload from its chunk table
+# Reassemble one container's payload from its chunk table
 # Layout after the 8byte container magic:
 #   u16 type, u16, u8, u16, u32 num_chunks,
 #   num_chunks x [u32 unpacked, u32 packed], all sizes first
