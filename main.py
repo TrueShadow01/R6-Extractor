@@ -3,7 +3,19 @@ import argparse
 from src.parser import read_container, CONTAINER_MAGIC, parse_header
 from src.texture import save_png
 from src.mesh import parse_mesh_header
-from config import GAME_DIR
+
+# Find a .forge file: use the path given or look it up under GAME_DIR set in config.py
+# Resolves bare archive names (without .forge extension)
+def resolve_forge(name):
+    if os.path.isfile(name):
+        return name
+    try:
+        from config import GAME_DIR
+    except ImportError:
+        return None
+    canditate = name if name.lower().endswith(".forge") else name + ".forge"
+    full = os.path.join(GAME_DIR, canditate)
+    return full if os.path.isfile(full) else None
 
 # Yield the file offset of very container in the .forge file
 def find_containers(data):
@@ -46,10 +58,11 @@ def main():
     ap.add_argument("-v", "--verbose", action="store_true", help="print every asset, not just the summary")
     args = ap.parse_args()
 
-    if not os.path.isfile(args.forge):
-        ap.error(f"File not found: {args.forge}")
+    forge = resolve_forge(args.forge)
+    if forge is None:
+        ap.error(f".forge file not found: {args.forge} (looked in cwd and GAME_DIR)")
 
-    exported, skipped = extract_textures(args.forge, args.out, args.verbose)
+    exported, skipped = extract_textures(forge, args.out, args.verbose)
     print(f"{exported} textures -> {args.out} ({skipped} skipped)")
 
 if __name__ == "__main__":
