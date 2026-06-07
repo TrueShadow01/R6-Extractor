@@ -10,8 +10,9 @@ A tool for extracting game assets (meshes, textures, audio) from Ubisoft
 - [x] Reassemble full asset payloads from chunks
 - [x] Identify asset types by magic / structure
 - [x] Textures -> PNG (BC1/BC3/BC4/BC5, format auto-detected, full-tier)
+- [x] Audio -> .wem (raw soundmedia + embedded in soundbank containers),
+  optional .wav via vgmstream
 - [~] Meshes -> OBJ (in progress, see below)
-- [ ] Audio (Wwise .bnk/.pck)
 
 ### Mesh progress (in progress)
 
@@ -37,24 +38,29 @@ are skipped, they use a tiled layout, not the standard surface+trailer one.
 
 ## Format notes
 
-- `.forge` = header -> entry table -> descriptor section -> payloads.
-- Assets are keyed by numeric **UID**, not filenames (filenames are hashed).
-- Container magic (u64 LE): `0x1015FA9957FBAA37`.
+- `.forge` = header -> entry table -> descriptor section -> payloads
+- Assets are keyed by numeric **UID**, not filenames (filenames are hashed)
+- Container magic (u64 LE): `0x1015FA9957FBAA37`
 - Each entry holds one or more **Datablock** chunks. Per chunk the table stores
   `[unpacked_size, packed_size]`; `unpacked > packed` means the chunk is
-  Oodle-compressed (Kraken, header byte `0x8C`), otherwise it's stored raw.
+  Oodle-compressed (Kraken, header byte `0x8C`), otherwise it's stored raw
 - Textures: format code in the trailer (2=BC1, 3=BC1 sRGB, 5=BC3, 6=BC5, 14=BC4);
   decoded by wrapping the surface in a DX10 DDS header and letting Pillow decode.
 - Meshes: `CompiledMesh` magic `0xFC9E1595` anchors a header with vertex/face block
-  lengths, revision, vertex stride, island (submesh) and LOD counts.
+  lengths, revision, vertex stride, island (submesh) and LOD counts
+- Audio: Wwise `.wem` (RIFF/WAVE, Wwise Vorbis). `soundmedia` forges store them raw
+  and uncompressed, `soundbank` forges store them inside Oodle containers. Extraction
+  scans decompressed payloads for `RIFF`/`WAVE` and dumps each stream, conversion to
+  `.wav` is delegated to `vgmstream-cli`
 - Offsets and format details shift between game versions, expect to re-verify
-  after updates.
+  after updates
 
 ## Requirements
 
-- Python 3.x
-- `oo2core_*_win64.dll` placed in the project root (the Oodle runtime; sourced
-  from any game that ships it, not redistributed here).
+- Python 3.x (with `Pillow` for texture decoding)
+- `oo2core_*_win64.dll` placed in the project root (the Oodle runtime, sourced
+  from any game that ships it, not redistributed here)
+- Optional: `vgmstream-cli` on your PATH, only needed for `--wav` audio conversion
 
 ## Setup
 
@@ -69,23 +75,27 @@ GAME_DIR = r"Path To Tom Clancy's Rainbow Six Siege"
 
 ## Usage
 
-Extract all textures from a `.forge` into an output directory:
+Point it at any `.forge`; it walks the containers and dispatches each payload by
+type (textures -> PNG, audio -> .wem), so one command handles every archive kind:
 
 ```
-python main.py <path-to.forge>                            # writes PNGs to ./output
+python main.py <path-to.forge>                            # extract to ./output
 python main.py <path-to.forge> -o <output-folder-name>    # custom output directory
 python main.py <path-to.forge> -v                         # list every asset, not just a summary
+python main.py <path-to.forge> --wav                      # also convert .wem -> .wav (needs vgmstream-cli)
 ```
 
 With `config.py` set, a bare archive name (with or without the `.forge`
 extension) is resolved against `GAME_DIR`:
 
 ```
-python main.py "datapc64_dmtx_bnk_textures3"               # found under GAME_DIR
+python main.py <path-to-forge-texture-file>                             # textures
+python main.py <path-to-forge-soundmedia-or-soundbank-file> --wav       # audio
+python main.py <path-to-forgefile> -v                                   # enable verbose output (-v or --v)
 ```
 
-Prints a summary like `N textures -> output (M skipped)`. Skipped entries are
-non-texture payloads or streamed tiles (see limitation above).
+Prints a summary like `N textures, M .wem files -> output (K skipped)`.<br>Skipped entries
+are unsupported payloads (e.g. meshes) or streamed texture tiles (see limitation above).
 
 ## Note
 

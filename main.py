@@ -1,8 +1,8 @@
 import os
 import argparse
 from src.parser import read_container, CONTAINER_MAGIC, parse_header
-from src.texture import save_png
-from src.mesh import parse_mesh_header
+from src.texture import save_png, TEXMAPDATA_MAGIC
+from src.audio import extract_wems, wem_to_wav
 
 # Find a .forge file: use the path given or look it up under GAME_DIR set in config.py
 # Resolves bare archive names (without .forge extension)
@@ -27,27 +27,41 @@ def find_containers(data):
         yield j
         i = j + 8
 
-def extract_textures(forge_path, out_dir, verbose=False):
-    parse_header(forge_path) # validate scimitar
-    with open(forge_path, "rb") as f:
+def extract(forge, out_dir, want_wav=False, verbose=False):
+    with open(forge, "rb") as f:
         data = f.read()
     os.makedirs(out_dir, exist_ok=True)
-    exported = skipped = 0
-    for off in find_containers(data):
-        payload = read_container(data, off)
-        if len(payload) < 2000:
-            continue # skip meta blocks
-        out = os.path.join(out_dir, f"tex_{off:X}.png")
-        try:
-            w, h, fmt = save_png(out, payload)
-            exported += 1
-            if verbose:
-                print(f"0x{off:X}: {w}x{h} fmt={fmt} -> {out}")
-        except ValueError as e:
-            skipped += 1
-            if verbose:
-                print(f"0x{off:X}: skip ({e})")
-    return exported, skipped
+    tex = wem = skip = 0
+
+    if CONTAINER_MAGIC in data:
+        for off in find_containers(data):
+            payload = read_container(data, off)
+            if len(payload) < 200:
+                continue
+            if TEXMAPDATA_MAGIC in payload: # texture
+                try:
+                    w, h, fmt = save_png(os.path.join(out_dir, f"tex_{off:X}.png"), payload)
+                    tex += 1
+                    if verbose:
+                        print(f"tex 0x{off:X}: {w}x{h} fmt={fmt}")
+                except ValueError as e:
+                    skip += 1
+                    if verbose:
+                        print(f"skip 0x{off:X} ({e})")
+            else: # audio ? (bank/wem)
+                got = extract_wems(payload, out_dir, prefix=f"snd_{off:X}")
+                if got:
+                    wem += len(got)
+                else:
+                    skip += 1
+    else: # raw .wem (soundmedia)
+        wem = len(extract_wems(data, out_dir))
+    
+    if want_wav:
+        for fn in os.listdir(out_dir):
+            if fn.endswith(".wem"):
+                wem_to_wav(os.path.join(out_dir, fn))
+    return tex, wem, skip
 
 def main():
     print("R6 Forge Extractor")
@@ -56,14 +70,18 @@ def main():
     ap.add_argument("forge", help="path to a .forge file")
     ap.add_argument("-o", "--out", default="output", help="output directory (default: output)")
     ap.add_argument("-v", "--verbose", action="store_true", help="print every asset, not just the summary")
+    ap.add_argument("--wav", action="store_true", help="Convert extracted .wem files to .wav files (requires vgmstream-cli on PATH)")
     args = ap.parse_args()
 
     forge = resolve_forge(args.forge)
     if forge is None:
         ap.error(f".forge file not found: {args.forge} (looked in cwd and GAME_DIR)")
 
-    exported, skipped = extract_textures(forge, args.out, args.verbose)
-    print(f"{exported} textures -> {args.out} ({skipped} skipped)")
+    with open(forge, "rb") as f:
+        data = f.read()
+    
+    tex, wem, skip = extract(forge, args.out, args.wav, args.verbose)
+    print(f"{tex} textures, {wem} .wem files -> {args.out} ({skip} skipped)")
 
 if __name__ == "__main__":
     main()
