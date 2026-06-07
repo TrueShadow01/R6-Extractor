@@ -60,9 +60,16 @@ GAME_DIR = r"Path To Tom Clancy's Rainbow Six Siege"
 
 ## Usage
 
+Extract all textures from a `.forge` into an output directory:
+
 ```
-python main.py
+python main.py <path-to.forge>                            # writes PNGs to ./output
+python main.py <path-to.forge> -o <output-folder-name>    # custom output directory
+python main.py <path-to.forge> -v                         # list every asset, not just a summary
 ```
+
+Prints a summary like `N textures -> output (M skipped)`. Skipped entries are
+non-texture payloads or streamed tiles (see limitation above).
 
 ## Note
 

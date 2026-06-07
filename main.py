@@ -1,44 +1,56 @@
 import os
-from src.parser import read_container, CONTAINER_MAGIC
+import argparse
+from src.parser import read_container, CONTAINER_MAGIC, parse_header
 from src.texture import save_png
 from src.mesh import parse_mesh_header
 from config import GAME_DIR
 
-print("R6 Forge Extractor")
+# Yield the file offset of very container in the .forge file
+def find_containers(data):
+    i = 0
+    while True:
+        j = data.find(CONTAINER_MAGIC, i)
+        if j == -1:
+            return
+        yield j
+        i = j + 8
 
-# Open the .forge file
-path = os.path.join(GAME_DIR, "datapc64_mtx_set01_bnk_mesh.forge")
-with open(path, "rb") as f:
-    data = f.read()
+def extract_textures(forge_path, out_dir, verbose=False):
+    parse_header(forge_path) # validate scimitar
+    with open(forge_path, "rb") as f:
+        data = f.read()
+    os.makedirs(out_dir, exist_ok=True)
+    exported = skipped = 0
+    for off in find_containers(data):
+        payload = read_container(data, off)
+        if len(payload) < 2000:
+            continue # skip meta blocks
+        out = os.path.join(out_dir, f"tex_{off:X}.png")
+        try:
+            w, h, fmt = save_png(out, payload)
+            exported += 1
+            if verbose:
+                print(f"0x{off:X}: {w}x{h} fmt={fmt} -> {out}")
+        except ValueError as e:
+            skipped += 1
+            if verbose:
+                print(f"0x{off:X}: skip ({e})")
+    return exported, skipped
 
-# Create output directory to store data in
-os.makedirs("output", exist_ok=True)
+def main():
+    print("R6 Forge Extractor")
 
-# Loop over the current .forge file
-i = 0
-while True:
-    # check .forge magic
-    j = data.find(CONTAINER_MAGIC, i)
-    if j == -1:
-        break
-    i = j + 8
-    # read container if magic matches
-    payload = read_container(data, j)
-    if len(payload) < 2000:
-        continue # skip small meta blocks
-    
-    # Mesh Stuff
+    ap = argparse.ArgumentParser(description="Extract assets from Rainbow Six Siege .forge archive")
+    ap.add_argument("forge", help="path to a .forge file")
+    ap.add_argument("-o", "--out", default="output", help="output directory (default: output)")
+    ap.add_argument("-v", "--verbose", action="store_true", help="print every asset, not just the summary")
+    args = ap.parse_args()
 
-    # parse Mesh header and print header data
-    h = parse_mesh_header(payload)
-    for k, v in h.items():
-        print(f"{k} = {v}")
-    break
-    # Texture Stuff (commented out for testing the whole mesh stuff)   
+    if not os.path.isfile(args.forge):
+        ap.error(f"File not found: {args.forge}")
 
-    # Try to batch export all textures in the give .forge file
-    # try:
-    #     w, h, fmt = save_png(f"output/tex{j:X}.png", payload)
-    #     print(f"0x{j:X}: {w}x{h} fmt={fmt} -> output/tex{j:X}.png")
-    # except ValueError as e:
-    #     print(f"0x{j:X}: skip ({e})")
+    exported, skipped = extract_textures(args.forge, args.out, args.verbose)
+    print(f"{exported} textures -> {args.out} ({skipped} skipped)")
+
+if __name__ == "__main__":
+    main()
