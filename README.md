@@ -60,7 +60,8 @@ are skipped, they use a tiled layout, not the standard surface+trailer one.
 - Python 3.x (with `Pillow` for texture decoding)
 - `oo2core_*_win64.dll` placed in the project root (the Oodle runtime, sourced
   from any game that ships it, not redistributed here)
-- Optional: `vgmstream-cli` on your PATH, only needed for `--wav` audio conversion
+- `vgmstream-cli` is shipped with the repo (in the `vgmstream-win64/` folder) and is only
+  needed for `--wav` audio conversion
 
 ## Setup
 
@@ -72,6 +73,8 @@ Without it, you need to pass the full path.
 # config.py
 GAME_DIR = r"Path To Tom Clancy's Rainbow Six Siege"
 ```
+
+Audio Conversion to .wav files: Reference `vgmstream-cli.exe` at `vgmstream-win64` in your PATH to be able to convert the .wem files to .wav
 
 ## Usage
 
@@ -90,7 +93,8 @@ extension) is resolved against `GAME_DIR`:
 
 ```
 python main.py <path-to-forge-texture-file>                             # textures
-python main.py <path-to-forge-soundmedia-or-soundbank-file> --wav       # audio
+python main.py <path-to-forge-soundmedia-or-soundbank-file> --wav       # audio conversion to .wav file
+python main.py <path-to-forge-soundmedia-or-soundbank-file>             # audio conversion to .wem file
 python main.py <path-to-forgefile> -v                                   # enable verbose output (-v or --v)
 ```
 
