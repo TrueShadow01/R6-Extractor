@@ -15,23 +15,22 @@ A tool for extracting game assets (meshes, textures, audio) from Ubisoft
 
 ### Mesh progress (in progress)
 
-Cracked so far: the `CompiledMesh` (`0xFC9E1595`) header and all block lengths, the
-data-block layout (`VertBlockOffset = len - sum(block lengths)`), the face-index block
-(2944 triangles, indices in range), and most vertex positions (~95%) as float32x3.
+Solved:
+- The `CompiledMesh` (`0xFC9E1595`) header, all block lengths and the data-block
+  layout (`VertBlockOffset = len - sum(block lengths)`)
+- The per-island **ObjectHeader table** (located by the constraint that
+  `numFaceChunks` sums to `total_triangles / 64`). Gives per-island vertex counts,
+  LOD split and cumulative face-chunk offsets, island vertex counts sum to `NumVerts`
+- **Faces are global** triangle indices into the full vertex array, each island uses
+  the face-block slice `[offsetFaceChunks*64, (offsetFaceChunks+numFaceChunks)*64)`
 
-Still broken: a rendered OBJ comes out scrambled. This build's mesh format diverges
-from the public `RainbowForge` reference in several places at once:
-- The reference reads faces as one global triangle list, but this build's indices
-  behave like **per-island local** indices (repeats like `654,654` / `656,656`);
-  read globally they connect the wrong vertices
-- The per-island header table (vertex base + counts, needed to fix the indices)
-  isn't where the reference puts it, the post-header region is bounding-box/skin
-  float data, not the table
-- Positions don't fully decode under either planar or interleaved reading, with a
-  persistent unexplained ~2240-byte float region
-
-Net: full mesh reconstruction needs a dedicated reverse-engineering pass against this
-exact game version.
+Remaining blocker is the **vertex position** encoding:
+- Positions are one contiguous `float32x3` stream (smooth across island boundaries),
+  but the clean run ends *mid-vertex* ~187 vertices short of `NumVerts*12` and no
+  layout (planar / interleaved / per-island) decodes all of them
+- This needs a different method than byte-inference: diff a known-good extraction
+  (e.g. a working RainbowForge fork / Blender importer) against this exact build to
+  read the true vertex declaration. Everything above is reusable once positions land
 
 Known limitation: streamed/virtual-texture tiers (a minority of texture entries)
 are skipped, they use a tiled layout, not the standard surface+trailer one.
