@@ -51,7 +51,9 @@ are skipped, they use a tiled layout, not the standard surface+trailer one.
 
 ## Setup
 
-Create a `config.py` in the project root with your local game install path:
+Optional: create a `config.py` in the project root with your local game install
+path.<br>This lets you pass a bare archive name instead of a full path (see Usage).
+Without it, you need to pass the full path.
 
 ```python
 # config.py
@@ -66,6 +68,13 @@ Extract all textures from a `.forge` into an output directory:
 python main.py <path-to.forge>                            # writes PNGs to ./output
 python main.py <path-to.forge> -o <output-folder-name>    # custom output directory
 python main.py <path-to.forge> -v                         # list every asset, not just a summary
+```
+
+With `config.py` set, a bare archive name (with or without the `.forge`
+extension) is resolved against `GAME_DIR`:
+
+```
+python main.py "datapc64_dmtx_bnk_textures3"               # found under GAME_DIR
 ```
 
 Prints a summary like `N textures -> output (M skipped)`. Skipped entries are
