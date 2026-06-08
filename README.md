@@ -27,8 +27,6 @@ are skipped, they use a tiled layout, not the standard surface+trailer one.
   Oodle-compressed (Kraken, header byte `0x8C`), otherwise it's stored raw
 - Textures: format code in the trailer (2=BC1, 3=BC1 sRGB, 5=BC3, 6=BC5, 14=BC4);
   decoded by wrapping the surface in a DX10 DDS header and letting Pillow decode.
-- Meshes: `CompiledMesh` magic `0xFC9E1595` anchors a header with vertex/face block
-  lengths, revision, vertex stride, island (submesh) and LOD counts
 - Audio: Wwise `.wem` (RIFF/WAVE, Wwise Vorbis). `soundmedia` forges store them raw
   and uncompressed, `soundbank` forges store them inside Oodle containers. Extraction
   scans decompressed payloads for `RIFF`/`WAVE` and dumps each stream, conversion to
