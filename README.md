@@ -14,19 +14,6 @@ A tool for extracting game assets (meshes, textures, audio) from Ubisoft
   optional .wav via vgmstream
 - [x] Meshes -> OBJ (vertLen 0x24/0x28/0x2C float positions; packed int16 variants TODO)
 
-### Mesh notes
-
-Meshes decode to OBJ. Anchored on the `CompiledMesh` magic (`0xFC9E1595`):
-- `VertBlockOffset` = the stream position right after the 20 header fields
-  (magic + 4 + 80). The data blocks (verts, faces, vertmaps, ...) run from there;
-  the ObjectHeader/footer table is at the end.
-- Positions are planar `float32x3` (`NumVerts = vertsDataLen / vertLen`), faces are a
-  plain global triangle list (degenerate triangles where `a==b||b==c||a==c` are dropped).
-- Verified against the `DudeKiller82/RainbowForge` fork's `MeshHeader.cs`.
-
-TODO: `vertLen` `0x18`/`0x1C` meshes store packed int16 positions (`ReadUInt64AsPos`),
-not float32 — not yet handled.
-
 Known limitation: streamed/virtual-texture tiers (a minority of texture entries)
 are skipped, they use a tiled layout, not the standard surface+trailer one.
 
