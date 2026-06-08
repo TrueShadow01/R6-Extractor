@@ -4,9 +4,9 @@ import struct
 
 COMPILED_MESH = struct.pack("<I", 0xFC9E1595)
 FLOAT_VERT_LENS = (0x24, 0x28, 0x2C) # float 32 position layouts
+PACKED_VERT_LENS = (0x18, 0x1C) # int16 + scale packed positions
 
-# Decode mesh payload -> (vertices, faces)
-#   float positions only
+# Decode mesh payload
 def read_mesh(payload):
     mPayload = payload.find(COMPILED_MESH)
     if mPayload == -1:
@@ -14,17 +14,23 @@ def read_mesh(payload):
     p = mPayload + 4
     f = struct.unpack("<20I", payload[p:p + 80])
     vert_len, verts_len, face_len = f[3], f[4], f[5]
-    if vert_len not in FLOAT_VERT_LENS:
-        raise ValueError(f"Unsupported vertLen 0x{vert_len:X}") # packed int16, skip
+    if vert_len == 0:
+        raise ValueError("Bad Mesh Header")
     num_verts = verts_len // vert_len
-
     vbo = p + 80 # vertices start right after 20 header fields
     tris = vbo + verts_len # face block follows vertex block
 
-    # positions, planar float32 x3 (vertLen 0x24/0x28/0x2C)
-    verts = [struct.unpack_from("<fff", payload, vbo + i * 12) for i in range(num_verts)]
+    verts = []
+    if vert_len in FLOAT_VERT_LENS:
+        for i in range(num_verts):
+            verts.append(struct.unpack_from("<fff", payload, vbo + i * 12))
+    elif vert_len in PACKED_VERT_LENS:
+        for i in range(num_verts): # 4x int16: x, y, z, scale
+            x, y, z, s = struct.unpack_from("<hhhh", payload, vbo + i * 8)
+            verts.append((x * s / 32767.0, y * s / 32767.0, z * s / 32767.0))
+    else:
+        raise ValueError(f"Unsupported vertLen{vert_len:X}")
 
-    # faces, global triangle indices, skip degenerate triangles
     faces = []
     for t in range(face_len // 6):
         a, b, c = struct.unpack_from("<HHH", payload, tris + t * 6)

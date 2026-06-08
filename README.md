@@ -65,7 +65,7 @@ type (textures -> PNG, audio -> .wem), so one command handles every archive kind
 ```
 python main.py <path-to.forge>                            # extract to ./output
 python main.py <path-to.forge> -o <output-folder-name>    # custom output directory
-python main.py <path-to.forge> -v                         # list every asset, not just a summary
+python main.py <path-to.forge> -v                         # extracts every asset, not just a summary
 python main.py <path-to.forge> --wav                      # also convert .wem -> .wav (needs vgmstream-cli)
 ```
 
@@ -79,8 +79,8 @@ python main.py <path-to-forge-soundmedia-or-soundbank-file>             # audio 
 python main.py <path-to-forgefile> -v                                   # enable verbose output (-v or --v)
 ```
 
-Prints a summary like `N textures, M .wem files -> output (K skipped)`.<br>Skipped entries
-are unsupported payloads (e.g. meshes) or streamed texture tiles (see limitation above).
+Prints a summary like `N textures, X meshes, M .wem files -> output (K skipped)`.<br>Skipped entries
+are unsupported payloads or streamed texture tiles (see limitation above).
 
 ## Note
 
