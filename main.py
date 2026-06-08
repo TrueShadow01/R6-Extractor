@@ -1,8 +1,10 @@
 import os
 import argparse
+import struct
 from src.parser import read_container, CONTAINER_MAGIC, parse_header
 from src.texture import save_png, TEXMAPDATA_MAGIC
 from src.audio import extract_wems, wem_to_wav
+from src.mesh import save_obj, COMPILED_MESH
 
 # Find a .forge file: use the path given or look it up under GAME_DIR set in config.py
 # Resolves bare archive names (without .forge extension)
@@ -31,7 +33,7 @@ def extract(forge, out_dir, want_wav=False, verbose=False):
     with open(forge, "rb") as f:
         data = f.read()
     os.makedirs(out_dir, exist_ok=True)
-    tex = wem = skip = 0
+    tex = mesh = wem = skip = 0
 
     if CONTAINER_MAGIC in data:
         for off in find_containers(data):
@@ -48,6 +50,14 @@ def extract(forge, out_dir, want_wav=False, verbose=False):
                     skip += 1
                     if verbose:
                         print(f"skip 0x{off:X} ({e})")
+            elif COMPILED_MESH in payload: # mesh
+                try:
+                    nv, nf = save_obj(os.path.join(out_dir, f"mesh_{off:X}.obj"), payload)
+                    mesh += 1
+                    if verbose:
+                        print(f"mesh 0x{off:X}: {nv} verts, {nf} tris")
+                except (ValueError, struct.error):
+                    skip += 1
             else: # audio ? (bank/wem)
                 got = extract_wems(payload, out_dir, prefix=f"snd_{off:X}")
                 if got:
@@ -61,7 +71,7 @@ def extract(forge, out_dir, want_wav=False, verbose=False):
         for fn in os.listdir(out_dir):
             if fn.endswith(".wem"):
                 wem_to_wav(os.path.join(out_dir, fn))
-    return tex, wem, skip
+    return tex, mesh, wem, skip
 
 def main():
     print("R6 Forge Extractor")
@@ -80,8 +90,8 @@ def main():
     with open(forge, "rb") as f:
         data = f.read()
     
-    tex, wem, skip = extract(forge, args.out, args.wav, args.verbose)
-    print(f"{tex} textures, {wem} .wem files -> {args.out} ({skip} skipped)")
+    tex, mesh, wem, skip = extract(forge, args.out, args.wav, args.verbose)
+    print(f"{tex} textures, {mesh} meshes, {wem} .wem files -> {args.out} ({skip} skipped)")
 
 if __name__ == "__main__":
     main()

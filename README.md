@@ -12,26 +12,20 @@ A tool for extracting game assets (meshes, textures, audio) from Ubisoft
 - [x] Textures -> PNG (BC1/BC3/BC4/BC5, format auto-detected, full-tier)
 - [x] Audio -> .wem (raw soundmedia + embedded in soundbank containers),
   optional .wav via vgmstream
-- [~] Meshes -> OBJ (in progress, see below)
+- [x] Meshes -> OBJ (vertLen 0x24/0x28/0x2C float positions; packed int16 variants TODO)
 
-### Mesh progress (in progress)
+### Mesh notes
 
-Solved:
-- The `CompiledMesh` (`0xFC9E1595`) header, all block lengths and the data-block
-  layout (`VertBlockOffset = len - sum(block lengths)`)
-- The per-island **ObjectHeader table** (located by the constraint that
-  `numFaceChunks` sums to `total_triangles / 64`). Gives per-island vertex counts,
-  LOD split and cumulative face-chunk offsets, island vertex counts sum to `NumVerts`
-- **Faces are global** triangle indices into the full vertex array, each island uses
-  the face-block slice `[offsetFaceChunks*64, (offsetFaceChunks+numFaceChunks)*64)`
+Meshes decode to OBJ. Anchored on the `CompiledMesh` magic (`0xFC9E1595`):
+- `VertBlockOffset` = the stream position right after the 20 header fields
+  (magic + 4 + 80). The data blocks (verts, faces, vertmaps, ...) run from there;
+  the ObjectHeader/footer table is at the end.
+- Positions are planar `float32x3` (`NumVerts = vertsDataLen / vertLen`), faces are a
+  plain global triangle list (degenerate triangles where `a==b||b==c||a==c` are dropped).
+- Verified against the `DudeKiller82/RainbowForge` fork's `MeshHeader.cs`.
 
-Remaining blocker is the **vertex position** encoding:
-- Positions are one contiguous `float32x3` stream (smooth across island boundaries),
-  but the clean run ends *mid-vertex* ~187 vertices short of `NumVerts*12` and no
-  layout (planar / interleaved / per-island) decodes all of them
-- This needs a different method than byte-inference: diff a known-good extraction
-  (e.g. a working RainbowForge fork / Blender importer) against this exact build to
-  read the true vertex declaration. Everything above is reusable once positions land
+TODO: `vertLen` `0x18`/`0x1C` meshes store packed int16 positions (`ReadUInt64AsPos`),
+not float32 — not yet handled.
 
 Known limitation: streamed/virtual-texture tiers (a minority of texture entries)
 are skipped, they use a tiled layout, not the standard surface+trailer one.
