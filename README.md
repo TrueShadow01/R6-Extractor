@@ -12,7 +12,7 @@ A tool for extracting game assets (meshes, textures, audio) from Ubisoft
 - [x] Textures -> PNG (BC1/BC3/BC4/BC5, format auto-detected, full-tier)
 - [x] Audio -> .wem (raw soundmedia + embedded in soundbank containers),
   optional .wav via vgmstream
-- [x] Meshes -> OBJ (vertLen 0x24/0x28/0x2C float positions; packed int16 variants TODO)
+- [x] Meshes -> OBJ
 
 Known limitation: streamed/virtual-texture tiers (a minority of texture entries)
 are skipped, they use a tiled layout, not the standard surface+trailer one.
