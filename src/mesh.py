@@ -42,7 +42,7 @@ def save_obj(path, payload):
     verts, faces = read_mesh(payload)
     with open(path, "w") as fh:
         for x, y, z in verts:
-            fh.write(f"v {x:.6f} {y:.6f} {z:.6f}")
+            fh.write(f"v {x:.6f} {y:.6f} {z:.6f}\n")
         for a, b, c in faces:
-            fh.write(f"f {a + 1} {b + 1} {c + 1}") # OBJ 1 indexed
+            fh.write(f"f {a + 1} {b + 1} {c + 1}\n") # OBJ 1 indexed
     return len(verts), len(faces)
