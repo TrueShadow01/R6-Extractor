@@ -17,6 +17,7 @@ def read_mesh(payload):
     p = mPayload + 4
     f = struct.unpack("<20I", payload[p:p + 80])
     vert_len, verts_len, face_len = f[3], f[4], f[5]
+    num_islands = f[15] # f[13]=numLods, f[15]=numIslands
     if vert_len not in _PRE_UV:
         raise ValueError(f"Unsupported vertLen 0x{vert_len:X}")
     num_verts = verts_len // vert_len
@@ -47,9 +48,17 @@ def read_mesh(payload):
         u, v = struct.unpack_from("<ee", payload, uv_block + i * 4) # <e = float16
         uvs.append((u, 1.0 - v))
 
-    # faces (global indices, drop degenerates)
+    # LOD0 faces only, ObjectHeader table (footer) sits after all 6 data blocks
+    tail = vbo + sum(f[4:10]) # verts+face+vertmaps+unk1+faceStat+faceUnk
+    lod0_chunks = 0
+    for k in range(num_islands): # first numIslands records = LOD0
+        rec = struct.unpack_from("<9I", payload, tail + k * 36) 
+        lod0_chunks += rec[4]
+    lod0_tris = lod0_chunks * 64
+
+    # faces
     faces = []
-    for t in range(face_len // 6):
+    for t in range(lod0_tris):
         a, b, c = struct.unpack_from("<HHH", payload, tris + t * 6)
         if a != b and b != c and a != c:
             faces.append((a, b, c))
