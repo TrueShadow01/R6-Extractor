@@ -13,9 +13,16 @@ A tool for extracting game assets (meshes, textures, audio) from Ubisoft
 - [x] Audio -> .wem (raw soundmedia + embedded in soundbank containers),
   optional .wav via vgmstream
 - [x] Meshes -> OBJ (positions, UVs, normals, LOD0 only, float + packed-int16 formats)
+- [x] Mesh <-> texture linking via the depgraph (`.depgraphbin`), with textures
+  assigned to material roles (diffuse/normal) from their declared type
+- [x] Textured model export: one Mesh UID -> OBJ + MTL + PNGs, ready to drag into Blender
 
-Known limitation: streamed/virtual-texture tiers (a minority of texture entries)
-are skipped, they use a tiled layout, not the standard surface+trailer one.
+Known limitations:
+- Streamed/virtual-texture tiers (a minority of texture entries) decode blank,
+  they use a tiled/paged layout, not the standard surface+trailer one. A model
+  whose diffuse is streamed exports with normal detail but no base color.
+- Model export handles a single `CompiledMeshObject`; composite meshes
+  (sub-mesh / attachment children) and non-LOD0 vertices are not yet merged in.
 
 ## Format notes
 
@@ -27,6 +34,12 @@ are skipped, they use a tiled layout, not the standard surface+trailer one.
   Oodle-compressed (Kraken, header byte `0x8C`), otherwise it's stored raw
 - Textures: format code in the trailer (2=BC1, 3=BC1 sRGB, 5=BC3, 6=BC5, 14=BC4);
   decoded by wrapping the surface in a DX10 DDS header and letting Pillow decode.
+  The trailer also stores the texture's semantic role (`texType`: 0=Diffuse,
+  1=Normal, 2=Specular, ...), so material slots are assigned from the data
+- Asset links: each bundle ships a `.depgraphbin` holding a flat parent->child
+  UID table. A mesh's textures are found by walking that graph from the mesh UID
+  (Mesh -> CompiledMeshObject + texture-map tiers). The UID's top byte tags its
+  kind (e.g. mesh vs texture data), which helps classify references.
 - Meshes: `CompiledMesh` magic `0xFC9E1595`, vertices start right after the header
   fields. Positions are float32x3 (vertLen 0x24/0x28/0x2C) or packed 4xint16
   `x, y, z, scale -> xyz*scale/32767` (vertLen 0x18/0x1C). Planar layout: positions,
@@ -85,6 +98,20 @@ python main.py <path-to-forgefile> -v                                   # enable
 
 Prints a summary like `N textures, X meshes, M .wem files -> output (K skipped)`.<br>Skipped entries
 are unsupported payloads or streamed texture tiles (see limitation above).
+
+### Textured model export
+
+Point at a mesh `.forge` file and pass a Mesh UID (hex) to export one model with its
+textures resolved and applied via the bundle's depgraph:
+
+```
+python main.py <mesh.forge> --model <UID>     
+# e.g. datapc64_mtx_bnk_mesh --model 5F64724838
+```
+
+This writes `<UID>.obj` + `<UID>.mtl` + the linked texture PNGs to the output
+folder. Open the `.obj` in Blender (Material Preview shading) and it imports
+with the diffuse/normal already wired up.
 
 ## Note
 

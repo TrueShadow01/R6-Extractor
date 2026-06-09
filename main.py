@@ -1,10 +1,14 @@
 import os
 import argparse
 import struct
+import glob
 from src.parser import read_container, CONTAINER_MAGIC, parse_header
 from src.texture import save_png, TEXMAPDATA_MAGIC
 from src.audio import extract_wems, wem_to_wav
 from src.mesh import save_obj, COMPILED_MESH
+from src.depgraph import load_depgraph
+from src.index import build_index
+from src.model import export_model
 
 # Find a .forge file: use the path given or look it up under GAME_DIR set in config.py
 # Resolves bare archive names (without .forge extension)
@@ -29,6 +33,13 @@ def find_containers(data):
         yield j
         i = j + 8
 
+def bundle_files(forge_path):
+    d = os.path.dirname(forge_path)
+    prefix = os.path.basename(forge_path).split("_bnk_")[0]
+    forges = glob.glob(os.path.join(d, prefix + "_bnk_*mesh.forge")) \
+            + glob.glob(os.path.join(d, prefix + "_bnk_*textures*.forge"))
+    return sorted(set(forges)), os.path.join(d, prefix + ".depgraphbin")
+
 def extract(forge, out_dir, want_wav=False, verbose=False):
     with open(forge, "rb") as f:
         data = f.read()
@@ -42,7 +53,7 @@ def extract(forge, out_dir, want_wav=False, verbose=False):
                 continue
             if TEXMAPDATA_MAGIC in payload: # texture
                 try:
-                    w, h, fmt = save_png(os.path.join(out_dir, f"tex_{off:X}.png"), payload)
+                    w, h, fmt, _ = save_png(os.path.join(out_dir, f"tex_{off:X}.png"), payload)
                     tex += 1
                     if verbose:
                         print(f"tex 0x{off:X}: {w}x{h} fmt={fmt}")
@@ -81,6 +92,7 @@ def main():
     ap.add_argument("-o", "--out", default="output", help="output directory (default: output)")
     ap.add_argument("-v", "--verbose", action="store_true", help="print every asset, not just the summary")
     ap.add_argument("--wav", action="store_true", help="Convert extracted .wem files to .wav files (requires vgmstream-cli on PATH)")
+    ap.add_argument("--model", metavar="UID", help="export one Mesh UID (hex) as OBJ+MTL+textures via the depgraph")
     args = ap.parse_args()
 
     forge = resolve_forge(args.forge)
@@ -90,6 +102,15 @@ def main():
     with open(forge, "rb") as f:
         data = f.read()
     
+    if args.model:
+        uid = int(args.model, 16)
+        forges, depgraph_path = bundle_files(forge)
+        children, _ = load_depgraph(depgraph_path)
+        index = build_index(forges)
+        nv, nf, diff, norm = export_model(uid, children, index, args.out)
+        print(f"Model {uid:016X}: {nv} verts, {nf} tris -> {args.out} (diffuse={diff}, normal={norm})")
+        return
+
     tex, mesh, wem, skip = extract(forge, args.out, args.wav, args.verbose)
     print(f"{tex} textures, {mesh} meshes, {wem} .wem files -> {args.out} ({skip} skipped)")
 

@@ -38,7 +38,8 @@ def parse_texture(payload):
         blocks = (w // 4) * (h // 4)
         if surf == blocks * 8 or surf == blocks * 16: # dimensions confirmed by size
             fmt = int.from_bytes(payload[dpos + 32:dpos + 36], "little")
-            return w, h, fmt, payload[pixel_start:dpos]
+            textype = int.from_bytes(payload[dpos + 44:dpos + 48] ,"little")
+            return w, h, fmt, textype, payload[pixel_start:dpos]
     
     raise ValueError("No Full Tier Surface (partial tier or unrecognized)")
 
@@ -60,10 +61,10 @@ def _dds_dx10(width, height, surface, dxgi):
 
 
 def save_png(path, payload):
-    w, h, fmt, surface = parse_texture(payload)
+    w, h, fmt, textype, surface = parse_texture(payload)
     if fmt not in FORMATS:
         raise ValueError(f"Unsupported Format Code {fmt} ({w}x{h})")
     dxgi, _ = FORMATS[fmt]
     dds = _dds_dx10(w, h, surface, dxgi)
     Image.open(io.BytesIO(dds)).convert("RGBA").save(path)
-    return w, h, fmt
+    return w, h, fmt, textype
