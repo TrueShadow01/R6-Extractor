@@ -5,8 +5,6 @@ A tool for extracting game assets (meshes, textures, audio) from Ubisoft
 
 ## Status
 
-# Repo will be archived for a unknown timeframe. Reason is that I want to focus on other stuff and therefore will stop developing this for unknown time.
-
 - [x] Parse container header and locate entries
 - [x] Oodle (Kraken) chunk decompression via `oo2core`
 - [x] Reassemble full asset payloads from chunks
