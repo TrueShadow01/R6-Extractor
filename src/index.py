@@ -1,38 +1,172 @@
-import os
-import struct
-from src.parser import CONTAINER_MAGIC
-from src.decompress import oodle_decompress
+"""Validated UID indexing for Rainbow Six Siege Forge archives"""
 
-def first_chunk(data, off):
-    p = off + 15
-    num_chunks = struct.unpack_from("<I", data, p)[0]
-    p += 4
-    u0, p0 = struct.unpack_from("<II", data, p)
-    p += 8 * num_chunks + 4
-    blob = data[p:p + p0]
-    return oodle_decompress(blob, u0) if u0 > p0 else blob
+from __future__ import annotations
 
-def read_meta(payload):
-    name_len = struct.unpack_from("<H", payload, 0)[0]
-    p = 8 + name_len
-    file_type, = struct.unpack_from("<I", payload, p)
-    uid,       = struct.unpack_from("<Q", payload, p + 4)
-    return uid, file_type
+from collections import Counter
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Iterable, Iterator
 
-def build_index(forge_paths):
-    index = {}
-    for path in forge_paths:
-        with open(path, "rb") as f:
-            data = f.read()
-        i = 0
-        while True:
-            j = data.find(CONTAINER_MAGIC, i)
-            if j == -1:
-                break
-            i = j + 8
+from src.metadata import (
+    FileMetadata,
+    InvalidFileMetadata,
+    parse_file_metadata
+)
+from src.parser import (
+    ContainerInfo,
+    ForgeFormatError,
+    iter_container_offsets,
+    map_archive,
+    parse_container,
+    read_first_chunk
+)
+
+@dataclass
+class AssetRecord:
+    uid: int
+    file_type: int
+    archive: Path
+    container_offset: int
+    container_size: int
+    unpacked_size: int
+    metadata: FileMetadata
+
+    @property
+    def key(self) -> str:
+        return(f"{self.archive.name}: {self.container_offset:016X}")
+
+    @property
+    def legacy_location(self) -> tuple[int, str, int]:
+        """Return the tuple expected by the existing model exporter"""
+
+        return (
+            self.file_type,
+            str(self.archive),
+            self.container_offset
+        )
+
+@dataclass
+class ScanDiagnostics:
+    containers: int = 0
+    assets: int = 0
+    auxiliary_containers: int = 0
+    invalid_containers: int = 0
+    metadata_errors: int = 0
+    errors: Counter[str] = field(default_factory=Counter)
+
+    def add_error(self, category: str, error: Exception) -> None:
+        message = (f"{category}: {type(error).__name__}: {error}")
+        self.errors[message] += 1
+
+@dataclass(frozen=True)
+class AssetIndex:
+    by_uid: dict[int, list[AssetRecord]] = field(default_factory=dict)
+    diagnostics: dict[Path, ScanDiagnostics] = field(default_factory=dict)
+
+    def add(self, record: AssetRecord) -> None:
+        self.by_uid.setdefault(record.uid, []).append(record)
+
+    def primary(self, uid: int) -> AssetRecord | None:
+        records = self.by_uid.get(uid)
+
+        if not records:
+            return None
+
+        # the old dictionary index retained the last occurrence
+        return records[-1]
+
+    def records(self) -> Iterator[AssetRecord]:
+        for records in self.by_uid.values():
+            yield from records
+
+    def __len__(self) -> int:
+        return len(self.by_uid)
+
+    def __contains__(self, uid: int) -> bool:
+        return uid in self.by_uid
+
+    def __getitem__(self, uid: int) -> tuple[int, str, int]:
+        record = self.primary(uid)
+
+        if record is None:
+            raise KeyError(uid)
+
+        return record.legacy_location
+
+    def get(self, uid: int, default=None):
+        record = self.primary(uid)
+
+        if record is None:
+            return default
+
+        return record.legacy_location
+
+    @property
+    def total_records(self) -> int:
+        return sum(len(records) for records in self.by_uid.values())
+
+    @property
+    def duplicate_uids(self) -> int:
+        return sum(1 for records in self.by_uid.values() if len(records) > 1)
+
+def _record_from_container(archive: Path, data, container: ContainerInfo) -> AssetRecord:
+    first_chunk = read_first_chunk(data, container)
+    metadata = parse_file_metadata(first_chunk)
+
+    return AssetRecord(
+        uid=metadata.uid,
+        file_type=metadata.file_type,
+        archive=archive,
+        container_offset=container.offset,
+        container_size=(container.end_offset - container.offset),
+        unpacked_size=container.unpacked_size,
+        metadata=metadata
+    )
+
+def scan_archive(path: str | Path, diagnostics: ScanDiagnostics | None = None) -> Iterator[AssetRecord]:
+    """Yield every validated file asset from one archive"""
+
+    archive = Path(path).resolve()
+
+    if diagnostics is None:
+        diagnostics = ScanDiagnostics()
+
+    with map_archive(archive) as data:
+        for offset in iter_container_offsets(data):
+            diagnostics.containers += 1
+
             try:
-                uid, ft = read_meta(first_chunk(data, j))
-                index[uid] = (ft, path, j)
-            except Exception:
-                pass
+                container = parse_container(data, offset)
+            except ForgeFormatError as error:
+                diagnostics.invalid_containers += 1
+                diagnostics.add_error("container", error)
+                continue
+
+            try:
+                record = _record_from_container(archive, data, container)
+            except InvalidFileMetadata:
+                # Companion metadata containers are expected and
+                # are deliberately excluded from the asset index
+                diagnostics.auxiliary_containers += 1
+                continue
+            except Exception as error:
+                diagnostics.metadata_errors += 1
+                diagnostics.add_error("metadata", error)
+                continue
+
+            diagnostics.assets += 1
+            yield record
+
+
+def build_index(forge_paths: Iterable[str | Path]) -> AssetIndex:
+    index = AssetIndex()
+
+    for path in forge_paths:
+        archive = Path(path).resolve()
+        diagnostics = ScanDiagnostics()
+        index.diagnostics[archive] = diagnostics
+
+        for record in scan_archive(archive, diagnostics):
+            index.add(record)
+
     return index

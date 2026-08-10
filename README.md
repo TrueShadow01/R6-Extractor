@@ -1,119 +1,200 @@
-# Forge Extractor
+# Rainbow Six Siege Forge Extractor
 
-A tool for extracting game assets (meshes, textures, audio) from Ubisoft
-"Scimitar" `.forge` archives (AnvilNext 2.0 engine).
+A Python toolkit for extracting assets from Rainbow Six Siege `.forge`
+archives.
 
-## Status
+The main goal is to export complete models for Blender including geometry,
+materials, textures, skeletons, weights and animations.
 
-- [x] Parse container header and locate entries
-- [x] Oodle (Kraken) chunk decompression via `oo2core`
-- [x] Reassemble full asset payloads from chunks
-- [x] Identify asset types by magic / structure
-- [x] Textures -> PNG (BC1/BC3/BC4/BC5, format auto-detected, full-tier)
-- [x] Audio -> .wem (raw soundmedia + embedded in soundbank containers),
-  optional .wav via vgmstream
-- [x] Meshes -> OBJ (positions, UVs, normals, LOD0 only, float + packed-int16 formats)
-- [x] Mesh <-> texture linking via the depgraph (`.depgraphbin`), with textures
-  assigned to material roles (diffuse/normal) from their declared type
-- [x] Textured model export: one Mesh UID -> OBJ + MTL + PNGs, ready to drag into Blender
+Unsupported assets are preserved as decompressed binary files instead of being
+silently discarded.
 
-Known limitations:
-- Streamed/virtual-texture tiers (a minority of texture entries) decode blank,
-  they use a tiled/paged layout, not the standard surface+trailer one. A model
-  whose diffuse is streamed exports with normal detail but no base color.
-- Model export handles a single `CompiledMeshObject`; composite meshes
-  (sub-mesh / attachment children) and non-LOD0 vertices are not yet merged in.
+## Current support
 
-## Format notes
+### Extraction
 
-- `.forge` = header -> entry table -> descriptor section -> payloads
-- Assets are keyed by numeric **UID**, not filenames (filenames are hashed)
-- Container magic (u64 LE): `0x1015FA9957FBAA37`
-- Each entry holds one or more **Datablock** chunks. Per chunk the table stores
-  `[unpacked_size, packed_size]`; `unpacked > packed` means the chunk is
-  Oodle-compressed (Kraken, header byte `0x8C`), otherwise it's stored raw
-- Textures: format code in the trailer (2=BC1, 3=BC1 sRGB, 5=BC3, 6=BC5, 14=BC4);
-  decoded by wrapping the surface in a DX10 DDS header and letting Pillow decode.
-  The trailer also stores the texture's semantic role (`texType`: 0=Diffuse,
-  1=Normal, 2=Specular, ...), so material slots are assigned from the data
-- Asset links: each bundle ships a `.depgraphbin` holding a flat parent->child
-  UID table. A mesh's textures are found by walking that graph from the mesh UID
-  (Mesh -> CompiledMeshObject + texture-map tiers). The UID's top byte tags its
-  kind (e.g. mesh vs texture data), which helps classify references.
-- Meshes: `CompiledMesh` magic `0xFC9E1595`, vertices start right after the header
-  fields. Positions are float32x3 (vertLen 0x24/0x28/0x2C) or packed 4xint16
-  `x, y, z, scale -> xyz*scale/32767` (vertLen 0x18/0x1C). Planar layout: positions,
-  normals, tangents, binormals, UVs (half-float pairs). Faces are a global triangle
-  list, the mesh has multiple LODs, so only LOD0 (first `numIslands` ObjectHeaders)
-  is exported. OBJ output includes `v`/`vt`/`vn`.
-- Audio: Wwise `.wem` (RIFF/WAVE, Wwise Vorbis). `soundmedia` forges store them raw
-  and uncompressed, `soundbank` forges store them inside Oodle containers. Extraction
-  scans decompressed payloads for `RIFF`/`WAVE` and dumps each stream, conversion to
-  `.wav` is delegated to `vgmstream-cli`
-- Offsets and format details shift between game versions, expect to re-verify
-  after updates
+- Scimitar archive and container parsing
+- Oodle Kraken decompression
+- Bounded-memory archive scanning
+- Validated asset UID and file-type indexing
+- Lossless raw extraction
+- Collision-safe output names
+- JSONL extraction manifest
+- Interrupted-extraction resume support
+- Atomic output writes
+
+### Conversion
+
+- BC1, BC3, BC4 and BC5 textures to PNG
+- Wwise audio to WEM
+- Optional WEM-to-WAV conversion with vgmstream
+- Float and packed-position meshes
+- UV coordinates and normals
+- LOD0 OBJ export
+- Basic OBJ, MTL and linked-texture model export
+
+## Major limitations
+
+- The new extractor is not connected to `main.py` yet
+- The legacy CLI still reads an entire archive into memory
+- Streamed and virtual textures are not reconstructed
+- Composite models currently export only one geometry child
+- Material support is limited
+- Skeletons, weights and animations are not yet supported
+- Model export currently requires a known Mesh UID
 
 ## Requirements
 
-- Python 3.x (with `Pillow` for texture decoding)
-- `oo2core_*_win64.dll` placed in the project root (the Oodle runtime, sourced
-  from any game that ships it, not redistributed here)
-- `vgmstream-cli` is shipped with the repo (in the `vgmstream-win64/` folder) and is only
-  needed for `--wav` audio conversion
+- Windows
+- 64-bit Python 3.10 or newer
+- Pillow
+- A compatible `oo2core_*_win64.dll`
+- vgmstream for optional WAV conversion
 
-## Setup
+Install the Python dependency:
 
-Optional: create a `config.py` in the project root with your local game install
-path.<br>This lets you pass a bare archive name instead of a full path (see Usage).
-Without it, you need to pass the full path.
+```powershell
+py -3 -m pip install -r requirements.txt
+```
+
+Place the Oodle DLL in the project root:
+
+```text
+R6\oo2core_8_win64.dll
+```
+
+Alternatively:
+
+```powershell
+$env:R6_OODLE_DLL = "Path\to\oo2core_8_win64.dll"
+```
+
+## Game directory
+
+Create `config.py` in the project root:
 
 ```python
-# config.py
-GAME_DIR = r"Path To Tom Clancy's Rainbow Six Siege"
+GAME_DIR = r"Path\to\Tom Clancy's Rainbow Six Siege"
 ```
 
-Audio Conversion to .wav files: Reference `vgmstream-cli.exe` at `vgmstream-win64` in your PATH to be able to convert the .wem files to .wav
+This file is ignored by Git.
 
-## Usage
+## Legacy CLI
 
-Point it at any `.forge`; it walks the containers and dispatches each payload by
-type (textures -> PNG, audio -> .wem), so one command handles every archive kind:
+Extract one archive:
 
-```
-python main.py <path-to.forge>                            # extract to ./output
-python main.py <path-to.forge> -o <output-folder-name>    # custom output directory
-python main.py <path-to.forge> -v                         # extracts every asset, not just a summary
-python main.py <path-to.forge> --wav                      # also convert .wem -> .wav (needs vgmstream-cli)
+```powershell
+py -3 -B main.py <archive.forge> -o output
 ```
 
-With `config.py` set, a bare archive name (with or without the `.forge`
-extension) is resolved against `GAME_DIR`:
+Use a bare archive name when `GAME_DIR` is configured:
 
-```
-python main.py <path-to-forge-texture-file>                             # textures
-python main.py <path-to-forge-soundmedia-or-soundbank-file> --wav       # audio conversion to .wav file
-python main.py <path-to-forge-soundmedia-or-soundbank-file>             # audio conversion to .wem file
-python main.py <path-to-forgefile> -v                                   # enable verbose output (-v or --v)
+```powershell
+py -3 -B main.py datapc64_mtx_bnk_mesh
 ```
 
-Prints a summary like `N textures, X meshes, M .wem files -> output (K skipped)`.<br>Skipped entries
-are unsupported payloads or streamed texture tiles (see limitation above).
+Extract audio and request WAV conversion:
 
-### Textured model export
-
-Point at a mesh `.forge` file and pass a Mesh UID (hex) to export one model with its
-textures resolved and applied via the bundle's depgraph:
-
-```
-python main.py <mesh.forge> --model <UID>     
-# e.g. datapc64_mtx_bnk_mesh --model 5F64724838
+```powershell
+py -3 -B main.py <sound-archive.forge> --wav
 ```
 
-This writes `<UID>.obj` + `<UID>.mtl` + the linked texture PNGs to the output
-folder. Open the `.obj` in Blender (Material Preview shading) and it imports
-with the diffuse/normal already wired up.
+Export one model using a hexadecimal Mesh UID:
 
-## Note
+```powershell
+py -3 -B main.py datapc64_mtx_bnk_mesh --model 5F64724838 -o output\model
+```
 
-For personal datamining only. Extracted assets are copyrighted; do not
-redistribute them.
+The model command currently produces OBJ, MTL, and linked PNG files.
+
+## Lossless raw extraction
+
+The new extraction API preserves every validated asset:
+
+```python
+import os
+
+import config
+
+from src.extractor import extract_raw_archive
+
+archive = os.path.join(
+    config.GAME_DIR,
+    "datapc64_mtx_bnk_000000001_mesh.forge",
+)
+
+summary = extract_raw_archive(
+    archive,
+    r"D:\R6\output\raw",
+    resume=True,
+)
+
+print(summary)
+```
+
+Output files use this format:
+
+```text
+<UID>_<FILETYPE>_<CONTAINER_OFFSET>.bin
+```
+
+Extraction results are recorded in:
+
+```text
+output/raw/manifest.jsonl
+```
+
+A completed asset is resumed only when its output still exists and has the
+expected decompressed size.
+
+## Blender roadmap
+
+1. Discover model UIDs automatically
+2. Validate all supported vertex layouts
+3. Assemble every geometry child belonging to a model
+4. Export static models as GLB
+5. Resolve textures and PBR materials
+6. Decode skeletons and skinning weights
+7. Export rigged models
+8. Decode and export animations
+9. Add bulk model export
+
+OBJ will remain available for diagnostics but GLB will become the preferred
+Blender format.
+
+## Verified smoke test
+
+`datapc64_mtx_bnk_000000001_mesh.forge` currently produces:
+
+```text
+102 containers
+51 file assets
+51 companion containers
+51 extracted raw assets
+0 failures
+0 scan errors
+```
+
+A second run resumes all 51 assets without rewriting them.
+
+## Tests
+
+Run the synthetic foundation tests with:
+
+```powershell
+py -3 -B -m unittest discover -s tests -v
+```
+
+The tests contain no game assets and do not require Oodle.
+
+## Legal notice
+
+This project is intended for personal research and interoperability work.
+
+Rainbow Six Siege and its assets are owned by Ubisoft. Do not commit or
+redistribute extracted assets. The proprietary Oodle runtime must not be
+committed or redistributed.
+
+## License
+
+See [LICENSE](LICENSE)
