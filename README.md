@@ -35,8 +35,7 @@ silently discarded.
 
 ## Major limitations
 
-- The new extractor is not connected to `main.py` yet
-- The legacy CLI still reads an entire archive into memory
+- The current OBJ model exporter still uses the older archive-loading path
 - Streamed and virtual textures are not reconstructed
 - Composite models currently export only one geometry child
 - Material support is limited
@@ -79,33 +78,80 @@ GAME_DIR = r"Path\to\Tom Clancy's Rainbow Six Siege"
 
 This file is ignored by Git.
 
-## Legacy CLI
+## CLI
 
-Extract one archive:
-
-```powershell
-py -3 -B main.py <archive.forge> -o output
-```
-
-Use a bare archive name when `GAME_DIR` is configured:
+Inspect one archive without extracting:
 
 ```powershell
-py -3 -B main.py datapc64_mtx_bnk_mesh
+py -3 -B main.py scan <archive.forge>
 ```
 
-Extract audio and request WAV conversion:
+Scan every Forge archive und `GAME_DIR`:
 
 ```powershell
-py -3 -B main.py <sound-archive.forge> --wav
+py -3 -B main.py scan --all
 ```
 
-Export one model using a hexadecimal Mesh UID:
+Losslessly extract one archive:
 
 ```powershell
-py -3 -B main.py datapc64_mtx_bnk_mesh --model 5F64724838 -o output\model
+py -3 -B main.py extract <archive.forge> -o output/raw
 ```
 
-The model command currently produces OBJ, MTL, and linked PNG files.
+Resume is enabled by default. Use `--no-resume` to force re-extraction.
+
+Discover model UIDs and geometry-part counts:
+
+```powershell
+py -3 -B main.py models <archive.forge>
+```
+
+Show only composite models:
+
+```powershell
+py -3 -B main.py models <archive.forge> --minimum-parts 2
+```
+
+Export the complete model catalog as JSON:
+
+```powershell
+py -3 -B main.py models datapc64_mtx_bnk_mesh --json-output output/datapc64_mtx_models.json
+```
+
+Run the current OBJ model exporter:
+
+```powershell
+py -3 -B main.py model <archive.forge> --uid <modelUID> -o output/model
+```
+
+The current OBJ exporter still handles only one geometry child and uses the older archive-loading path. It will be replaced before composite or GLB export.
+
+## Audio extraction and conversion
+
+Siege audio commonly uses Wwise WEM streams. The existing audio module can find embedded `RIFF/WAVE` streams in decompressed asset payloads.
+
+Extract WEM files from a raw `.bin` asset:
+
+```python
+from pathlib import Path
+
+from src.audio import extract_wems
+
+payload = Path(r"output/raw/<archive/<asset>.bin").read_bytes()
+
+paths = extract_wems(payload, r"output/audio")
+
+for path in paths:
+  print(path)
+```
+
+Convert one WEM file to WAV with the bundled vgmstream executable:
+
+```powershell
+.\vgmstream-win64\vgmstream-cli.exe -o output/audio/sound.wav output/audio/sound.wem
+```
+
+The new CLI does not yet expose WEM extraction or WAV conversion directly. A future `audio` command will connect the existing audio module and bundled vgmstream executable to the main CLI.
 
 ## Lossless raw extraction
 
