@@ -7,7 +7,7 @@ FLOAT_VERT_LENS = (0x24, 0x28, 0x2C) # float 32 position layouts
 PACKED_VERT_LENS = (0x18, 0x1C) # int16 + scale packed positions
 
 # bytes before UV block (planar): position + normal + tangent + binormal (+ color)
-_PRE_UV = {0x24: 24, 0x28: 24, 0x2C: 24, 0x18: 12, 0x1C: 16}
+_PRE_UV = {0x24: 24, 0x28: 24, 0x2C: 24, 0x18: 20, 0x1C: 24}
 
 # Decode mesh payload
 def read_mesh(payload):

@@ -242,17 +242,20 @@ def command_model(args: argparse.Namespace) -> int:
     children, _ = load_depgraph(depgraph)
     index = build_index(archives)
 
-    vertices, faces, diffuse, normal = (
-        export_model(uid, children, index, args.output)
-    )
+    result = export_model(uid, children, index, args.output)
 
 
-    print(f"Model: {uid:016X}")
-    print(f"Vertices: {vertices}")
-    print(f"Triangles: {faces}")
-    print(f"Diffuse: {diffuse}")
-    print(f"Normal: {normal}")
-    print(f"Output: {Path(args.output).resolve()}")
+    print(f"Model: {result.model_uid:016X}")
+    print(f"Parts: {result.part_count}")
+    print(f"Vertices: {result.vertex_count}")
+    print(f"Triangles: {result.triangle_count}")
+    print(f"Textures: {result.texture_count}")
+    print(f"Diffuse: {result.diffuse}")
+    print(f"Normal: {result.normal}")
+    print(f"Specular: {result.specular}")
+    print(f"OBJ: {result.obj_path}")
+    print(f"MTL: {result.mtl_path}")
+    print(f"glTF: {result.gltf_path}")
 
     return 0
 
@@ -285,7 +288,7 @@ def build_parser() -> argparse.ArgumentParser:
     models.add_argument("-v", "--verbose", action="store_true")
     models.set_defaults(handler=command_models)
 
-    model = commands.add_parser("model", help="export one model as OBJ")
+    model = commands.add_parser("model", help="export one model as OBJ and glTF")
     model.add_argument("input", help="mesh Forge archive")
     model.add_argument("--uid", required=True, help="hexadecimal Mesh UID")
     model.add_argument("-o", "--output", default="output/model")

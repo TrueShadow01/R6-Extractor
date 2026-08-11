@@ -30,17 +30,20 @@ silently discarded.
 - Optional WEM-to-WAV conversion with vgmstream
 - Float and packed-position meshes
 - UV coordinates and normals
-- LOD0 OBJ export
-- Basic OBJ, MTL and linked-texture model export
+- Composite LOD0 OBJ and MTL export
+- External glTF 2.0 export with binary buffers
+- Diffuse and normal texture assignment
+- Specular texture relationships preserved as metadata
 
 ## Major limitations
 
-- The current OBJ model exporter still uses the older archive-loading path
 - Streamed and virtual textures are not reconstructed
-- Composite models currently export only one geometry child
-- Material support is limited
+- Packed material and specular channels are not decoded yet
+- Cross-bundle dependencies such as `ondemand` metadata referencing `merged` assets are not resolved yet
+- Only LOD0 geometry is exported
 - Skeletons, weights and animations are not yet supported
-- Model export currently requires a known Mesh UID
+- Model export requires a known Mesh UID
+- GLB export is not available yet
 
 ## Requirements
 
@@ -118,13 +121,13 @@ Export the complete model catalog as JSON:
 py -3 -B main.py models datapc64_mtx_bnk_mesh --json-output output/datapc64_mtx_models.json
 ```
 
-Run the current OBJ model exporter:
+Export one composite model as OBJ and glTF
 
 ```powershell
 py -3 -B main.py model <archive.forge> --uid <modelUID> -o output/model
 ```
 
-The current OBJ exporter still handles only one geometry child and uses the older archive-loading path. It will be replaced before composite or GLB export.
+Every direct geometry child is assembled into the export. Decodable diffuse, normal and specular textures are extracted alongside the model. OBJ remains available for diagnostics, glTF is the preferred Blender import format.
 
 ## Audio extraction and conversion
 
@@ -195,18 +198,16 @@ expected decompressed size.
 
 ## Blender roadmap
 
-1. Discover model UIDs automatically
-2. Validate all supported vertex layouts
-3. Assemble every geometry child belonging to a model
-4. Export static models as GLB
-5. Resolve textures and PBR materials
-6. Decode skeletons and skinning weights
-7. Export rigged models
-8. Decode and export animations
-9. Add bulk model export
+1. Resolve cross-bundle `ondemand`and `merged`assets
+2. Validate the remaining vertex layouts
+3. Decode packed PBR material channels
+4. Add GLB export
+5. Decode skeletons and skinning weights
+6. Export rigged models and animations
+7. Add bulk model export
 
-OBJ will remain available for diagnostics but GLB will become the preferred
-Blender format.
+OBJ remains available for diagnostics, while glTF and eventually GLB are the preferred
+Blender formats.
 
 ## Verified smoke test
 

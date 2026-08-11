@@ -66,5 +66,17 @@ def save_png(path, payload):
         raise ValueError(f"Unsupported Format Code {fmt} ({w}x{h})")
     dxgi, _ = FORMATS[fmt]
     dds = _dds_dx10(w, h, surface, dxgi)
-    Image.open(io.BytesIO(dds)).convert("RGBA").save(path)
+    with Image.open(io.BytesIO(dds)) as source:
+        image = source.convert("RGBA")
+
+    # Some Siege diffuse maps contain valid RGB texture but use a
+    # zero unused alpha channel. Blender premultiplies those
+    # pixels to black, only fully-zero diffuse alpha channels
+    # should be opaque. Preserve alpha when it contains real data.
+
+    if (textype == 0 and image.getextrema()[3] == (0, 0)):
+        image.putalpha(255)
+
+    image.save(path)
+
     return w, h, fmt, textype
