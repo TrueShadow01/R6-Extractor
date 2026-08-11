@@ -60,6 +60,31 @@ def resolve_input(value: str, *, allow_directory: bool = True) -> Path:
 
     raise FileNotFoundError(f"Input not found: {value}")
 
+def resolve_depgraph(value: str | Path) -> Path:
+    direct = Path(value).expanduser()
+    candidates = [direct]
+
+    if not str(direct).lower().endswith(".depgraphbin"):
+        candidates.append(Path(f"{direct}.depgraphbin"))
+
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate.resolve()
+
+    game_dir = game_directory()
+
+    if game_dir is not None:
+        for candidate in candidates:
+            if candidate.is_absolute():
+                continue
+
+            game_candidate = game_dir / candidate
+
+            if game_candidate.is_file():
+                return game_candidate.resolve()
+
+    raise FileNotFoundError(f"Dependency graph was not found: {value}")
+
 def discover_archives(value: str | None, *, all_archives: bool, pattern: str) -> tuple[Path, ...]:
     if value is None:
         if not all_archives:
@@ -82,7 +107,7 @@ def discover_archives(value: str | None, *, all_archives: bool, pattern: str) ->
 
     return archives
 
-def bundle_files(forge_path: str | Path) -> tuple[list[Path], Path]:
+def bundle_files(forge_path: str | Path, *, depgraph_path: str | Path | None=None, archive_only: bool = False) -> tuple[list[Path], Path]:
     forge_path = Path(forge_path).resolve()
 
     if "_bnk_" not in forge_path.name:
@@ -91,16 +116,23 @@ def bundle_files(forge_path: str | Path) -> tuple[list[Path], Path]:
     prefix = forge_path.name.split("_bnk_", 1)[0]
     directory = forge_path.parent
 
-    mesh_files = list(directory.glob(f"{prefix}_bnk_*mesh.forge"))
-    texture_files = list(directory.glob(f"{prefix}_bnk_*textures*.forge"))
-    archives = sorted(set(mesh_files + texture_files))
-    depgraph = directory / f"{prefix}.depgraphbin"
+    if archive_only:
+        archives = [forge_path]
+    else:
+        mesh_files = list(directory.glob(f"{prefix}_bnk_*mesh.forge"))
+        texture_files = list(directory.glob(f"{prefix}_bnk_*textures*.forge"))
+        archives = sorted(set(mesh_files + texture_files))
 
     if not archives:
         raise FileNotFoundError(f"No bundle archives found for {prefix}")
 
-    if not depgraph.is_file():
-        raise FileNotFoundError(f"Dependency graph not found: {depgraph}")
+    if depgraph_path is None:
+        depgraph = directory / f"{prefix}.depgraphbin"
+
+        if not depgraph.is_file():
+            raise FileNotFoundError(f"Dependency graph not found: {depgraph}")
+    else:
+        depgraph = resolve_depgraph(depgraph_path)
 
     return archives, depgraph
 
@@ -237,7 +269,7 @@ def command_model(args: argparse.Namespace) -> int:
 
     uid = int(uid_text, 16)
 
-    archives, depgraph = bundle_files(archive)
+    archives, depgraph = bundle_files(archive, depgraph_path=args.depgraph, archive_only=args.archive_only)
 
     children, _ = load_depgraph(depgraph)
     index = build_index(archives)
@@ -292,6 +324,8 @@ def build_parser() -> argparse.ArgumentParser:
     model.add_argument("input", help="mesh Forge archive")
     model.add_argument("--uid", required=True, help="hexadecimal Mesh UID")
     model.add_argument("-o", "--output", default="output/model")
+    model.add_argument("--depgraph", help="dependency graph path or GAME_DIR filename")
+    model.add_argument("--archive-only", action="store_true", help="index only the input mesh archive")
     model.set_defaults(handler=command_model)
 
     return parser

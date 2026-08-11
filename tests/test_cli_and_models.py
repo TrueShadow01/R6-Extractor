@@ -10,7 +10,7 @@ from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
 
-from src.cli import main
+from src.cli import main, bundle_files
 from src.index import (
     AssetIndex,
     AssetRecord,
@@ -115,6 +115,23 @@ class CliTests(unittest.TestCase):
             self.assertIn("Extracted: 0", second_output.getvalue())
             self.assertIn("Resumed: 1", second_output.getvalue())
 
+    def test_cross_bundle_depgraph_with_archive_only(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+
+            archive = root / "datapc64_merged_bnk_mesh.forge"
+            sibling = root / "datapc64_merged_bnk_textures.forge"
+            depgraph = root / "datapc64_ondemand.depgraphbin"
+
+            archive.write_bytes(b"mesh")
+            sibling.write_bytes(b"texture")
+            depgraph.write_bytes(b"dependencies")
+
+            archives, selected_depgraph = bundle_files(archive, depgraph_path=depgraph, archive_only=True)
+
+            self.assertEqual(archives, [archive.resolve()])
+            self.assertNotIn(sibling.resolve(), archives)
+            self.assertEqual(selected_depgraph, depgraph.resolve())
 
 class ModelDiscoveryTests(unittest.TestCase):
     def make_record(self, uid: int, file_type: int, size: int) -> AssetRecord:

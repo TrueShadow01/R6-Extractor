@@ -1,51 +1,38 @@
 # Rainbow Six Siege Forge Extractor
 
 A Python toolkit for extracting assets from Rainbow Six Siege `.forge`
-archives.
+archives and exporting complete models for Blender.
 
-The main goal is to export complete models for Blender including geometry,
-materials, textures, skeletons, weights and animations.
-
-Unsupported assets are preserved as decompressed binary files instead of being
-silently discarded.
+The long-term goal is to support geometry, materials, textures, skeletons, weights and animations. Unsupported assets are preserved as decompressed binary files.
 
 ## Current support
 
-### Extraction
-
 - Scimitar archive and container parsing
 - Oodle Kraken decompression
-- Bounded-memory archive scanning
-- Validated asset UID and file-type indexing
-- Lossless raw extraction
-- Collision-safe output names
-- JSONL extraction manifest
-- Interrupted-extraction resume support
-- Atomic output writes
-
-### Conversion
-
+- Bounded-memory scanning and lossless raw extraction
+- Collision-safe filenames, JSONL manifests and extraction resume
 - BC1, BC3, BC4 and BC5 textures to PNG
-- Wwise audio to WEM
+- Wwise audio extraction to WEM
 - Optional WEM-to-WAV conversion with vgmstream
-- Float and packed-position meshes
-- UV coordinates and normals
-- Composite LOD0 OBJ and MTL export
-- External glTF 2.0 export with binary buffers
+- Float and packed-position meshes with UVs and normals
+- Composite LOD0 OBJ, MTL and glTF 2.0 export
 - Diffuse and normal texture assignment
-- Specular texture relationships preserved as metadata
+- Specular texture relationships stored as glTF metadata
+- Explicit cross-bundle geometry resolution
 
-## Major limitations
+## Limitations
 
+- Automatic cross-bundle texture discovery is not available yet
 - Streamed and virtual textures are not reconstructed
-- Packed material and specular channels are not decoded yet
-- Cross-bundle dependencies such as `ondemand` metadata referencing `merged` assets are not resolved yet
+- Packed PBR and specular channels are not decoded
 - Only LOD0 geometry is exported
-- Skeletons, weights and animations are not yet supported
-- Model export requires a known Mesh UID
-- GLB export is not available yet
+- Skeletons, weights and animations are not supported
+- Model export requires a known UID
+- GLB export is not available
 
-## Requirements
+## Setup
+
+Requirements:
 
 - Windows
 - 64-bit Python 3.10 or newer
@@ -53,7 +40,7 @@ silently discarded.
 - A compatible `oo2core_*_win64.dll`
 - vgmstream for optional WAV conversion
 
-Install the Python dependency:
+Install Python dependency:
 
 ```powershell
 py -3 -m pip install -r requirements.txt
@@ -65,174 +52,120 @@ Place the Oodle DLL in the project root:
 R6\oo2core_8_win64.dll
 ```
 
-Alternatively:
+Alternatively, set its path:
 
 ```powershell
 $env:R6_OODLE_DLL = "Path\to\oo2core_8_win64.dll"
 ```
 
-## Game directory
-
-Create `config.py` in the project root:
+Create an ignored `config.py` in the project root:
 
 ```python
 GAME_DIR = r"Path\to\Tom Clancy's Rainbow Six Siege"
 ```
 
-This file is ignored by Git.
-
 ## CLI
 
-Inspect one archive without extracting:
-
+**Inspect one archive:**
 ```powershell
 py -3 -B main.py scan <archive.forge>
 ```
 
-Scan every Forge archive und `GAME_DIR`:
-
+**Scan every archive under `GAME_DIR`:**
 ```powershell
 py -3 -B main.py scan --all
 ```
 
-Losslessly extract one archive:
-
+**Losslessly extract an archive:**
 ```powershell
 py -3 -B main.py extract <archive.forge> -o output/raw
 ```
 
-Resume is enabled by default. Use `--no-resume` to force re-extraction.
-
-Discover model UIDs and geometry-part counts:
-
+**Discover model UIDs:**
 ```powershell
 py -3 -B main.py models <archive.forge>
 ```
 
-Show only composite models:
-
+**Show models with at least two geometry parts:**
 ```powershell
 py -3 -B main.py models <archive.forge> --minimum-parts 2
 ```
 
-Export the complete model catalog as JSON:
-
+**Write the model catalog as JSON:**
 ```powershell
 py -3 -B main.py models datapc64_mtx_bnk_mesh --json-output output/datapc64_mtx_models.json
 ```
 
-Export one composite model as OBJ and glTF
-
+**Export one model as OBJ and glTF:**
 ```powershell
 py -3 -B main.py model <archive.forge> --uid <modelUID> -o output/model
 ```
 
-Every direct geometry child is assembled into the export. Decodable diffuse, normal and specular textures are extracted alongside the model. OBJ remains available for diagnostics, glTF is the preferred Blender import format.
+Resume is enabled by default. Use `--no-resume` to force re-extraction.
 
-## Audio extraction and conversion
+Every direct geometry child is included in a model export. glTF is the preferred Blender import format, OBJ remains available for diagnostics.
 
-Siege audio commonly uses Wwise WEM streams. The existing audio module can find embedded `RIFF/WAVE` streams in decompressed asset payloads.
+### Cross-bundle geometry
 
-Extract WEM files from a raw `.bin` asset:
+Use an explicit dependency graph when metadata and geometry belong to different bundles:
+
+```powershell
+py -3 -B main.py model datapc64_merged_bnk_mesh --depgraph datapc64_ondemand.depgraphbin --archive-only --uid <modelUID> -o output/model
+```
+
+`--archive-only` indexes only the selected Forge archive. This provides fast geometry-only exports without scanning the much larger texture archives.
+
+## Audio
+
+Extract embedded WEM streams from a decompressed asset:
 
 ```python
 from pathlib import Path
 
 from src.audio import extract_wems
 
-payload = Path(r"output/raw/<archive/<asset>.bin").read_bytes()
+payload = Path(r"output/raw/<archive>/<asset>.bin").read_bytes()
 
-paths = extract_wems(payload, r"output/audio")
-
-for path in paths:
+for path in extract_wems(payload, r"output/audio"):
   print(path)
 ```
 
-Convert one WEM file to WAV with the bundled vgmstream executable:
+Convert a WEM file to WAV:
 
 ```powershell
 .\vgmstream-win64\vgmstream-cli.exe -o output/audio/sound.wav output/audio/sound.wem
 ```
 
-The new CLI does not yet expose WEM extraction or WAV conversion directly. A future `audio` command will connect the existing audio module and bundled vgmstream executable to the main CLI.
+Audio conversion is not connected to the main CLI yet.
 
-## Lossless raw extraction
+## Raw extraction output
 
-The new extraction API preserves every validated asset:
-
-```python
-import os
-
-import config
-
-from src.extractor import extract_raw_archive
-
-archive = os.path.join(
-    config.GAME_DIR,
-    "datapc64_mtx_bnk_000000001_mesh.forge",
-)
-
-summary = extract_raw_archive(
-    archive,
-    r"D:\R6\output\raw",
-    resume=True,
-)
-
-print(summary)
-```
-
-Output files use this format:
+Extracted assets use this filename format:
 
 ```text
 <UID>_<FILETYPE>_<CONTAINER_OFFSET>.bin
 ```
 
-Extraction results are recorded in:
+Results are recorded in `output/raw/manifest.jsonl`. An asset is resumed only when its output exists and has the expected decompressed size.
 
-```text
-output/raw/manifest.jsonl
-```
+## Roadmap
 
-A completed asset is resumed only when its output still exists and has the
-expected decompressed size.
-
-## Blender roadmap
-
-1. Resolve cross-bundle `ondemand`and `merged`assets
-2. Validate the remaining vertex layouts
-3. Decode packed PBR material channels
-4. Add GLB export
-5. Decode skeletons and skinning weights
-6. Export rigged models and animations
+1. Build a persistent index for automatic cross-bundle resolution
+2. Add UID-to-name mappings and asset search
+3. Validate the remaining vertex layouts
+4. Reconstruct streamed textures and decode packed PBR channels
+5. Add GLB export
+6. Decode skeletons, weights and animations
 7. Add bulk model export
-
-OBJ remains available for diagnostics, while glTF and eventually GLB are the preferred
-Blender formats.
-
-## Verified smoke test
-
-`datapc64_mtx_bnk_000000001_mesh.forge` currently produces:
-
-```text
-102 containers
-51 file assets
-51 companion containers
-51 extracted raw assets
-0 failures
-0 scan errors
-```
-
-A second run resumes all 51 assets without rewriting them.
+8. Build a desktop asset browser and Blender integration
 
 ## Tests
-
-Run the synthetic foundation tests with:
 
 ```powershell
 py -3 -B -m unittest discover -s tests -v
 ```
 
-The tests contain no game assets and do not require Oodle.
+Tests use synthetic data and do not require game assets or Oodle.
 
 ## Legal notice
 
