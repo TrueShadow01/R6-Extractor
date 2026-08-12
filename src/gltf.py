@@ -23,6 +23,14 @@ class MeshPartLike(Protocol):
     uvs: Sequence[tuple[float, float]]
     normals: Sequence[tuple[float, float, float]]
     faces: Sequence[tuple[int, int, int]]
+    islands: Sequence
+
+@dataclass(frozen=True)
+class MaterialTextures:
+    diffuse: str | None = None
+    normal: str | None = None
+    specular: str | None = None
+    mask: str | None = None
 
 @dataclass
 class BinaryBuffer: 
@@ -94,7 +102,7 @@ def siege_to_gltf_vector(value: tuple[float, float, float]) -> tuple[float, floa
 
     return x, z, -y
 
-def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: str | Path, *, diffuse: str | None = None, normal: str | None=None, specular: str | None=None) -> Path:
+def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: str | Path, *, diffuse: str | None = None, normal: str | None = None, specular: str | None = None, material_textures: Sequence[MaterialTextures] | None = None) -> Path:
     """Write a multi-part glTF using external PNG textures"""
 
     output_directory = Path(output_directory).resolve()
@@ -113,6 +121,7 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
     accessors: list[dict] = []
     meshes: list[dict] = []
     nodes: list[dict] = []
+    used_material_ids: set[int] = set()
 
     def add_accessor(raw: bytes, *, target: int, component_type: int, count: int, value_type: str, name: str, minimum: list[float] | None = None, maximum: list[float] | None = None) -> int:
         view = binary.add(raw, target=target, name=name)
@@ -183,33 +192,67 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
             for index in face
         ]
 
-        if indices and max(indices) >= len(part.vertices):
-            raise ValueError(f"Part {part.uid:016X} contains an out of range face index")
+        island_groups = [
+            (
+                island.material_id,
+                island.faces
+            )
+            for island in part.islands
+            if island.faces
+        ]
+
+        # Models constructed by older callers my not contain island data
+        if not island_groups:
+            island_groups = [
+                (
+                    0,
+                    part.faces
+                )
+            ]
 
         prefix = f"part_{part.uid:016X}"
 
         position_accessor = add_accessor(pack_floats(positions), target=ARRAY_BUFFER, component_type=FLOAT, count=len(part.vertices), value_type="VEC3", name=f"{prefix}_positions", minimum=component_minimums(converted_vertices), maximum=component_maximums(converted_vertices))
         normal_accessor = add_accessor(pack_floats(normals), target=ARRAY_BUFFER, component_type=FLOAT, count=len(part.normals), value_type="VEC3", name=f"{prefix}_normals")
         uv_accessor = add_accessor(pack_floats(texture_coordinates), target=ARRAY_BUFFER, component_type=FLOAT, count=len(part.uvs), value_type="VEC2", name=f"{prefix}_uvs")
-        index_accessor = add_accessor(pack_unsigned_ints(indices), target=ELEMENT_ARRAY_BUFFER, component_type=UNSIGNED_INT, count=len(indices), value_type="SCALAR", name=f"{prefix}_indices")
 
+        primitives = []
+
+        for island_index, (material_id, island_faces) in enumerate(island_groups):
+            if material_id < 0:
+                raise ValueError(f"Part {part.uid:016X} contains negative material ID {material_id}")
+
+            indices = [
+                vertex_index
+                for face in island_faces
+                for vertex_index in face
+            ]
+
+            if indices and max(indices) >= len(part.vertices):
+                raise ValueError(f"Part {part.uid:016X} island {island_index} contains an out of range face index")
+
+            index_accessor = add_accessor(pack_unsigned_ints(indices), target=ELEMENT_ARRAY_BUFFER, component_type=UNSIGNED_INT, count=len(indices), value_type="SCALAR", name=f"{prefix}_island_{island_index}_indices")
+
+            primitives.append(
+                {
+                    "attributes": {
+                        "POSITION": position_accessor,
+                        "NORMAL": normal_accessor,
+                        "TEXCOORD_0": uv_accessor
+                    },
+                    "indices": index_accessor,
+                    "material": material_id,
+                    "mode": TRIANGLES
+                }
+            )
+
+            used_material_ids.add(material_id)
         mesh_index = len(meshes)
 
         meshes.append(
             {
                 "name": prefix,
-                "primitives": [
-                    {
-                        "attributes": {
-                            "POSITION": position_accessor,
-                            "NORMAL": normal_accessor,
-                            "TEXCOORD_0": uv_accessor
-                        },
-                        "indices": index_accessor,
-                        "material": 0,
-                        "mode": TRIANGLES
-                    }
-                ]
+                "primitives": primitives
             }
         )
 
@@ -222,9 +265,15 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
 
     images: list[dict] = []
     textures: list[dict] = []
+    texture_cache: dict[str, int] = {}
 
     def add_texture(filename: str) -> int:
-        image_index= len(images)
+        cached = texture_cache.get(filename)
+
+        if cached is not None:
+            return cached
+
+        image_index = len(images)
 
         images.append(
             {
@@ -242,42 +291,65 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
             }
         )
 
+        texture_cache[filename] = texture_index
+
         return texture_index
 
-    pbr = {
-        "baseColorFactor": [
-            1.0,
-            1.0,
-            1.0,
-            1.0
-        ],
-        "metallicFactor": 0.0,
-        "roughnessFactor": 0.8
-    }
+    fallback_textures = MaterialTextures(
+        diffuse=diffuse,
+        normal=normal,
+        specular=specular
+    )
 
-    material = {
-        "name": "SiegeMaterial",
-        "pbrMetallicRoughness": pbr,
-        "alphaMode": "OPAQUE"
-    }
+    material_count = max(used_material_ids, default=0) + 1
+    materials = []
 
-    if diffuse:
-        pbr["baseColorTexture"] = {
-            "index": add_texture(diffuse)
+    for material_id in range(material_count):
+        if material_textures is not None and material_id < len(material_textures):
+            slot_textures = material_textures[material_id]
+        else:
+            slot_textures = fallback_textures
+
+        pbr = {
+            "baseColorFactor": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+            ],
+            "metallicFactor": 0.0,
+            "roughnessFactor": 0.8
         }
 
-    if normal:
-        material["normalTexture"] = {
-            "index": add_texture(normal),
-            "scale": 1.0
+        material = {
+            "name": f"SiegeMaterial_{material_id}",
+            "pbrMetallicRoughness": pbr,
+            "alphaMode": "OPAQUE"
         }
 
-    if specular:
-        # Preserve the relationship without guessing its packed
-        # channel layout, not connected to PBR yet
-        material["extras"] = {
-            "siegeSpecularTexture": specular
-        }
+        if slot_textures.diffuse:
+            pbr["baseColorTexture"] = {
+                "index": add_texture(slot_textures.diffuse)
+            }
+
+        if slot_textures.normal:
+            material["normalTexture"] = {
+                "index": add_texture(slot_textures.normal),
+                "scale": 1.0
+            }
+
+        extras = {}
+
+        if slot_textures.specular:
+            extras["siegeSpecularTexture"] = slot_textures.specular
+
+        if slot_textures.mask:
+            extras["siegeMaskTexture"] = slot_textures.mask
+
+        if extras:
+            material["extras"] = extras
+
+        materials.append(material)
 
     document = {
         "asset": {
@@ -293,7 +365,7 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
         ],
         "nodes": nodes,
         "meshes": meshes,
-        "materials": [material],
+        "materials": materials,
         "buffers" : [
             {
                 "uri": binary_path.name,

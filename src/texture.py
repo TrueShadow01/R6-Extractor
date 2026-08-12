@@ -2,6 +2,7 @@
 
 import struct
 import io
+import math
 from PIL import Image
 
 POW2 = {64, 128, 256, 512, 1024, 2048, 4096}
@@ -10,12 +11,45 @@ TEXMAPDATA_MAGIC = bytes.fromhex("3d4b0cc3")
 # Siege texture format code (DXGI format, bytes per 4x4 block)
 # Code is read from the trailer at dims_pos + 32
 FORMATS = {
-    2: (71, 8), # BC1 (diffuse)
-    3: (71, 8), # BC1 (sRGB variant)
-    5: (77, 16), # BC3 (diffuse + alpha)
-    6: (83, 16), # BC5 (normal maps)
-    14: (80, 8) # BC4 (single channel mask)
+    2: (71, 8),     # BC1 (diffuse)
+    3: (71, 8),     # BC1 (sRGB variant)
+    4: (77, 16),    # BC3 (alternate diffuse code)
+    5: (77, 16),    # BC3 (diffuse + alpha)
+    6: (83, 16),    # BC5 (normal maps)
+    14: (80, 8)     # BC4 (single channel mask)
 }
+
+BC5_Z_TABLE = bytes(
+    round(
+        (
+            math.sqrt(
+                max(
+                    0.0,
+                    1.0 - (red / 127.5 - 1) ** 2 - (green / 127.5 - 1.0) ** 2
+                )
+            )
+            * 0.5
+            + 0.5
+        )
+        * 255
+    )
+    for red in range(256)
+    for green in range(256)
+)
+
+def reconstruct_bc5_z(image: Image.Image) -> Image.Image:
+    """Reconstruct the positive Z component of a two-channel BC5 normal"""
+
+    image = image.convert("RGBA")
+    pixels = bytearray(image.tobytes())
+
+    for offset in range(0, len(pixels), 4):
+        red = pixels[offset]
+        green = pixels[offset + 1]
+
+        pixels[offset + 2] = BC5_Z_TABLE[(red << 8) | green]
+
+    return Image.frombytes("RGBA", image.size, bytes(pixels))
 
 # Return (width, height, format_code, surface) from a texture payload
 # Pixel data starts 12 bytes after the CompiledTextureMapData magic,
@@ -68,6 +102,9 @@ def save_png(path, payload):
     dds = _dds_dx10(w, h, surface, dxgi)
     with Image.open(io.BytesIO(dds)) as source:
         image = source.convert("RGBA")
+
+    if fmt == 6 and textype == 1:
+        image = reconstruct_bc5_z(image)
 
     # Some Siege diffuse maps contain valid RGB texture but use a
     # zero unused alpha channel. Blender premultiplies those

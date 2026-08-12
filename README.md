@@ -13,13 +13,13 @@ The long-term goal is geometry, material, texture, skeleton and animation suppor
 - Persistent, resumable SQLite asset indexing
 - Human-readable UID catalogs with source and confidence tracking
 - Cross-bundle geometry and texture resolution
-- BC1, BC3, BC4 and BC5 textures to PNG
+- BC1, BC3 and BC4 textures to PNG with BC5 normal reconstruction
 - Wwise audio extraction to WEM
 - Optional WEM-to-WAV conversion with vgmstream
 - Float and packed-position meshes with UVs and normals
 - Composite LOD0 OBJ, MTL and glTF 2.0 export
-- Basic single-material diffuse and normal assignment
-- Specular relationships stored as glTF metadata
+- Per-island glTF materials with resolved diffuse and normal textures
+- Specular and mask relationships stored as glTF metadata
 - Siege Z-up to glTF Y-up coordinate conversion
 
 ## Limitations
@@ -31,7 +31,7 @@ The long-term goal is geometry, material, texture, skeleton and animation suppor
 - Skeletons, weights and animations are not supported
 - Model export requires a known UID
 - GLB export is not available
-- Complex material islands, masks and layered character shaders are not reconstructed
+- Masks and layered character shaders are not yet applied
 - Human-readable names depend on imported catalogs
 
 ## Setup
@@ -131,7 +131,7 @@ Audio extraction is not connected to the main CLI yet.
 
 ## Roadmap
 
-1. Preserve mesh islands and reconstruct multi-material character shaders
+1. Apply masks and reconstruct layered character shaders
 2. Ship an attributed, versioned UID catalog and import it during setup
 3. Validate the remaining vertex layouts
 4. Reconstruct streamed textures and decode packed PBR channels

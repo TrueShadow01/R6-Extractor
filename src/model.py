@@ -9,12 +9,16 @@ from typing import Iterable, Mapping
 
 from PIL import Image
 
-from src.gltf import write_gltf
+from src.gltf import write_gltf, MaterialTextures
 from src.index import (
     AssetIndex,
     AssetRecord
 )
-from src.mesh import read_mesh
+from src.material import (
+    MaterialTextureSet,
+    resolve_material_texture_sets
+)
+from src.mesh import read_mesh_with_islands, MeshIsland
 from src.parser import (
     map_archive,
     read_container
@@ -40,6 +44,7 @@ class MeshPart:
     uvs: list[tuple[float, float]]
     normals: list[tuple[float, float, float]]
     faces: list[tuple[int, int, int]]
+    islands: tuple[MeshIsland, ...] = ()
 
 @dataclass(frozen=True)
 class ModelExportResult:
@@ -120,8 +125,14 @@ def decode_mesh_parts(records: Iterable[AssetRecord]) -> tuple[MeshPart, ...]:
             vertices,
             uvs,
             normals,
-            faces
-        ) = read_mesh(payload)
+            islands
+        ) = read_mesh_with_islands(payload)
+
+        faces = [
+            face
+            for island in islands
+            for face in island.faces
+        ]
 
         if len(uvs) != len(vertices):
             raise ValueError(f"Geometry {record.uid:016X} has {len(vertices)} vertices but {len(uvs)} UV coordinates")
@@ -129,7 +140,7 @@ def decode_mesh_parts(records: Iterable[AssetRecord]) -> tuple[MeshPart, ...]:
         if len(normals) != len(vertices):
             raise ValueError(f"Geometry {record.uid:016X} has {len(vertices)} vertices but {len(normals)} normals")
 
-        parts.append(MeshPart(uid=record.uid, vertices=vertices, uvs=uvs, normals=normals, faces=faces))
+        parts.append(MeshPart(uid=record.uid, vertices=vertices, uvs=uvs, normals=normals, faces=faces, islands=islands))
 
     return tuple(parts)
 
@@ -181,6 +192,44 @@ def decode_model_textures(model_uid: int, children: Mapping[int, Iterable[int]],
             specular = filename
 
     return decoded, diffuse, normal, specular
+
+def resolve_export_material_textures(texture_sets: Iterable[MaterialTextureSet], decoded_textures: Iterable[tuple[int, int, str]]) -> tuple[MaterialTextures, ...]:
+    """Choose the largest decoded texture tier for each material role"""
+
+    decoded_by_uid: dict[int, tuple[int, str]] = {}
+
+    for area, _, filename in decoded_textures:
+        try:
+            uid = int(Path(filename).stem, 16)
+        except ValueError:
+            continue
+
+        current = decoded_by_uid.get(uid)
+
+        if current is None or area > current[0]:
+            decoded_by_uid[uid] = (area, filename)
+
+    def choose(candidates: Iterable[int]) -> str | None:
+        matches = [
+            decoded_by_uid[uid]
+            for uid in candidates
+            if uid in decoded_by_uid
+        ]
+
+        if not matches:
+            return None
+
+        return max(matches, key=lambda item: item[0])[1]
+
+    return tuple(
+        MaterialTextures(
+            diffuse=choose(texture_set.diffuse_uids),
+            normal=choose(texture_set.normal_uids),
+            specular=choose(texture_set.specular_uids),
+            mask=choose(texture_set.mask_uids)
+        )
+        for texture_set in texture_sets
+    )
 
 def write_composite_obj(model_uid: int, parts: Iterable[MeshPart], output_directory: Path, diffuse: str | None, normal: str | None) -> tuple[Path, Path, int, int, int]:
     name = f"{model_uid:016X}"
@@ -259,6 +308,22 @@ def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: A
         specular
     ) = decode_model_textures(model_uid, children, index, output_directory)
 
+    material_count = max(
+        (
+            island.material_id
+            for part in parts
+            for island in part.islands
+        ),
+        default=0
+    ) + 1
+
+    material_textures: tuple[MaterialTextures, ...] = ()
+    model_record = index.primary(model_uid)
+
+    if model_record is not None:
+        texture_sets = resolve_material_texture_sets(load_asset_payload(model_record), resolve_texture_uids(model_uid, children, index), material_count)
+        material_textures = resolve_export_material_textures(texture_sets, decoded_textures)
+
     (
         obj_path,
         mtl_path,
@@ -273,7 +338,8 @@ def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: A
         output_directory,
         diffuse=diffuse,
         normal=normal,
-        specular=specular
+        specular=specular,
+        material_textures=material_textures or None
     )
 
     return ModelExportResult(

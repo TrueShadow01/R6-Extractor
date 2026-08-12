@@ -16,10 +16,11 @@ from src.index import (
     AssetRecord,
 )
 from src.metadata import FileMetadata
-from src.gltf import write_gltf
+from src.gltf import MaterialTextures, write_gltf
 from src.model import (
     MeshPart,
-    resolve_dependency_uids
+    resolve_dependency_uids,
+    resolve_export_material_textures
 )
 from src.model_catalog import (
     COMPILED_MESH_OBJECT,
@@ -29,7 +30,8 @@ from src.parser import (
     CONTAINER_MAGIC,
     SCIMITAR_MAGIC,
 )
-
+from src.mesh import MeshIsland
+from src.material import MaterialTextureSet
 
 TEST_UID = 0x123456789ABCDEF0
 TEST_FILE_TYPE = COMPILED_MESH_OBJECT
@@ -411,6 +413,38 @@ class ModelDiscoveryTests(unittest.TestCase):
         )
         self.assertEqual(model.geometry_bytes, 300)
 
+    def test_material_texture_sets_choose_largest_decoded_tier(self):
+        texture_sets = (
+            MaterialTextureSet(
+                diffuse_uids=(0x10, 0x11),
+                normal_uids=(0x20,),
+                specular_uids=(0x30,),
+                mask_uids=(0x40,)
+            ),
+        )
+
+        decoded = [
+            (256, 0, "0000000000000010.png"),
+            (4096, 0, "0000000000000011.png"),
+            (1024, 1, "0000000000000020.png"),
+            (1024, 2, "0000000000000030.png"),
+            (1024, 7, "0000000000000040.png")
+        ]
+
+        resolved = resolve_export_material_textures(texture_sets, decoded)
+
+        self.assertEqual(
+            resolved,
+            (
+                MaterialTextures(
+                    diffuse="0000000000000011.png",
+                    normal="0000000000000020.png",
+                    specular="0000000000000030.png",
+                    mask="0000000000000040.png"
+                ),
+            )
+        )
+
 class GltfExportTests(unittest.TestCase):
     def test_gltf_structure_axis_and_uv_conversion(self):
         part = MeshPart(
@@ -526,6 +560,96 @@ class GltfExportTests(unittest.TestCase):
 
             self.assertIn("pbrMetallicRoughness", material)
             self.assertEqual(material["extras"]["siegeSpecularTexture"], "specular.png")
+
+    def test_gltf_exports_material_islands_as_primitives(self):
+        part = MeshPart(
+            uid=0x2000,
+            vertices=[
+                (0.0, 0.0, 0.0),
+                (1.0, 0.0, 0.0),
+                (1.0, 1.0, 0.0),
+                (0.0, 1.0, 0.0)
+            ],
+            uvs=[
+                (0.0, 0.0),
+                (1.0, 0.0),
+                (1.0, 1.0),
+                (0.0, 1.0)
+            ],
+            normals=[
+                (0.0, 0.0, 1.0),
+                (0.0, 0.0, 1.0),
+                (0.0, 0.0, 1.0),
+                (0.0, 0.0, 1.0)
+            ],
+            faces=[
+                (0, 1, 2),
+                (0, 2, 3)
+            ],
+            islands=(
+                MeshIsland(
+                    material_id=0,
+                    faces=((0, 1, 2),)
+                ),
+                MeshIsland(
+                    material_id=3,
+                    faces=((0, 2, 3),)
+                )
+            )
+        )
+
+        with tempfile.TemporaryDirectory() as root:
+            gltf_path = write_gltf(TEST_UID, [part], root)
+            document = json.loads(gltf_path.read_text(encoding="utf-8"))
+
+            primitives = document["meshes"][0]["primitives"]
+
+            self.assertEqual(len(primitives), 2)
+            self.assertEqual([primitive["material"] for primitive in primitives], [0, 3])
+            self.assertEqual(len(document["materials"]), 4)
+
+            textured_path = write_gltf(
+                TEST_UID,
+                [part],
+                root,
+                material_textures=(
+                    MaterialTextures(
+                        diffuse="slot0_diffuse.png",
+                        normal="shared_normal.png"
+                    ),
+                    MaterialTextures(),
+                    MaterialTextures(),
+                    MaterialTextures(
+                        diffuse="slot3_diffuse.png",
+                        normal="shared_normal.png",
+                        specular="slot3_specular.png",
+                        mask="slot3_mask.png"
+                    )
+                )
+            )
+
+            textured_document = json.loads(textured_path.read_text(encoding="utf-8"))
+
+            slot0 = textured_document["materials"][0]
+            slot3 = textured_document["materials"][3]
+
+            slot0_diffuse_texture = slot0["pbrMetallicRoughness"]["baseColorTexture"]["index"]
+            slot3_diffuse_texture = slot3["pbrMetallicRoughness"]["baseColorTexture"]["index"]
+
+            slot0_diffuse_image = textured_document["textures"][slot0_diffuse_texture]["source"]
+            slot3_diffuse_image = textured_document["textures"][slot3_diffuse_texture]["source"]
+
+            self.assertEqual(textured_document["images"][slot0_diffuse_image]["uri"], "slot0_diffuse.png")
+            self.assertEqual(textured_document["images"][slot3_diffuse_image]["uri"], "slot3_diffuse.png")
+            self.assertEqual(slot0["normalTexture"]["index"], slot3["normalTexture"]["index"])
+            self.assertEqual(slot3["extras"]["siegeSpecularTexture"], "slot3_specular.png")
+            self.assertEqual(slot3["extras"]["siegeMaskTexture"], "slot3_mask.png")
+
+            self.assertEqual(
+                [
+                    document["accessors"][primitive["indices"]]["count"]
+                    for primitive in primitives
+                ], [3, 3])
 
 if __name__ == "__main__":
     unittest.main()

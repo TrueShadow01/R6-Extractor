@@ -1,6 +1,7 @@
 # Parse .forge mesh payloads
 
 import struct
+from dataclasses import dataclass
 
 COMPILED_MESH = struct.pack("<I", 0xFC9E1595)
 FLOAT_VERT_LENS = (0x24, 0x28, 0x2C) # float 32 position layouts
@@ -9,8 +10,40 @@ PACKED_VERT_LENS = (0x18, 0x1C) # int16 + scale packed positions
 # bytes before UV block (planar): position + normal + tangent + binormal (+ color)
 _PRE_UV = {0x24: 24, 0x28: 24, 0x2C: 24, 0x18: 20, 0x1C: 24}
 
-# Decode mesh payload
-def read_mesh(payload):
+@dataclass(frozen=True)
+class MeshIsland:
+    material_id: int
+    faces: tuple[tuple[int, int, int], ...]
+
+def read_lod0_islands(payload, tris, tail, num_islands):
+    """Read LOD0 faces while preserving Siege material IDs"""
+
+    islands = []
+
+    for index in range(num_islands):
+        record = struct.unpack_from("<9I", payload, tail + index * 36)
+
+        first_triangle = record[3] * 64
+        triangle_count = record[4] * 64
+        material_id = record[5]
+
+        faces = []
+
+        for triangle in range(first_triangle, first_triangle + triangle_count):
+            a, b, c = struct.unpack_from("<HHH", payload, tris + triangle * 6)
+
+            if a != b and b != c and a != c:
+                faces.append((a, b, c))
+
+        islands.append(
+            MeshIsland(
+                material_id=material_id,
+                faces=tuple(faces)
+            )
+        )
+    return tuple(islands)
+
+def read_mesh_with_islands(payload):
     mPayload = payload.find(COMPILED_MESH)
     if mPayload == -1:
         raise ValueError("Not a mesh payload")
@@ -50,18 +83,21 @@ def read_mesh(payload):
 
     # LOD0 faces only, ObjectHeader table (footer) sits after all 6 data blocks
     tail = vbo + sum(f[4:10]) # verts+face+vertmaps+unk1+faceStat+faceUnk
-    lod0_chunks = 0
-    for k in range(num_islands): # first numIslands records = LOD0
-        rec = struct.unpack_from("<9I", payload, tail + k * 36) 
-        lod0_chunks += rec[4]
-    lod0_tris = lod0_chunks * 64
 
-    # faces
-    faces = []
-    for t in range(lod0_tris):
-        a, b, c = struct.unpack_from("<HHH", payload, tris + t * 6)
-        if a != b and b != c and a != c:
-            faces.append((a, b, c))
+    islands = read_lod0_islands(payload, tris, tail, num_islands)
+    return verts, uvs, normals, islands
+
+def read_mesh(payload):
+    """Compatibility wrapper returning the previous flattened face list"""
+
+    verts, uvs, normals, islands = read_mesh_with_islands(payload)
+
+    faces = [
+        face
+        for island in islands
+        for face in island.faces
+    ]
+
     return verts, uvs, normals, faces
 
 def save_obj(path, payload):
