@@ -7,7 +7,13 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from src.index import ScanDiagnostics, scan_archive
+from src.index import (
+    AssetIndex,
+    AssetRecord,
+    ScanDiagnostics,
+    scan_archive
+)
+from src.metadata import FileMetadata
 
 SCHEMA_VERSION = 1
 
@@ -205,3 +211,92 @@ def index_archive(archive: str | Path, database: str | Path, *, force: bool = Fa
         )
     finally:
         connection.close()
+
+def load_asset_index(database: str | Path, uids: set[int]) -> AssetIndex:
+    """Load selected UIDs from the asset index"""
+
+    database_path = Path(database).expanduser().resolve()
+
+    if not database_path.is_file():
+        raise FileNotFoundError(f"Asset database not found: {database_path}")
+
+    requested = sorted(uid_to_text(uid) for uid in uids)
+    index = AssetIndex()
+
+    if not requested:
+        return index
+
+    try:
+        connection = sqlite3.connect(f"{database_path.as_uri()}?mode=ro", uri=True)
+    except sqlite3.Error as error:
+        raise ValueError(f"Could not open asset database: {error}") from error
+
+    connection.row_factory = sqlite3.Row
+
+    try:
+        schema_version = connection.execute("PRAGMA user_version").fetchone()[0]
+
+        if schema_version != SCHEMA_VERSION:
+            raise ValueError(f"Unsupported asset database schema {schema_version}, expected {SCHEMA_VERSION}")
+
+        batch_size = 500
+
+        for start in range(0, len(requested), batch_size):
+            batch = requested[start:start + batch_size]
+            placeholders = ",".join("?" for _ in batch)
+
+            rows = connection.execute(
+                f"""
+                SELECT
+                    assets.uid,
+                    assets.file_type,
+                    assets.container_offset,
+                    assets.container_size,
+                    assets.unpacked_size,
+                    assets.name_hash,
+                    assets.flags,
+                    assets.data_offset,
+                    archives.path AS archive_path
+                FROM assets
+                JOIN archives
+                    ON archives.id = assets.archive_id
+                WHERE assets.uid IN ({placeholders})
+                ORDER BY
+                    assets.uid,
+                    archives.path COLLATE NOCASE,
+                    assets.container_offset
+                """,
+                batch
+            )
+
+            for row in rows:
+                uid = int(row["uid"], 16)
+                name_hash = bytes(row["name_hash"])
+
+                metadata = FileMetadata(
+                    name_length=len(name_hash),
+                    container_type=2,
+                    flags=row["flags"],
+                    name_hash=name_hash,
+                    file_type=row["file_type"],
+                    uid=uid,
+                    data_offset=row["data_offset"]
+                )
+
+                index.add(
+                    AssetRecord(
+                        uid=uid,
+                        file_type=row["file_type"],
+                        archive=Path(row["archive_path"]),
+                        container_offset=row["container_offset"],
+                        container_size=row["container_size"],
+                        unpacked_size=row["unpacked_size"],
+                        metadata=metadata
+                    )
+                )
+    except sqlite3.Error as error:
+        raise ValueError(f"Could not read asset database: {error}") from error
+    finally:
+        connection.close()
+
+    return index

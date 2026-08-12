@@ -87,6 +87,13 @@ def component_maximums(values: Sequence[tuple[float, ...]])-> list[float]:
         for index in range(width)
     ]
 
+def siege_to_gltf_vector(value: tuple[float, float, float]) -> tuple[float, float, float]:
+    """Convert Siege Z-up coordinates to glTF Y-up coordinates"""
+
+    x, y, z = value
+
+    return x, z, -y
+
 def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: str | Path, *, diffuse: str | None = None, normal: str | None=None, specular: str | None=None) -> Path:
     """Write a multi-part glTF using external PNG textures"""
 
@@ -140,15 +147,25 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
         if len(part.normals) != len(part.vertices):
             raise ValueError(f"Part {part.uid:016X} has mismatched normals")
 
+        converted_vertices = [
+            siege_to_gltf_vector(vertex)
+            for vertex in part.vertices
+        ]
+
+        converted_normals = [
+            siege_to_gltf_vector(normal)
+            for normal in part.normals
+        ]
+
         positions = [
             component
-            for vertex in part.vertices
+            for vertex in converted_vertices
             for component in vertex
         ]
 
         normals = [
             component
-            for normal_value in part.normals
+            for normal_value in converted_normals
             for component in normal_value
         ]
 
@@ -171,7 +188,7 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
 
         prefix = f"part_{part.uid:016X}"
 
-        position_accessor = add_accessor(pack_floats(positions), target=ARRAY_BUFFER, component_type=FLOAT, count=len(part.vertices), value_type="VEC3", name=f"{prefix}_positions", minimum=component_minimums(part.vertices), maximum=component_maximums(part.vertices))
+        position_accessor = add_accessor(pack_floats(positions), target=ARRAY_BUFFER, component_type=FLOAT, count=len(part.vertices), value_type="VEC3", name=f"{prefix}_positions", minimum=component_minimums(converted_vertices), maximum=component_maximums(converted_vertices))
         normal_accessor = add_accessor(pack_floats(normals), target=ARRAY_BUFFER, component_type=FLOAT, count=len(part.normals), value_type="VEC3", name=f"{prefix}_normals")
         uv_accessor = add_accessor(pack_floats(texture_coordinates), target=ARRAY_BUFFER, component_type=FLOAT, count=len(part.uvs), value_type="VEC2", name=f"{prefix}_uvs")
         index_accessor = add_accessor(pack_unsigned_ints(indices), target=ELEMENT_ARRAY_BUFFER, component_type=UNSIGNED_INT, count=len(indices), value_type="SCALAR", name=f"{prefix}_indices")

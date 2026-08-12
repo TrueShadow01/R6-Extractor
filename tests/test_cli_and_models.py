@@ -17,7 +17,10 @@ from src.index import (
 )
 from src.metadata import FileMetadata
 from src.gltf import write_gltf
-from src.model import MeshPart
+from src.model import (
+    MeshPart,
+    resolve_dependency_uids
+)
 from src.model_catalog import (
     COMPILED_MESH_OBJECT,
     discover_models,
@@ -229,6 +232,24 @@ class ModelDiscoveryTests(unittest.TestCase):
             metadata=metadata,
         )
 
+    def test_dependency_uids_include_indirect_children_and_cycles(self):
+        children = {
+            0x1000: [0x2000, 0x3000],
+            0x2000: [0x4000],
+            0x4000: [0x1000]
+        }
+
+        resolved = resolve_dependency_uids(0x1000, children)
+
+        self.assertEqual(resolved,
+            (
+                0x1000,
+                0x2000,
+                0x3000,
+                0x4000
+            )
+        )
+
     def test_composite_model_discovery(self):
         model_uid = 0x1000
         geometry_a = 0x2000
@@ -267,7 +288,7 @@ class ModelDiscoveryTests(unittest.TestCase):
         self.assertEqual(model.geometry_bytes, 300)
 
 class GltfExportTests(unittest.TestCase):
-    def test_gltf_structure_and_uv_conversion(self):
+    def test_gltf_structure_axis_and_uv_conversion(self):
         part = MeshPart(
             uid=0x2000,
             vertices=[
@@ -323,6 +344,35 @@ class GltfExportTests(unittest.TestCase):
 
             for accessor_index in accessor_references:
                 self.assertLess(accessor_index, len(document["accessors"]))
+
+            position_accessor = document["accessors"][primitive["attributes"]["POSITION"]]
+            position_view = document["bufferViews"][position_accessor["bufferView"]]
+            position_offset = position_view.get("byteOffset", 0) + position_accessor.get("byteOffset", 0)
+
+            exported_positions = struct.unpack_from("<9f", binary, position_offset)
+
+            self.assertEqual(
+                exported_positions, (
+                    0.0, 0.0, 0.0,
+                    1.0, 0.0, 0.0,
+                    0.0, 0.0, -1.0
+                )
+            )
+
+            normal_accessor = document["accessors"][primitive["attributes"]["NORMAL"]]
+            normal_view = document["bufferViews"][normal_accessor["bufferView"]]
+            normal_offset = normal_view.get("byteOffset", 0) + normal_accessor.get("byteOffset", 0)
+
+            exported_normals = struct.unpack_from("<9f", binary, normal_offset)
+
+            self.assertEqual(
+                exported_normals,
+                (
+                    0.0, 1.0, 0.0,
+                    0.0, 1.0, 0.0,
+                    0.0, 1.0, 0.0
+                )
+            )
 
             uv_accessor = document["accessors"][primitive["attributes"]["TEXCOORD_0"]]
             uv_view = document["bufferViews"][uv_accessor["bufferView"]]

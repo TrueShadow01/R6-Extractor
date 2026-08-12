@@ -8,7 +8,10 @@ from collections import Counter
 from pathlib import Path
 from typing import Sequence
 
-from src.database import index_archive
+from src.database import (
+    index_archive,
+    load_asset_index
+)
 from src.depgraph import load_depgraph
 from src.extractor import extract_raw_archive
 from src.index import (
@@ -16,7 +19,10 @@ from src.index import (
     build_index,
     scan_archive
 )
-from src.model import export_model
+from src.model import (
+    export_model,
+    resolve_dependency_uids
+)
 from src.model_catalog import (
     build_model_catalog,
     write_model_catalog
@@ -331,7 +337,12 @@ def command_model(args: argparse.Namespace) -> int:
     archives, depgraph = bundle_files(archive, depgraph_path=args.depgraph, archive_only=args.archive_only)
 
     children, _ = load_depgraph(depgraph)
-    index = build_index(archives)
+
+    if args.database:
+        dependency_uids = set(resolve_dependency_uids(uid, children))
+        index = load_asset_index(args.database, dependency_uids)
+    else:
+        index = build_index(archives)
 
     result = export_model(uid, children, index, args.output)
 
@@ -393,6 +404,7 @@ def build_parser() -> argparse.ArgumentParser:
     model.add_argument("-o", "--output", default="output/model")
     model.add_argument("--depgraph", help="dependency graph path or GAME_DIR filename")
     model.add_argument("--archive-only", action="store_true", help="index only the input mesh archive")
+    model.add_argument("--database", help="use a SQLite asset index")
     model.set_defaults(handler=command_model)
 
     return parser

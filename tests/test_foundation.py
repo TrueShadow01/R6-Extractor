@@ -10,7 +10,10 @@ import unittest
 from pathlib import Path
 
 from src.extractor import extract_raw_archive
-from src.database import index_archive
+from src.database import (
+    index_archive,
+    load_asset_index
+)
 from src.index import (
     ScanDiagnostics,
     build_index,
@@ -173,6 +176,25 @@ class IndexTests(unittest.TestCase):
             self.assertEqual(asset[1], TEST_FILE_TYPE)
             self.assertGreater(asset[2], 0)
             self.assertEqual(archive_count, 1)
+
+            loaded = load_asset_index(
+                database,
+                {
+                    TEST_UID,
+                    0xFFFFFFFFFFFFFFFF
+                }
+            )
+
+            self.assertEqual(loaded.total_records, 1)
+
+            loaded_record = loaded.primary(TEST_UID)
+
+            self.assertIsNotNone(loaded_record)
+            self.assertEqual(loaded_record.uid, TEST_UID)
+            self.assertEqual(loaded_record.file_type, TEST_FILE_TYPE)
+            self.assertEqual(loaded_record.archive, archive.resolve())
+            self.assertEqual(loaded_record.container_offset, asset[2])
+            self.assertEqual(loaded_record.metadata.name_hash, b"synthetic-name")
 
             second = index_archive(archive, database)
 

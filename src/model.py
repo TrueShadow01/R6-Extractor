@@ -61,11 +61,10 @@ def load_asset_payload(record: AssetRecord) -> bytes:
     with map_archive(record.archive) as data:
         return read_container(data, record.container_offset)
 
-def resolve_texture_uids(model_uid: int, children: Mapping[int, Iterable[int]], index: AssetIndex) -> tuple[int, ...]:
-    """Walk the dependency graph and collect indexed texture assets"""
+def resolve_dependency_uids(model_uid: int, children: Mapping[int, Iterable[int]]) -> tuple[int, ...]:
+    """Return the model UID and every recursively reachable child UID"""
 
     seen: set[int] = set()
-    textures: set[int] = set()
     queue = deque([model_uid])
 
     while queue:
@@ -75,13 +74,18 @@ def resolve_texture_uids(model_uid: int, children: Mapping[int, Iterable[int]], 
             continue
 
         seen.add(uid)
-
-        record = index.primary(uid)
-
-        if (record is not None and record.file_type in TEXTURE_TYPES):
-            textures.add(uid)
-
         queue.extend(children.get(uid, ()))
+
+    return tuple(sorted(seen))
+
+def resolve_texture_uids(model_uid: int, children: Mapping[int, Iterable[int]], index: AssetIndex) -> tuple[int, ...]:
+    """Collect indexed texture assets reachable from a model"""
+
+    textures = {
+        uid
+        for uid in resolve_dependency_uids(model_uid, children)
+        if (record := index.primary(uid)) is not None and record.file_type in TEXTURE_TYPES
+    }
 
     return tuple(sorted(textures))
 
