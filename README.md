@@ -11,6 +11,7 @@ The long-term goal is to support geometry, materials, textures, skeletons, weigh
 - Oodle Kraken decompression
 - Bounded-memory scanning and lossless raw extraction
 - Collision-safe filenames, JSONL manifests and extraction resume
+- Persistent SQLite indexing with unchanged archive skipping
 - BC1, BC3, BC4 and BC5 textures to PNG
 - Wwise audio extraction to WEM
 - Optional WEM-to-WAV conversion with vgmstream
@@ -81,6 +82,13 @@ py -3 -B main.py scan --all
 py -3 -B main.py extract <archive.forge> -o output/raw
 ```
 
+**Add a archive to the persistent asset index:**
+```powershell
+py -3 -B main.py index <archive.forge> -o output/r6-assets.sqlite
+```
+
+Unchanged archives are skipped. Use `--force` to rescan one.
+
 **Discover model UIDs:**
 ```powershell
 py -3 -B main.py models <archive.forge>
@@ -150,7 +158,7 @@ Results are recorded in `output/raw/manifest.jsonl`. An asset is resumed only wh
 
 ## Roadmap
 
-1. Build a persistent index for automatic cross-bundle resolution
+1. Expand the index to the full game and use it for automatic cross-bundle resolution
 2. Add UID-to-name mappings and asset search
 3. Validate the remaining vertex layouts
 4. Reconstruct streamed textures and decode packed PBR channels

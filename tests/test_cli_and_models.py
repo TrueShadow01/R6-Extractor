@@ -115,6 +115,49 @@ class CliTests(unittest.TestCase):
             self.assertIn("Extracted: 0", second_output.getvalue())
             self.assertIn("Resumed: 1", second_output.getvalue())
 
+    def test_index_command_and_unchanged_skip(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            archive = root / "fixture.forge"
+            database = root / "assets.sqlite"
+
+            archive.write_bytes(make_archive())
+
+            first_output = StringIO()
+
+            with redirect_stdout(first_output):
+                first_result = main(
+                    [
+                        "index",
+                        str(archive),
+                        "-o",
+                        str(database)
+                    ]
+                )
+
+            self.assertEqual(first_result, 0)
+            self.assertIn("Status: indexed", first_output.getvalue())
+            self.assertIn("Containers: 2", first_output.getvalue())
+            self.assertIn("Assets: 1", first_output.getvalue())
+            self.assertIn("Companion containers: 1", first_output.getvalue())
+            self.assertTrue(database.is_file())
+
+            second_output = StringIO()
+
+            with redirect_stdout(second_output):
+                second_result = main(
+                    [
+                        "index",
+                        str(archive),
+                        "-o",
+                        str(database)
+                    ]
+                )
+
+            self.assertEqual(second_result, 0)
+            self.assertIn("Status: unchanged", second_output.getvalue())
+            self.assertIn("Assets: 1", second_output.getvalue())
+
     def test_cross_bundle_depgraph_with_archive_only(self):
         with tempfile.TemporaryDirectory() as root:
             root = Path(root)

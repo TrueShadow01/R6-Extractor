@@ -8,6 +8,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Sequence
 
+from src.database import index_archive
 from src.depgraph import load_depgraph
 from src.extractor import extract_raw_archive
 from src.index import (
@@ -221,6 +222,26 @@ def command_extract(args: argparse.Namespace) -> int:
 
     return 1 if failed or scan_errors else 0
 
+def command_index(args: argparse.Namespace) -> int:
+    archive = resolve_input(args.input, allow_directory=False)
+
+    result = index_archive(archive, args.output, force=args.force)
+
+    diagnostics = result.diagnostics
+    errors = diagnostics.invalid_containers + diagnostics.metadata_errors
+
+    status = "unchanged" if result.skipped else "indexed"
+
+    print(f"Archive: {result.archive.name}")
+    print(f"Status: {status}")
+    print(f"Containers: {diagnostics.containers}")
+    print(f"Assets: {result.asset_count}")
+    print(f"Companion containers: {diagnostics.auxiliary_containers}")
+    print(f"Errors: {errors}")
+    print(f"Database: {result.database}")
+
+    return 1 if errors else 0
+
 def command_models(args: argparse.Namespace) -> int:
     archive = resolve_input(args.input, allow_directory=False)
 
@@ -311,6 +332,12 @@ def build_parser() -> argparse.ArgumentParser:
     extract.add_argument("--resume", action=argparse.BooleanOptionalAction, default=True)
     extract.add_argument("-v", "--verbose", action="store_true")
     extract.set_defaults(handler=command_extract)
+
+    index = commands.add_parser("index", help="add one Forge archive to the persistent asset index")
+    index.add_argument("input", help="Forge archive")
+    index.add_argument("-o", "--output", default="output/r6-assets.sqlite", help="SQLite database path")
+    index.add_argument("--force", action="store_true", help="rescan the archive even when it appears unchanged")
+    index.set_defaults(handler=command_index)
 
     models = commands.add_parser("models", help="discover model UIDs and geometry parts")
     models.add_argument("input", help="mesh Forge archive")

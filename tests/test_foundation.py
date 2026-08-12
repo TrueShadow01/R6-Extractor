@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 import struct
 import tempfile
 import unittest
 from pathlib import Path
 
 from src.extractor import extract_raw_archive
+from src.database import index_archive
 from src.index import (
     ScanDiagnostics,
     build_index,
@@ -135,6 +137,47 @@ class IndexTests(unittest.TestCase):
             self.assertEqual(file_type, TEST_FILE_TYPE)
             self.assertEqual(Path(path), archive.resolve())
             self.assertEqual(offset, records[0].container_offset)
+
+    def test_sqlite_index_persists_unsigned_uid_and_skips_unchanged(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            archive = root / "fixture.forge"
+            database = root / "assets.sqlite"
+
+            archive.write_bytes(make_archive())
+
+            first = index_archive(archive, database)
+
+            self.assertFalse(first.skipped)
+            self.assertEqual(first.asset_count, 1)
+            self.assertEqual(first.diagnostics.containers, 2)
+            self.assertEqual(first.diagnostics.assets, 1)
+
+            connection = sqlite3.connect(database)
+
+            try:
+                asset = connection.execute(
+                    """
+                    SELECT uid, file_type, container_offset
+                    FROM assets
+                    """
+                ).fetchone()
+
+                archive_count = connection.execute(
+                    "SELECT COUNT(*) FROM archives"
+                ).fetchone()[0]
+            finally:
+                connection.close()
+
+            self.assertEqual(asset[0], f"{TEST_UID:016X}")
+            self.assertEqual(asset[1], TEST_FILE_TYPE)
+            self.assertGreater(asset[2], 0)
+            self.assertEqual(archive_count, 1)
+
+            second = index_archive(archive, database)
+
+            self.assertTrue(second.skipped)
+            self.assertEqual(second.asset_count, 1)
 
 class ExtractorTests(unittest.TestCase):
     def test_raw_extraction_and_resume(self):

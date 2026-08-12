@@ -1,12 +1,10 @@
-# Local notes / config (contain the install path — keep private)
-CLAUDE.md
-CLAUDE.local.md
+# config
 config.py
 
-# Oodle runtime — RAD/Ubisoft copyright, do NOT redistribute
+# Oodle runtime
 oo2core_*.dll
 
-# Extracted game assets — Ubisoft copyright, never commit
+# Extracted game assets
 /output/
 /extracted/
 *.dds
@@ -17,6 +15,10 @@ oo2core_*.dll
 *.bnk
 *.pck
 *.wem
+*.sqlite
+*.sqlite-journal
+*.sqlite-shm
+*.sqlite-wal
 
 # Python
 __pycache__/
