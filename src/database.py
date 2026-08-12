@@ -6,6 +6,7 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Iterable
 
 from src.index import (
     AssetIndex,
@@ -15,7 +16,7 @@ from src.index import (
 )
 from src.metadata import FileMetadata
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS archives (
@@ -54,6 +55,20 @@ ON assets(uid);
 
 CREATE INDEX IF NOT EXISTS assets_file_type
 ON assets(file_type);
+
+CREATE TABLE IF NOT EXISTS asset_names (
+    uid TEXT NOT NULL COLLATE NOCASE,
+    name TEXT NOT NULL COLLATE NOCASE,
+    category TEXT NOT NULL,
+    source TEXT NOT NULL COLLATE NOCASE,
+    confidence INTEGER NOT NULL
+        CHECK (confidence BETWEEN 0 AND 100),
+
+    PRIMARY KEY (uid, name, source)
+);
+
+CREATE INDEX IF NOT EXISTS asset_names_name
+ON asset_names(name COLLATE NOCASE);
 """
 
 @dataclass(frozen=True)
@@ -63,6 +78,15 @@ class ArchiveIndexResult:
     asset_count: int
     skipped: bool
     diagnostics: ScanDiagnostics
+
+@dataclass(frozen=True)
+class AssetName:
+    uid: int
+    name: str
+    source: str
+    category: str = "unknown"
+    confidence: int = 50
+    locations: int = 0
 
 def uid_to_text(uid: int) -> str:
     if not 0 <= uid <= 0xFFFFFFFFFFFFFFFF:
@@ -86,8 +110,42 @@ def _open_database(path: str | Path) -> tuple[Path, sqlite3.Connection]:
     connection = sqlite3.connect(database)
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
-    connection.executescript(_SCHEMA)
-    connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+
+    try:
+        current_version = connection.execute("PRAGMA user_version").fetchone()[0]
+
+        if current_version > SCHEMA_VERSION:
+            raise ValueError(f"Asset database schema {current_version} is newer than supported schema {SCHEMA_VERSION}")
+
+        connection.executescript(_SCHEMA)
+        connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+        connection.commit()
+    except Exception:
+        connection.close()
+        raise
+
+    return database, connection
+
+def _open_existing_database(path: str | Path) -> tuple[Path, sqlite3.Connection]:
+    """Open an existing asset database without modifying it"""
+
+    database = Path(path).expanduser().resolve()
+
+    if not database.is_file():
+        raise FileNotFoundError(f"Asset database not found: {database}")
+
+    try:
+        connection = sqlite3.connect(f"{database.as_uri()}?mode=ro", uri=True)
+        connection.row_factory = sqlite3.Row
+
+        schema_version = connection.execute("PRAGMA user_version").fetchone()[0]
+
+        if schema_version != SCHEMA_VERSION:
+            raise ValueError(f"Unsupported asset database schema {schema_version}, expected {SCHEMA_VERSION}")
+    except Exception:
+        if "connection" in locals():
+            connection.close()
+        raise
 
     return database, connection
 
@@ -226,19 +284,11 @@ def load_asset_index(database: str | Path, uids: set[int]) -> AssetIndex:
     if not requested:
         return index
 
-    try:
-        connection = sqlite3.connect(f"{database_path.as_uri()}?mode=ro", uri=True)
-    except sqlite3.Error as error:
-        raise ValueError(f"Could not open asset database: {error}") from error
+    _, connection = _open_existing_database(database_path)
 
     connection.row_factory = sqlite3.Row
 
     try:
-        schema_version = connection.execute("PRAGMA user_version").fetchone()[0]
-
-        if schema_version != SCHEMA_VERSION:
-            raise ValueError(f"Unsupported asset database schema {schema_version}, expected {SCHEMA_VERSION}")
-
         batch_size = 500
 
         for start in range(0, len(requested), batch_size):
@@ -300,3 +350,136 @@ def load_asset_index(database: str | Path, uids: set[int]) -> AssetIndex:
         connection.close()
 
     return index
+
+def upsert_asset_names(database: str | Path, names: Iterable[AssetName]) -> int:
+    """Insert or update human-readable asset names"""
+
+    rows: list[tuple[str, str, str, str, int]] = []
+
+    for entry in names:
+        name = entry.name.strip()
+        source = entry.source.strip()
+        category = entry.category.strip() or "unknown"
+
+        if not name:
+            raise ValueError("Asset name cannot be empty")
+
+        if not source:
+            raise ValueError("Asset name source cannot be empty")
+
+        if not 0 <= entry.confidence <= 100:
+            raise ValueError("Asset name confidence must be between 0 and 100")
+
+        rows.append(
+            (
+                uid_to_text(entry.uid),
+                name,
+                category,
+                source,
+                entry.confidence
+            )
+        )
+
+    if not rows:
+        return 0
+
+    _, connection = _open_database(database)
+
+    try:
+        with connection:
+            connection.executemany(
+                """
+                INSERT INTO asset_names (
+                    uid,
+                    name,
+                    category,
+                    source,
+                    confidence
+                )
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT (uid, name, source)
+                DO UPDATE SET
+                    category = excluded.category,
+                    confidence = excluded.confidence
+                """,
+                rows,
+            )
+    finally:
+        connection.close()
+
+    return len(rows)
+
+def search_asset_names(database: str | Path, query: str, *, limit: int = 20) -> tuple[AssetName, ...]:
+    """Search names and UIDs in the asset catalog"""
+
+    query = query.strip()
+
+    if not query:
+        raise ValueError("Search query cannot be empty")
+
+    if not 1 <= limit <= 1000:
+        raise ValueError("Search limit must be between 1 and 1000")
+
+    database_path = Path(database).expanduser().resolve()
+
+    if not database_path.is_file():
+        raise FileNotFoundError(f"Asset database not found: {database_path}")
+
+    uid_query = query[2:] if query.lower().startswith("0x") else query
+    _, connection = _open_existing_database(database_path)
+
+    try:
+        rows = connection.execute(
+            """
+            SELECT
+                asset_names.uid,
+                asset_names.name,
+                asset_names.category,
+                asset_names.source,
+                asset_names.confidence,
+                COUNT(assets.uid) AS locations
+            FROM asset_names
+            LEFT JOIN assets
+                ON assets.uid = asset_names.uid
+            WHERE
+                instr(
+                    lower(asset_names.name),
+                    lower(?)
+                ) > 0
+                OR instr(
+                    asset_names.uid,
+                    upper(?)
+                ) > 0
+            GROUP BY
+                asset_names.uid,
+                asset_names.name,
+                asset_names.category,
+                asset_names.source,
+                asset_names.confidence
+            ORDER BY
+                asset_names.confidence DESC,
+                locations DESC,
+                asset_names.name COLLATE NOCASE,
+                asset_names.uid
+            LIMIT ?
+            """,
+            (
+                query,
+                uid_query,
+                limit,
+            ),
+        ).fetchall()
+    finally:
+        connection.close()
+
+    return tuple(
+        AssetName(
+            uid=int(row["uid"], 16),
+            name=row["name"],
+            category=row["category"],
+            source=row["source"],
+            confidence=row["confidence"],
+            locations=row["locations"]
+        )
+        for row in rows
+    )

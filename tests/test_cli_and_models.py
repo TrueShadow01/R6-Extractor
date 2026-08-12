@@ -192,6 +192,130 @@ class CliTests(unittest.TestCase):
             self.assertIn("Failed: 0", text)
             self.assertIn("Assets: 2", text)
 
+    def test_name_import_and_search_commands(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            catalog = root / "names.csv"
+            database = root / "assets.sqlite"
+
+            catalog.write_text(
+                "\n".join(
+                    [
+                        "UID,Name,Category,Source,Confidence",
+                        (
+                            "0x000000009B2CAF32,"
+                            "Rook Armor Pack,"
+                            "model,manual,100"
+                        ),
+                    ]
+                ) + "\n",
+                encoding="utf-8"
+            )
+
+            import_output = StringIO()
+
+            with redirect_stdout(import_output):
+                import_result = main(
+                    [
+                        "names",
+                        "import",
+                        str(catalog),
+                        "--database",
+                        str(database)
+                    ]
+                )
+
+            self.assertEqual(import_result, 0)
+            self.assertIn("Imported: 1", import_output.getvalue())
+
+            search_output = StringIO()
+
+            with redirect_stdout(search_output):
+                search_result = main(
+                    [
+                        "search",
+                        "rook armor",
+                        "--database",
+                        str(database)
+                    ]
+                )
+
+            text = search_output.getvalue()
+
+            self.assertEqual(search_result, 0)
+            self.assertIn("000000009B2CAF32", text)
+            self.assertIn("Rook Armor Pack", text)
+            self.assertIn("confidence=100", text)
+            self.assertIn("source=manual", text)
+            self.assertIn("0 locations", text)
+            self.assertIn("Matches: 1", text)
+
+
+    def test_name_import_column_layout(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            catalog = root / "community.csv"
+            database = root / "assets.sqlite"
+
+            catalog.write_text(
+                "\n".join(
+                    [
+                        "Aruni Default body:,Valkyrie Elite headgear:",
+                        "281035272186,91997028720",
+                        "309301454265,91997033050",
+                    ]
+                ) + "\n",
+                encoding="utf-8",
+            )
+
+            import_output = StringIO()
+
+            with redirect_stdout(import_output):
+                import_result = main(
+                    [
+                        "names",
+                        "import",
+                        str(catalog),
+                        "--layout",
+                        "columns",
+                        "--database",
+                        str(database),
+                        "--source",
+                        "r6-uid-sheet-2022",
+                        "--category",
+                        "character-model",
+                        "--confidence",
+                        "50"
+                    ]
+                )
+
+            text = import_output.getvalue()
+
+            self.assertEqual(import_result, 0)
+            self.assertIn("Layout: columns", text)
+            self.assertIn("Imported: 4", text)
+
+            search_output = StringIO()
+
+            with redirect_stdout(search_output):
+                search_result = main(
+                    [
+                        "search",
+                        "Aruni Default body",
+                        "--database",
+                        str(database)
+                    ]
+                )
+
+            text = search_output.getvalue()
+
+            self.assertEqual(search_result, 0)
+            self.assertIn("Aruni Default body", text)
+            self.assertIn("[character-model]", text)
+            self.assertIn("confidence=50", text)
+            self.assertIn("source=r6-uid-sheet-2022", text)
+            self.assertIn("Matches: 2", text)
+
     def test_cross_bundle_depgraph_with_archive_only(self):
         with tempfile.TemporaryDirectory() as root:
             root = Path(root)

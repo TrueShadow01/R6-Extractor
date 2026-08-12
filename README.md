@@ -11,13 +11,14 @@ The long-term goal is geometry, material, texture, skeleton and animation suppor
 - Oodle Kraken decompression
 - Lossless extraction with manifests and resume
 - Persistent, resumable SQLite asset indexing
+- Human-readable UID catalogs with source and confidence tracking
 - Cross-bundle geometry and texture resolution
 - BC1, BC3, BC4 and BC5 textures to PNG
 - Wwise audio extraction to WEM
 - Optional WEM-to-WAV conversion with vgmstream
 - Float and packed-position meshes with UVs and normals
 - Composite LOD0 OBJ, MTL and glTF 2.0 export
-- Diffuse and normal material assignment
+- Basic single-material diffuse and normal assignment
 - Specular relationships stored as glTF metadata
 - Siege Z-up to glTF Y-up coordinate conversion
 
@@ -30,6 +31,8 @@ The long-term goal is geometry, material, texture, skeleton and animation suppor
 - Skeletons, weights and animations are not supported
 - Model export requires a known UID
 - GLB export is not available
+- Complex material islands, masks and layered character shaders are not reconstructed
+- Human-readable names depend on imported catalogs
 
 ## Setup
 
@@ -70,6 +73,11 @@ py -3 -B main.py extract --all -o output/raw
 # Build or update the asset index
 py -3 -B main.py index <archive-or-directory> -o output/r6-assets.sqlite
 py -3 -B main.py index --all -o output/r6-assets.sqlite
+
+# Import and search asset names
+py -3 -B main.py names import <catalog.csv>
+py -3 -B main.py names import <catalog.csv> --layout columns
+py -3 -B main.py search <name-or-UID>
 
 # Discover model UIDs
 py -3 -B main.py models <mesh.forge>
@@ -123,7 +131,7 @@ Audio extraction is not connected to the main CLI yet.
 
 ## Roadmap
 
-1. Add UID-to-name mappings and asset search
+1. Preserve mesh islands and reconstruct multi-material character shaders
 2. Validate the remaining vertex layouts
 3. Reconstruct streamed textures and decode packed PBR channels
 4. Add GLB export

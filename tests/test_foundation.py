@@ -11,8 +11,11 @@ from pathlib import Path
 
 from src.extractor import extract_raw_archive
 from src.database import (
+    AssetName,
     index_archive,
-    load_asset_index
+    load_asset_index,
+    search_asset_names,
+    upsert_asset_names
 )
 from src.index import (
     ScanDiagnostics,
@@ -200,6 +203,69 @@ class IndexTests(unittest.TestCase):
 
             self.assertTrue(second.skipped)
             self.assertEqual(second.asset_count, 1)
+
+    def test_asset_names_support_sources_confidence_and_availability(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            archive = root / "fixture.forge"
+            database = root / "assets.sqlite"
+
+            archive.write_bytes(make_archive())
+            index_archive(archive, database)
+
+            written = upsert_asset_names(
+                database,
+                [
+                    AssetName(
+                        uid=TEST_UID,
+                        name="Rook Armor Pack",
+                        category="model",
+                        source="manual",
+                        confidence=100,
+                    ),
+                    AssetName(
+                        uid=0x2000,
+                        name="Rook Character Body",
+                        category="character",
+                        source="community",
+                        confidence=70,
+                    ),
+                ]
+            )
+
+            self.assertEqual(written, 2)
+
+            matches = search_asset_names(database, "rook")
+
+            self.assertEqual(len(matches), 2)
+
+            confirmed = matches[0]
+
+            self.assertEqual(confirmed.uid, TEST_UID)
+            self.assertEqual(confirmed.name, "Rook Armor Pack")
+            self.assertEqual(confirmed.category, "model")
+            self.assertEqual(confirmed.source, "manual")
+            self.assertEqual(confirmed.confidence, 100)
+            self.assertEqual(confirmed.locations, 1)
+
+            unavailable = matches[1]
+
+            self.assertEqual(unavailable.uid, 0x2000)
+            self.assertEqual(unavailable.locations, 0)
+
+            uid_match = search_asset_names(database, f"0x{TEST_UID:016X}")
+
+            self.assertEqual(len(uid_match), 1)
+            self.assertEqual(uid_match[0].name, "Rook Armor Pack")
+
+            connection = sqlite3.connect(database)
+
+            try:
+                schema_version = connection.execute("PRAGMA user_version").fetchone()[0]
+            finally:
+                connection.close()
+
+            self.assertEqual(schema_version, 2)
 
 class ExtractorTests(unittest.TestCase):
     def test_raw_extraction_and_resume(self):

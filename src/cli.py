@@ -10,7 +10,8 @@ from typing import Sequence
 
 from src.database import (
     index_archive,
-    load_asset_index
+    load_asset_index,
+    search_asset_names
 )
 from src.depgraph import load_depgraph
 from src.extractor import extract_raw_archive
@@ -18,6 +19,10 @@ from src.index import (
     ScanDiagnostics,
     build_index,
     scan_archive
+)
+from src.name_catalog import (
+    import_column_name_catalog,
+    import_name_catalog
 )
 from src.model import (
     export_model,
@@ -286,6 +291,35 @@ def command_index(args: argparse.Namespace) -> int:
 
     return 1 if failed or total_errors else 0
 
+def command_names_import(args: argparse.Namespace) -> int:
+    if args.layout == "columns":
+        importer = import_column_name_catalog
+    else:
+        importer = import_name_catalog
+
+    result = importer(args.catalog, args.database, default_source=args.source, default_category=args.category, default_confidence=args.confidence)
+
+    print(f"Catalog: {result.catalog}")
+    print(f"Layout: {args.layout}")
+    print(f"Rows: {result.rows}")
+    print(f"Imported: {result.imported}")
+    print(f"Skipped: {result.skipped}")
+    print(f"Database: {result.database}")
+
+    return 0
+
+def command_search(args: argparse.Namespace) -> int:
+    matches = search_asset_names(args.database, args.query, limit=args.limit)
+
+    for match in matches:
+        availability = f"{match.locations} location" if match.locations == 1 else f"{match.locations} locations"
+        print(f"{match.uid:016X} {match.name} [{match.category}] confidence={match.confidence} source={match.source} {availability}")
+
+    print()
+    print(f"Matches: {len(matches)}")
+
+    return 0
+
 def command_models(args: argparse.Namespace) -> int:
     archive = resolve_input(args.input, allow_directory=False)
 
@@ -389,6 +423,24 @@ def build_parser() -> argparse.ArgumentParser:
     index.add_argument("-o", "--output", default="output/r6-assets.sqlite", help="SQLite database path")
     index.add_argument("--force", action="store_true", help="rescan the archives even when they appear unchanged")
     index.set_defaults(handler=command_index)
+
+    names = commands.add_parser("names", help="manage human-readable asset names")
+    name_commands = names.add_subparsers(dest="name_command")
+
+    names_import = name_commands.add_parser("import", help="Import names from a CSV catalog")
+    names_import.add_argument("catalog", help="CSV name catalog")
+    names_import.add_argument("--layout", choices=("rows", "columns"), default="rows", help="CSV layout: one asset per row or names above UID columns")
+    names_import.add_argument("-d", "--database", default="output/r6-assets.sqlite", help="SQLite database path")
+    names_import.add_argument("--source", default="csv", help="source used when the CSV has no Source column")
+    names_import.add_argument("--category", default="unknown", help="category used when the CSV has no Category column")
+    names_import.add_argument("--confidence", type=int, default=60, help="confidence used when the CSV has no Confidence column")
+    names_import.set_defaults(handler=command_names_import)
+
+    search = commands.add_parser("search", help="search human-readable asset names and UIDs")
+    search.add_argument("query", help="partial name or UID")
+    search.add_argument("-d", "--database", default="output/r6-assets.sqlite", help="SQLite database path")
+    search.add_argument("--limit", type=int, default=20, help="maximum number of matches")
+    search.set_defaults(handler=command_search)
 
     models = commands.add_parser("models", help="discover model UIDs and geometry parts")
     models.add_argument("input", help="mesh Forge archive")
