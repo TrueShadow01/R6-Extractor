@@ -223,24 +223,62 @@ def command_extract(args: argparse.Namespace) -> int:
     return 1 if failed or scan_errors else 0
 
 def command_index(args: argparse.Namespace) -> int:
-    archive = resolve_input(args.input, allow_directory=False)
+    archives = discover_archives(args.input, all_archives=args.all, pattern=args.pattern)
 
-    result = index_archive(archive, args.output, force=args.force)
+    database = Path(args.output).resolve()
 
-    diagnostics = result.diagnostics
-    errors = diagnostics.invalid_containers + diagnostics.metadata_errors
+    indexed = 0
+    unchanged = 0
+    failed = 0
+    total_containers = 0
+    total_assets = 0
+    total_companions = 0
+    total_errors = 0
 
-    status = "unchanged" if result.skipped else "indexed"
+    for archive in archives:
+        print(f"Indexing {archive.name}", flush=True)
 
-    print(f"Archive: {result.archive.name}")
-    print(f"Status: {status}")
-    print(f"Containers: {diagnostics.containers}")
-    print(f"Assets: {result.asset_count}")
-    print(f"Companion containers: {diagnostics.auxiliary_containers}")
-    print(f"Errors: {errors}")
-    print(f"Database: {result.database}")
+        try:
+            result = index_archive(archive, database, force=args.force)
+        except Exception as error:
+            failed += 1
+            print("    Status: failed")
+            print(f"    Error: {error}")
+            continue
 
-    return 1 if errors else 0
+        diagnostics = result.diagnostics
+        errors = diagnostics.invalid_containers + diagnostics.metadata_errors
+
+        if result.skipped:
+            unchanged += 1
+            status = "unchanged"
+        else:
+            indexed += 1
+            status = "indexed"
+
+        total_containers += diagnostics.containers
+        total_assets += result.asset_count
+        total_companions += diagnostics.auxiliary_containers
+        total_errors += errors
+
+        print(f"    Status: {status}")
+        print(f"    Containers: {diagnostics.containers}")
+        print(f"    Assets: {result.asset_count}")
+        print(f"    Companion containers: {diagnostics.auxiliary_containers}")
+        print(f"    Errors: {errors}")
+
+    print()
+    print(f"Archives: {len(archives)}")
+    print(f"Indexed: {indexed}")
+    print(f"Unchanged: {unchanged}")
+    print(f"Failed: {failed}")
+    print(f"Containers: {total_containers}")
+    print(f"Assets: {total_assets}")
+    print(f"Companion containers: {total_companions}")
+    print(f"Errors: {total_errors}")
+    print(f"Database: {database}")
+
+    return 1 if failed or total_errors else 0
 
 def command_models(args: argparse.Namespace) -> int:
     archive = resolve_input(args.input, allow_directory=False)
@@ -333,10 +371,12 @@ def build_parser() -> argparse.ArgumentParser:
     extract.add_argument("-v", "--verbose", action="store_true")
     extract.set_defaults(handler=command_extract)
 
-    index = commands.add_parser("index", help="add one Forge archive to the persistent asset index")
-    index.add_argument("input", help="Forge archive")
+    index = commands.add_parser("index", help="build or update the asset index")
+    index.add_argument("input", nargs="?", help="Forge archive or directory")
+    index.add_argument("--all", action="store_true", help="index every Forge archive under GAME_DIR")
+    index.add_argument("--pattern", default="*.forge", help="archive filename pattern")
     index.add_argument("-o", "--output", default="output/r6-assets.sqlite", help="SQLite database path")
-    index.add_argument("--force", action="store_true", help="rescan the archive even when it appears unchanged")
+    index.add_argument("--force", action="store_true", help="rescan the archives even when they appear unchanged")
     index.set_defaults(handler=command_index)
 
     models = commands.add_parser("models", help="discover model UIDs and geometry parts")

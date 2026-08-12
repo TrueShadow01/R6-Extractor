@@ -82,12 +82,19 @@ py -3 -B main.py scan --all
 py -3 -B main.py extract <archive.forge> -o output/raw
 ```
 
-**Add a archive to the persistent asset index:**
+**Build or update the asset index:**
 ```powershell
+# One archive
 py -3 -B main.py index <archive.forge> -o output/r6-assets.sqlite
+
+# A directory
+py -3 -B main.py <directory> -o output/r6-assets.sqlite
+
+# Every Forge archive under GAME_DIR
+py -3 -B main.py index --all -o output/r6-assets.sqlite
 ```
 
-Unchanged archives are skipped. Use `--force` to rescan one.
+Each archive is saved independently. Interrupted scan can be rerun safely because unchanged archives are skipped. Use `--force` to rescan them.
 
 **Discover model UIDs:**
 ```powershell
@@ -158,7 +165,7 @@ Results are recorded in `output/raw/manifest.jsonl`. An asset is resumed only wh
 
 ## Roadmap
 
-1. Expand the index to the full game and use it for automatic cross-bundle resolution
+1. Use the asset index for automatic cross-bundle resolution
 2. Add UID-to-name mappings and asset search
 3. Validate the remaining vertex layouts
 4. Reconstruct streamed textures and decode packed PBR channels

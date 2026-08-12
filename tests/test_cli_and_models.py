@@ -158,6 +158,37 @@ class CliTests(unittest.TestCase):
             self.assertIn("Status: unchanged", second_output.getvalue())
             self.assertIn("Assets: 1", second_output.getvalue())
 
+    def test_index_command_accepts_directory(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            database = root / "assets.sqlite"
+
+            (root / "first.forge").write_bytes(make_archive())
+            (root / "second.forge").write_bytes(make_archive())
+
+            output = StringIO()
+
+            with redirect_stdout(output):
+                result = main(
+                    [
+                        "index",
+                        str(root),
+                        "--pattern",
+                        "*.forge",
+                        "-o",
+                        str(database)
+                    ]
+                )
+
+            text = output.getvalue()
+
+            self.assertEqual(result, 0)
+            self.assertIn("Archives: 2", text)
+            self.assertIn("Indexed: 2", text)
+            self.assertIn("Unchanged: 0", text)
+            self.assertIn("Failed: 0", text)
+            self.assertIn("Assets: 2", text)
+
     def test_cross_bundle_depgraph_with_archive_only(self):
         with tempfile.TemporaryDirectory() as root:
             root = Path(root)
