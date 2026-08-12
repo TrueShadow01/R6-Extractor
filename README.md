@@ -132,12 +132,13 @@ Audio extraction is not connected to the main CLI yet.
 ## Roadmap
 
 1. Preserve mesh islands and reconstruct multi-material character shaders
-2. Validate the remaining vertex layouts
-3. Reconstruct streamed textures and decode packed PBR channels
-4. Add GLB export
-5. Decode skeletons, weights and animations
-6. Add bulk model export
-7. Build a desktop asset browser and Blender integration
+2. Ship an attributed, versioned UID catalog and import it during setup
+3. Validate the remaining vertex layouts
+4. Reconstruct streamed textures and decode packed PBR channels
+5. Add GLB export
+6. Decode skeletons, weights and animations
+7. Add bulk model export
+8. Build a desktop asset browser and Blender integration
 
 ## Tests
 
