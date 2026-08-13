@@ -29,6 +29,7 @@ from src.model import (
     resolve_dependency_uids
 )
 from src.model_catalog import (
+    COMPILED_MESH_OBJECT,
     build_model_catalog,
     resolve_bundle_paths,
     write_model_catalog
@@ -258,9 +259,79 @@ def command_names_import(args: argparse.Namespace) -> int:
 def command_search(args: argparse.Namespace) -> int:
     matches = search_asset_names(args.database, args.query, limit=args.limit)
 
+    model_locations = {}
+    dependency_uids = set()
+    game_dir = game_directory()
+
+    if game_dir is not None:
+        for depgraph in sorted(game_dir.glob("*.depgraphbin")):
+            children = load_depgraph(depgraph)
+
+            for match in matches:
+                if match.uid not in children:
+                    continue
+
+                dependencies = resolve_dependency_uids(match.uid, children)
+
+                model_locations.setdefault(match.uid, []).append(
+                    (
+                        depgraph,
+                        dependencies
+                    )
+                )
+
+                dependency_uids.update(dependencies)
+
+    asset_index = (
+        load_asset_index(args.database, dependency_uids)
+        if dependency_uids
+        else None
+    )
+
+    database_path = Path(args.database).expanduser().resolve()
+
     for match in matches:
-        availability = f"{match.locations} location" if match.locations == 1 else f"{match.locations} locations"
+        availability = (
+            f"{match.locations} location"
+            if match.locations == 1
+            else f"{match.locations} locations"
+        )
+
         print(f"{match.uid:016X} {match.name} [{match.category}] confidence={match.confidence} source={match.source} {availability}")
+
+        for depgraph, dependencies in model_locations.get(match.uid, ()):
+            dependency_set = set(dependencies)
+
+            geometry_records = (
+                tuple(
+                    sorted(
+                        (
+                            record
+                            for record in asset_index.records()
+                            if record.uid in dependency_set and record.file_type == COMPILED_MESH_OBJECT
+                        ),
+                        key=lambda record: (
+                            record.uid,
+                            str(record.archive)
+                        )
+                    )
+                )
+                if asset_index is not None
+                else ()
+            )
+
+            print(f"  Depgraph: {depgraph}")
+
+            for record in geometry_records:
+                print(f"  Geometry: {record.uid:016X} -> {record.archive}")
+
+            if geometry_records:
+                archive = geometry_records[0].archive
+
+                print(
+                    "  Export: "
+                    f'py -3 -B main.py model "{archive}" --depgraph "{depgraph}" --database "{database_path}" --uid {match.uid:016X} -o output/model-{match.uid:016X}'
+                )
 
     print()
     print(f"Matches: {len(matches)}")

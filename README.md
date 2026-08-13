@@ -88,6 +88,8 @@ py -3 -B main.py models <mesh.forge> --json-output output/models.json
 py -3 -B main.py model <mesh.forge> --uid <modelUID> -o output/model
 ```
 
+`search` checks dependency graphs under `GAME_DIR` and prints geometry locations and a ready model-export command for matching model parents.
+
 `--all` processes every Forge archive under `GAME_DIR`. Run any command with `-h` for its available options.
 
 Index updates are committed per archive. Interrupted scans can be rerun because unchanged archives are skipped. Use `--force` to rescan them.
