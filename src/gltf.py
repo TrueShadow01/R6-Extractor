@@ -22,7 +22,6 @@ class MeshPartLike(Protocol):
     vertices: Sequence[tuple[float, float, float]]
     uvs: Sequence[tuple[float, float]]
     normals: Sequence[tuple[float, float, float]]
-    faces: Sequence[tuple[int, int, int]]
     islands: Sequence
 
 @dataclass(frozen=True)
@@ -178,18 +177,12 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
             for component in normal_value
         ]
 
-        # read_mesh converts Siege UVs for OBJ's convention.
-        # Convert them back for glTF's upper-left texture origin
+        # The mesh parser flips Siege UVs vertically.
+        # Convert them for glTF's upper-left texture origin
         texture_coordinates = [
             component
             for u, v in part.uvs
             for component in (u, 1.0 - v)
-        ]
-
-        indices = [
-            index
-            for face in part.faces
-            for index in face
         ]
 
         island_groups = [
@@ -201,14 +194,8 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
             if island.faces
         ]
 
-        # Models constructed by older callers my not contain island data
         if not island_groups:
-            island_groups = [
-                (
-                    0,
-                    part.faces
-                )
-            ]
+            raise ValueError(f"Part {part.uid:016X} has no material islands")
 
         prefix = f"part_{part.uid:016X}"
 

@@ -30,6 +30,7 @@ from src.model import (
 )
 from src.model_catalog import (
     build_model_catalog,
+    resolve_bundle_paths,
     write_model_catalog
 )
 
@@ -118,35 +119,6 @@ def discover_archives(value: str | None, *, all_archives: bool, pattern: str) ->
         raise FileNotFoundError(f"No files matching {pattern!r} under {source}")
 
     return archives
-
-def bundle_files(forge_path: str | Path, *, depgraph_path: str | Path | None=None, archive_only: bool = False) -> tuple[list[Path], Path]:
-    forge_path = Path(forge_path).resolve()
-
-    if "_bnk_" not in forge_path.name:
-        raise ValueError("Expected a bundle archive containing '_bnk_'")
-
-    prefix = forge_path.name.split("_bnk_", 1)[0]
-    directory = forge_path.parent
-
-    if archive_only:
-        archives = [forge_path]
-    else:
-        mesh_files = list(directory.glob(f"{prefix}_bnk_*mesh.forge"))
-        texture_files = list(directory.glob(f"{prefix}_bnk_*textures*.forge"))
-        archives = sorted(set(mesh_files + texture_files))
-
-    if not archives:
-        raise FileNotFoundError(f"No bundle archives found for {prefix}")
-
-    if depgraph_path is None:
-        depgraph = directory / f"{prefix}.depgraphbin"
-
-        if not depgraph.is_file():
-            raise FileNotFoundError(f"Dependency graph not found: {depgraph}")
-    else:
-        depgraph = resolve_depgraph(depgraph_path)
-
-    return archives, depgraph
 
 def command_scan(args: argparse.Namespace) -> int:
     archives = discover_archives(args.input, all_archives=args.all, pattern=args.pattern)
@@ -368,9 +340,19 @@ def command_model(args: argparse.Namespace) -> int:
 
     uid = int(uid_text, 16)
 
-    archives, depgraph = bundle_files(archive, depgraph_path=args.depgraph, archive_only=args.archive_only)
+    explicit_depgraph = (
+        resolve_depgraph(args.depgraph)
+        if args.depgraph
+        else None
+    )
 
-    children, _ = load_depgraph(depgraph)
+    (
+        _,
+        depgraph,
+        archives
+    ) = resolve_bundle_paths(archive, depgraph_path=explicit_depgraph, include_textures=True, archive_only=args.archive_only)
+
+    children = load_depgraph(depgraph)
 
     if args.database:
         dependency_uids = set(resolve_dependency_uids(uid, children))
@@ -389,8 +371,6 @@ def command_model(args: argparse.Namespace) -> int:
     print(f"Diffuse: {result.diffuse}")
     print(f"Normal: {result.normal}")
     print(f"Specular: {result.specular}")
-    print(f"OBJ: {result.obj_path}")
-    print(f"MTL: {result.mtl_path}")
     print(f"glTF: {result.gltf_path}")
 
     return 0
@@ -450,7 +430,7 @@ def build_parser() -> argparse.ArgumentParser:
     models.add_argument("-v", "--verbose", action="store_true")
     models.set_defaults(handler=command_models)
 
-    model = commands.add_parser("model", help="export one model as OBJ and glTF")
+    model = commands.add_parser("model", help="export one model as glTF")
     model.add_argument("input", help="mesh Forge archive")
     model.add_argument("--uid", required=True, help="hexadecimal Mesh UID")
     model.add_argument("-o", "--output", default="output/model")

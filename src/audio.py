@@ -25,7 +25,7 @@ def extract_wems(data, out_dir, prefix="sound"):
     return paths
 
 # Convert .wem to .wav via vgmstream-cli
-# Returns the .wav path or None if vgmstream isnt on PATH
+# Returns the WAV path or None if vgmstream is not on PATH
 def wem_to_wav(wem_path, vgmstream="vgmstream-cli"):
     exe = shutil.which(vgmstream) or shutil.which(vgmstream + ".exe")
     if exe is None:

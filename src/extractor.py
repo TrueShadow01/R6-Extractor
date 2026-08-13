@@ -205,7 +205,7 @@ def extract_raw_archive(archive: str | Path, output_root: str | Path, *, resume:
                 status = "error"
                 print(f"error {record.archive.name} offset=0x{record.container_offset:X}: {error}")
 
-        if progress:
-            progress(record, status)
+            if progress:
+                progress(record, status)
 
     return summary

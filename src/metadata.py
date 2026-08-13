@@ -27,7 +27,7 @@ def parse_file_metadata(payload: bytes) -> FileMetadata:
     name_length, container_type, flags = struct.unpack_from("<HHI", payload, 0)
 
     # Modern file payloads use container type 2. Small companion
-    # metadata contaienrs use other values and must not be indexed
+    # Metadata containers use other values and must not be indexed
     if container_type != 2:
         raise InvalidFileMetadata(f"Container type {container_type} is not a file payload")
 

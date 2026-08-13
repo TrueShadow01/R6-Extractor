@@ -168,7 +168,7 @@ def index_archive(archive: str | Path, database: str | Path, *, force: bool = Fa
             (str(archive_path),)
         ).fetchone()
 
-        if (not force and existing is not None and existing["size"] == archive_stat.st_size and existing["modified_ns"] == archive_stat.st_mtime_ns):
+        if (not force and existing is not None and existing["size"] == archive_stat.st_size and existing["modified_ns"] == archive_stat.st_mtime_ns and existing["invalid_containers"] == 0 and existing["metadata_errors"] == 0):
             return ArchiveIndexResult(
                 database=database_path,
                 archive=archive_path,

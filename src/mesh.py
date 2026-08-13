@@ -86,29 +86,3 @@ def read_mesh_with_islands(payload):
 
     islands = read_lod0_islands(payload, tris, tail, num_islands)
     return verts, uvs, normals, islands
-
-def read_mesh(payload):
-    """Compatibility wrapper returning the previous flattened face list"""
-
-    verts, uvs, normals, islands = read_mesh_with_islands(payload)
-
-    faces = [
-        face
-        for island in islands
-        for face in island.faces
-    ]
-
-    return verts, uvs, normals, faces
-
-def save_obj(path, payload):
-    verts, uvs, normals, faces = read_mesh(payload)
-    with open(path, "w") as fh:
-        for x, y, z in verts:
-            fh.write(f"v {x:.6f} {y:.6f} {z:.6f}\n")
-        for u, v in uvs:
-            fh.write(f"vt {u:.6f} {v:.6f}\n")
-        for nx, ny, nz in normals:
-            fh.write(f"vn {nx:.6f} {ny:.6f} {nz:.6f}\n")
-        for a, b, c in faces:
-            fh.write(f"f {a + 1}/{a + 1}/{a + 1} {b + 1}/{b + 1}/{b + 1} {c + 1}/{c + 1}/{c + 1}\n")
-    return len(verts), len(faces)

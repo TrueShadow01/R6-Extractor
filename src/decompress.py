@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 
 class OodleUnavailableError(RuntimeError):
-    """ Raised when a usuable Oodle runtime cannot be found """
+    """Raised when a usable Oodle runtime cannot be found"""
 
 _oodle = None
 

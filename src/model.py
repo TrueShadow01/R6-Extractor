@@ -1,4 +1,4 @@
-"""Composite model resolution and bounded-memory OBJ export"""
+"""Composite model resolution and export"""
 
 from __future__ import annotations
 
@@ -25,7 +25,6 @@ from src.parser import (
 )
 from src.texture import save_png
 
-MESH = 0x415D9568
 COMPILED_MESH_OBJ = 0xABEB2DFB
 
 TEXTURE_TYPES = {
@@ -43,8 +42,7 @@ class MeshPart:
     vertices: list[tuple[float, float, float]]
     uvs: list[tuple[float, float]]
     normals: list[tuple[float, float, float]]
-    faces: list[tuple[int, int, int]]
-    islands: tuple[MeshIsland, ...] = ()
+    islands: tuple[MeshIsland, ...]
 
 @dataclass(frozen=True)
 class ModelExportResult:
@@ -56,8 +54,6 @@ class ModelExportResult:
     diffuse: str | None
     normal: str | None
     specular: str | None
-    obj_path: Path
-    mtl_path: Path
     gltf_path: Path
 
 def load_asset_payload(record: AssetRecord) -> bytes:
@@ -128,19 +124,13 @@ def decode_mesh_parts(records: Iterable[AssetRecord]) -> tuple[MeshPart, ...]:
             islands
         ) = read_mesh_with_islands(payload)
 
-        faces = [
-            face
-            for island in islands
-            for face in island.faces
-        ]
-
         if len(uvs) != len(vertices):
             raise ValueError(f"Geometry {record.uid:016X} has {len(vertices)} vertices but {len(uvs)} UV coordinates")
 
         if len(normals) != len(vertices):
             raise ValueError(f"Geometry {record.uid:016X} has {len(vertices)} vertices but {len(normals)} normals")
 
-        parts.append(MeshPart(uid=record.uid, vertices=vertices, uvs=uvs, normals=normals, faces=faces, islands=islands))
+        parts.append(MeshPart(uid=record.uid, vertices=vertices, uvs=uvs, normals=normals, islands=islands))
 
     return tuple(parts)
 
@@ -231,66 +221,6 @@ def resolve_export_material_textures(texture_sets: Iterable[MaterialTextureSet],
         for texture_set in texture_sets
     )
 
-def write_composite_obj(model_uid: int, parts: Iterable[MeshPart], output_directory: Path, diffuse: str | None, normal: str | None) -> tuple[Path, Path, int, int, int]:
-    name = f"{model_uid:016X}"
-    obj_path = output_directory / f"{name}.obj"
-    mtl_path = output_directory / f"{name}.mtl"
-
-    parts = tuple(parts)
-    vertex_count = 0
-    triangle_count = 0
-
-    with obj_path.open("w", encoding="utf-8", newline="\n") as output:
-        output.write(f"mtllib {name}.mtl\n")
-
-        vertex_offset = 0
-
-        for part in parts:
-            part_name = f"part_{part.uid:016X}"
-
-            output.write(f"o {part_name}\n")
-            output.write(f"g {part_name}\n")
-
-            for x, y, z in part.vertices:
-                output.write(f"v {x:.6f} {y:.6f} {z:.6f}\n")
-
-            for u, v in part.uvs:
-                output.write(f"vt {u:.6f} {v:.6f}\n")
-
-            for nx, ny, nz in part.normals:
-                output.write(f"vn {nx:.6f} {ny:.6f} {nz:.6f}\n")
-
-            output.write("usemtl material_0\n")
-
-            for a, b, c in part.faces:
-                a += vertex_offset + 1
-                b += vertex_offset + 1
-                c += vertex_offset + 1
-
-                output.write(f"f {a}/{a}/{a} {b}/{b}/{b} {c}/{c}/{c}\n")
-
-            vertex_offset += len(part.vertices)
-            vertex_count += len(part.vertices)
-            triangle_count += len(part.faces)
-
-    with mtl_path.open("w", encoding="utf-8", newline="\n") as output:
-        output.write("newmtl material_0\n")
-        output.write("Kd 1.0 1.0 1.0\n")
-
-        if diffuse:
-            output.write(f"map_Kd {diffuse}\n")
-
-        if normal:
-            output.write(f"map_Bump {normal}\n")
-
-    return (
-        obj_path,
-        mtl_path,
-        len(parts),
-        vertex_count,
-        triangle_count
-    )
-
 def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: AssetIndex, output_directory: str | Path) -> ModelExportResult:
     """Export every geometry child and linked decodable texture"""
 
@@ -324,13 +254,9 @@ def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: A
         texture_sets = resolve_material_texture_sets(load_asset_payload(model_record), resolve_texture_uids(model_uid, children, index), material_count)
         material_textures = resolve_export_material_textures(texture_sets, decoded_textures)
 
-    (
-        obj_path,
-        mtl_path,
-        part_count,
-        vertex_count,
-        triangle_count
-    ) = write_composite_obj(model_uid, parts, output_directory, diffuse, normal)
+    part_count = len(parts)
+    vertex_count = sum(len(part.vertices) for part in parts)
+    triangle_count = sum(len(island.faces) for part in parts for island in part.islands)
 
     gltf_path = write_gltf(
         model_uid,
@@ -351,7 +277,5 @@ def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: A
         diffuse=diffuse,
         normal=normal,
         specular=specular,
-        obj_path=obj_path,
-        mtl_path=mtl_path,
         gltf_path=gltf_path
     )

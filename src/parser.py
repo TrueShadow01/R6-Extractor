@@ -51,17 +51,6 @@ def _require(data, offset: int, size: int, label: str) -> None:
     if offset < 0 or size < 0 or offset + size > len(data):
         raise ForgeFormatError(f"Truncated {label} at 0x{offset:X}: need {size} bytes, archive has {len(data)}")
 
-def parse_header(path: str | Path) -> None:
-    """Validate the outer Scimitar file signature"""
-
-    with open(path, "rb") as stream:
-        magic = stream.read(len(SCIMITAR_MAGIC))
-
-    if magic != SCIMITAR_MAGIC:
-        raise ForgeFormatError(f"Invalid Scimitar magic in {path}")
-
-    print("Magic OK")
-
 @contextmanager
 def map_archive(path: str | Path) -> Iterator[mmap.mmap]:
     """Map an archive without loading the whole file into Python memory"""
@@ -172,7 +161,7 @@ def _decode_chunk(data, chunk: ChunkInfo, decompressor: Callable[[bytes, int], b
     return decoded
 
 def read_first_chunk(data, container: int | ContainerInfo, decompressor: Callable[[bytes, int], bytes] = oodle_decompress) -> bytes:
-    """Decode only the first chunk, primarly for metadata indexing"""
+    """Decode only the first chunk, primarily for metadata indexing"""
 
     if isinstance(container, int):
         info = parse_container(data, container)

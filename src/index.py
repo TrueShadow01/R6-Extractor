@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Iterator
 
+from src.decompress import OodleUnavailableError
 from src.metadata import (
     FileMetadata,
     InvalidFileMetadata,
@@ -31,20 +32,6 @@ class AssetRecord:
     unpacked_size: int
     metadata: FileMetadata
 
-    @property
-    def key(self) -> str:
-        return(f"{self.archive.name}: {self.container_offset:016X}")
-
-    @property
-    def legacy_location(self) -> tuple[int, str, int]:
-        """Return the tuple expected by the existing model exporter"""
-
-        return (
-            self.file_type,
-            str(self.archive),
-            self.container_offset
-        )
-
 @dataclass
 class ScanDiagnostics:
     containers: int = 0
@@ -58,7 +45,7 @@ class ScanDiagnostics:
         message = (f"{category}: {type(error).__name__}: {error}")
         self.errors[message] += 1
 
-@dataclass(frozen=True)
+@dataclass
 class AssetIndex:
     by_uid: dict[int, list[AssetRecord]] = field(default_factory=dict)
     diagnostics: dict[Path, ScanDiagnostics] = field(default_factory=dict)
@@ -84,22 +71,6 @@ class AssetIndex:
 
     def __contains__(self, uid: int) -> bool:
         return uid in self.by_uid
-
-    def __getitem__(self, uid: int) -> tuple[int, str, int]:
-        record = self.primary(uid)
-
-        if record is None:
-            raise KeyError(uid)
-
-        return record.legacy_location
-
-    def get(self, uid: int, default=None):
-        record = self.primary(uid)
-
-        if record is None:
-            return default
-
-        return record.legacy_location
 
     @property
     def total_records(self) -> int:
@@ -149,6 +120,10 @@ def scan_archive(path: str | Path, diagnostics: ScanDiagnostics | None = None) -
                 # are deliberately excluded from the asset index
                 diagnostics.auxiliary_containers += 1
                 continue
+            except OodleUnavailableError:
+                # A missing runtime affects the entire scan rather
+                # than one malformed asset
+                raise
             except Exception as error:
                 diagnostics.metadata_errors += 1
                 diagnostics.add_error("metadata", error)

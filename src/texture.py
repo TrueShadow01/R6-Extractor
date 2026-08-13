@@ -51,29 +51,64 @@ def reconstruct_bc5_z(image: Image.Image) -> Image.Image:
 
     return Image.frombytes("RGBA", image.size, bytes(pixels))
 
-# Return (width, height, format_code, surface) from a texture payload
-# Pixel data starts 12 bytes after the CompiledTextureMapData magic,
-# width/height live in the trailer, we accepd a power-of-two (w, h)
-# pair only when the surface size equals (w/4) * (h/4) * blocksize,
-# that size check refects coincidental matches. (prevents most false positives)
 def parse_texture(payload):
-    tPayload = payload.find(TEXMAPDATA_MAGIC)
-    if tPayload == -1:
-        raise ValueError("Not a texture payload")
-    pixel_start = tPayload + 12 # skip magic + data1 + numBlocks + data2 + 0x30
+    texture_offset = payload.find(TEXMAPDATA_MAGIC)
 
+    if texture_offset == -1:
+        raise ValueError("Not a texture payload")
+
+    pixel_start = texture_offset + 12
     tail_start = max(pixel_start, len(payload) - 200)
-    for dpos in range(tail_start, len(payload) - 36):
-        w = int.from_bytes(payload[dpos:dpos + 4], "little")
-        h = int.from_bytes(payload[dpos + 4:dpos + 8], "little")
-        if w not in POW2 or h not in POW2:
+
+    # complete trailer requires 48 bytes
+    for dimension_offset in range(tail_start, len(payload) - 47):
+        width = int.from_bytes(
+            payload[dimension_offset: dimension_offset + 4],
+            "little"
+        )
+        height = int.from_bytes(
+            payload[dimension_offset + 4: dimension_offset + 8],
+            "little"
+        )
+
+        if width not in POW2 or height not in POW2:
             continue
-        surf = dpos - pixel_start
-        blocks = (w // 4) * (h // 4)
-        if surf == blocks * 8 or surf == blocks * 16: # dimensions confirmed by size
-            fmt = int.from_bytes(payload[dpos + 32:dpos + 36], "little")
-            textype = int.from_bytes(payload[dpos + 44:dpos + 48] ,"little")
-            return w, h, fmt, textype, payload[pixel_start:dpos]
+
+        surface_size = dimension_offset - pixel_start
+        blocks = (width // 4) * (height // 4)
+
+        format_code = int.from_bytes(
+            payload[dimension_offset + 32: dimension_offset + 36],
+            "little"
+        )
+
+        format_info = FORMATS.get(format_code)
+
+        if format_info is not None:
+            _, block_size = format_info
+
+            if surface_size != blocks * block_size:
+                continue
+        elif surface_size not in (blocks * 8, blocks * 16):
+            # Preserve detection of unknown formats so save_png()
+            # can report their numeric format code
+            continue
+
+        texture_type = int.from_bytes(
+            payload[dimension_offset + 44: dimension_offset + 48],
+            "little"
+        )
+
+        return(
+            width,
+            height,
+            format_code,
+            texture_type,
+            payload[
+                pixel_start:
+                dimension_offset
+            ]
+        )
     
     raise ValueError("No Full Tier Surface (partial tier or unrecognized)")
 

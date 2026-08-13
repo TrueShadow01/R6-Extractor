@@ -7,8 +7,10 @@ import sqlite3
 import struct
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
+from src.decompress import OodleUnavailableError
 from src.extractor import extract_raw_archive
 from src.database import (
     AssetName,
@@ -97,7 +99,7 @@ class ParserTests(unittest.TestCase):
             parse_container(truncated, 0)
 
 class MetadataTests(unittest.TestCase):
-    def test_valid_file_metadat(self):
+    def test_valid_file_metadata(self):
         payload = make_file_payload()
         metadata = parse_file_metadata(payload)
 
@@ -138,11 +140,12 @@ class IndexTests(unittest.TestCase):
             self.assertEqual(index.total_records, 1)
             self.assertEqual(index.duplicate_uids, 0)
 
-            file_type, path, offset = index[TEST_UID]
+            indexed_record = index.primary(TEST_UID)
 
-            self.assertEqual(file_type, TEST_FILE_TYPE)
-            self.assertEqual(Path(path), archive.resolve())
-            self.assertEqual(offset, records[0].container_offset)
+            self.assertIsNotNone(indexed_record)
+            self.assertEqual(indexed_record.file_type, TEST_FILE_TYPE)
+            self.assertEqual(indexed_record.archive, archive.resolve())
+            self.assertEqual(indexed_record.container_offset, records[0].container_offset)
 
     def test_sqlite_index_persists_unsigned_uid_and_skips_unchanged(self):
         with tempfile.TemporaryDirectory() as root:
@@ -203,6 +206,44 @@ class IndexTests(unittest.TestCase):
 
             self.assertTrue(second.skipped)
             self.assertEqual(second.asset_count, 1)
+
+    def test_sqlite_index_rescans_previous_error_result(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            archive = root / "fixture.forge"
+            database = root / "assets.sqlite"
+
+            archive.write_bytes(make_archive())
+
+            first = index_archive(archive, database)
+
+            self.assertFalse(first.skipped)
+
+            connection = sqlite3.connect(database)
+
+            try:
+                connection.execute(
+                    """
+                    UPDATE archives
+                    SET metadata_errors = 1
+                    WHERE path = ?
+                    """,
+                    (
+                        str(archive.resolve()),
+                    )
+                )
+                connection.commit()
+            finally:
+                connection.close()
+
+            second = index_archive(archive, database)
+
+            self.assertFalse(second.skipped)
+            self.assertEqual(second.diagnostics.metadata_errors, 0)
+
+            third = index_archive(archive, database)
+
+            self.assertTrue(third.skipped)
 
     def test_asset_names_support_sources_confidence_and_availability(self):
         with tempfile.TemporaryDirectory() as root:
@@ -267,6 +308,15 @@ class IndexTests(unittest.TestCase):
 
             self.assertEqual(schema_version, 2)
 
+    def test_archive_scan_propagates_missing_oodle_runtime(self):
+        with tempfile.TemporaryDirectory() as root:
+            archive = Path(root) / "fixture.forge"
+            archive.write_bytes(make_archive())
+
+            with patch("src.index._record_from_container", side_effect=OodleUnavailableError("runtime missing")):
+                with self.assertRaises(OodleUnavailableError):
+                    list(scan_archive(archive))
+
 class ExtractorTests(unittest.TestCase):
     def test_raw_extraction_and_resume(self):
         with tempfile.TemporaryDirectory() as root:
@@ -308,6 +358,33 @@ class ExtractorTests(unittest.TestCase):
             self.assertEqual(second.resumed, 1)
             self.assertEqual(second.failed, 0)
             self.assertEqual(second.scan_errors, 0)
+
+    def test_progress_reports_every_extracted_asset(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            archive = root / "multiple.forge"
+            output = root / "output"
+
+            archive.write_bytes(SCIMITAR_MAGIC + b"\x00" * 23 + make_container(make_file_payload(b"first")) + make_container(make_file_payload(b"second")))
+
+            events = []
+
+            summary = extract_raw_archive(archive, output, progress=lambda record, status: events.append(
+                (
+                    record.container_offset,
+                    status
+                )
+            ))
+
+            self.assertEqual(summary.scanned_assets, 2)
+            self.assertEqual(len(events), 2)
+            self.assertEqual(
+                [status for _, status in events],
+                [
+                    "extracted",
+                    "extracted"
+                ]
+            )
 
 if __name__ == "__main__":
     unittest.main()

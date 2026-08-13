@@ -10,7 +10,7 @@ from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
 
-from src.cli import main, bundle_files
+from src.cli import main
 from src.index import (
     AssetIndex,
     AssetRecord,
@@ -25,6 +25,7 @@ from src.model import (
 from src.model_catalog import (
     COMPILED_MESH_OBJECT,
     discover_models,
+    resolve_bundle_paths
 )
 from src.parser import (
     CONTAINER_MAGIC,
@@ -32,6 +33,7 @@ from src.parser import (
 )
 from src.mesh import MeshIsland
 from src.material import MaterialTextureSet
+from src.depgraph import load_depgraph
 
 TEST_UID = 0x123456789ABCDEF0
 TEST_FILE_TYPE = COMPILED_MESH_OBJECT
@@ -330,9 +332,19 @@ class CliTests(unittest.TestCase):
             sibling.write_bytes(b"texture")
             depgraph.write_bytes(b"dependencies")
 
-            archives, selected_depgraph = bundle_files(archive, depgraph_path=depgraph, archive_only=True)
+            (
+                prefix,
+                selected_depgraph,
+                archives
+            ) = resolve_bundle_paths(archive, depgraph_path=depgraph, archive_only=True)
 
-            self.assertEqual(archives, [archive.resolve()])
+            self.assertEqual(prefix, "datapc64_merged")
+            self.assertEqual(
+                archives,
+                (
+                    archive.resolve(),
+                )
+            )
             self.assertNotIn(sibling.resolve(), archives)
             self.assertEqual(selected_depgraph, depgraph.resolve())
 
@@ -403,6 +415,7 @@ class ModelDiscoveryTests(unittest.TestCase):
 
         model = models[0]
 
+        self.assertEqual(model.to_dict()["part_count"], 2)
         self.assertEqual(model.uid, model_uid)
         self.assertEqual(model.part_count, 2)
         self.assertEqual(model.geometry_uids,
@@ -445,6 +458,35 @@ class ModelDiscoveryTests(unittest.TestCase):
             )
         )
 
+    def test_depgraph_groups_children_by_parent(self):
+        relationships = b"".join(
+            [
+                struct.pack("<QQQ", 0x1000, 0x2000, 0),
+                struct.pack("<QQQ", 0x1000, 0x3000, 0),
+                struct.pack("<QQQ", 0x4000, 0x5000, 0)
+            ]
+        )
+
+        with tempfile.TemporaryDirectory() as root:
+            depgraph = Path(root) / "fixture.depgraphbin"
+
+            depgraph.write_bytes(make_container(b"\x00" + relationships))
+
+            children = load_depgraph(depgraph)
+
+        self.assertEqual(
+            children,
+            {
+                0x1000: [
+                    0x2000,
+                    0x3000
+                ],
+                0x4000: [
+                    0x5000
+                ]
+            }
+        )
+
 class GltfExportTests(unittest.TestCase):
     def test_gltf_structure_axis_and_uv_conversion(self):
         part = MeshPart(
@@ -464,9 +506,14 @@ class GltfExportTests(unittest.TestCase):
                 (0.0, 0.0, 1.0),
                 (0.0, 0.0, 1.0)
             ],
-            faces=[
-                (0, 1, 2)
-            ]
+            islands=(
+                MeshIsland(
+                    material_id=0,
+                    faces=(
+                        (0, 1, 2),
+                    )
+                ),
+            )
         )
 
         with tempfile.TemporaryDirectory() as root:
@@ -581,10 +628,6 @@ class GltfExportTests(unittest.TestCase):
                 (0.0, 0.0, 1.0),
                 (0.0, 0.0, 1.0),
                 (0.0, 0.0, 1.0)
-            ],
-            faces=[
-                (0, 1, 2),
-                (0, 2, 3)
             ],
             islands=(
                 MeshIsland(

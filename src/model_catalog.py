@@ -27,7 +27,7 @@ class ModelRecord:
     def to_dict(self) -> dict:
         return {
             "uid": f"0x{self.uid:016X}",
-            "part_count": self.part_cout,
+            "part_count": self.part_count,
             "geometry_uids": [
                 f"0x{uid:016X}"
                 for uid in self.geometry_uids
@@ -69,16 +69,6 @@ class ModelCatalog:
             for model in self.models
         )
 
-    def get(self, uid: int) -> ModelRecord | None:
-        return next(
-            (
-                model
-                for model in self.models
-                if model.uid == uid
-            ),
-            None
-        )
-
     def to_dict(self) -> dict:
         return {
             "prefix": self.prefix,
@@ -101,8 +91,8 @@ class ModelCatalog:
             ]
         }
 
-def resolve_bundle_paths(mesh_archive: str | Path) -> tuple[str, Path, tuple[Path, ...]]:
-    """Resolve a mesh archive to its bundled depgraph and mesh files"""
+def resolve_bundle_paths(mesh_archive: str | Path, *, depgraph_path: str | Path | None = None, include_textures: bool = False, archive_only: bool = False) -> tuple[str, Path, tuple[Path, ...]]:
+    """Resolve archives and dependency graph for one bundle"""
 
     mesh_archive = Path(mesh_archive).resolve()
 
@@ -113,24 +103,43 @@ def resolve_bundle_paths(mesh_archive: str | Path) -> tuple[str, Path, tuple[Pat
         raise ValueError(f"Expected a bundle archive containing '_bnk_' in its name: {mesh_archive.name}")
 
     prefix = mesh_archive.name.split("_bnk_", 1)[0]
-    depgraph_path = mesh_archive.parent / f"{prefix}.depgraphbin"
+    directory = mesh_archive.parent
 
-    if not depgraph_path.is_file():
-        raise FileNotFoundError(f"Dependency graph not found: {depgraph_path}")
-
-    mesh_archives = tuple(
-        sorted(
-            mesh_archive.parent.glob(f"{prefix}_bnk_*mesh.forge")
+    if archive_only:
+        archives = (
+            mesh_archive,
         )
-    )
+    else:
+        selected = list(
+            directory.glob(f"{prefix}_bnk_*mesh.forge")
+        )
 
-    if not mesh_archives:
-        raise FileNotFoundError(f"No mesh archives found for bundle {prefix}")
+        if include_textures:
+            selected.extend(
+                directory.glob(f"{prefix}_bnk_*textures*.forge")
+            )
+
+        archives = tuple(
+            sorted(
+                set(selected)
+            )
+        )
+
+    if not archives:
+        raise FileNotFoundError(f"No bundled archives found for {prefix}")
+
+    if depgraph_path is None:
+        depgraph = directory / f"{prefix}.depgraphbin"
+    else:
+        depgraph = Path(depgraph_path).resolve()
+
+    if not depgraph.is_file():
+        raise FileNotFoundError(f"Dependency graph not found: {depgraph}")
 
     return (
         prefix,
-        depgraph_path,
-        mesh_archives
+        depgraph,
+        archives
     )
 
 def discover_models(children: Mapping[int, Iterable[int]], index: AssetIndex) -> tuple[ModelRecord, ...]:
@@ -181,7 +190,7 @@ def build_model_catalog(mesh_archive: str | Path) -> ModelCatalog:
         mesh_archives
     ) = resolve_bundle_paths(mesh_archive)
 
-    children, _ = load_depgraph(depgraph_path)
+    children = load_depgraph(depgraph_path)
 
     index = build_index(mesh_archives)
     models = discover_models(children, index)

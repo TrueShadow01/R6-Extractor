@@ -17,7 +17,7 @@ The long-term goal is geometry, material, texture, skeleton and animation suppor
 - Wwise audio extraction to WEM
 - Optional WEM-to-WAV conversion with vgmstream
 - Float and packed-position meshes with UVs and normals
-- Composite LOD0 OBJ, MTL and glTF 2.0 export
+- Composite LOD0 glTF 2.0 export
 - Per-island glTF materials with resolved diffuse and normal textures
 - Specular and mask relationships stored as glTF metadata
 - Siege Z-up to glTF Y-up coordinate conversion
@@ -104,7 +104,7 @@ py -3 -B main.py model datapc64_merged_bnk_mesh --depgraph datapc64_ondemand.dep
 
 Use `--archive-only` instead of `--database` for a faster untextured geometry diagnostic.
 
-glTF is the preferred Blender import format. OBJ remains available for diagnostics.
+glTF is the Blender import format and preserves material islands.
 
 ## Audio
 
