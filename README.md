@@ -19,7 +19,7 @@ The long-term goal is geometry, material, texture, skeleton and animation suppor
 - Float and packed-position meshes with UVs and normals
 - Character joint indices, skin weights and per-island bone palettes
 - Composite LOD0 glTF 2.0 export
-- Per-island glTF materials with resolved diffuse and normal textures
+- Per-part glTF materials with cross-bundle textures and alpha cutouts
 - Specular and mask relationships stored as glTF metadata
 - Siege Z-up to glTF Y-up coordinate conversion
 

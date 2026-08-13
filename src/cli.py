@@ -26,7 +26,8 @@ from src.name_catalog import (
 )
 from src.model import (
     export_model,
-    resolve_dependency_uids
+    resolve_dependency_uids,
+    resolve_direct_texture_uids
 )
 from src.model_catalog import (
     COMPILED_MESH_OBJECT,
@@ -397,6 +398,18 @@ def command_model(args: argparse.Namespace) -> int:
     if args.database:
         dependency_uids = set(resolve_dependency_uids(uid, children))
         index = load_asset_index(args.database, dependency_uids)
+        direct_texture_uids = set(resolve_direct_texture_uids(uid, index))
+        missing_texture_uids = {
+            texture_uid
+            for texture_uid in direct_texture_uids
+            if texture_uid not in index
+        }
+
+        if missing_texture_uids:
+            additional_index = load_asset_index(args.database, missing_texture_uids)
+
+            for record in additional_index.records():
+                index.add(record)
     else:
         index = build_index(archives)
 

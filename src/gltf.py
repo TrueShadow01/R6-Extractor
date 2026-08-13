@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from PIL import Image
+
 import json
 import math
 import struct
@@ -288,6 +290,22 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
         specular=specular
     )
 
+    def uses_alpha(filename: str) -> bool:
+        path = output_directory / filename
+
+        if not path.is_file():
+            return False
+
+        with Image.open(path) as source:
+            if "A" not in source.getbands():
+                return False
+
+            minimum, _ = source.getchannel("A").getextrema()
+
+        # Some opaque Siege maps use alpha as packed material data
+        # zero values indicate genuine transparent regions
+        return minimum == 0
+
     material_count = max(used_material_ids, default=0) + 1
     materials = []
 
@@ -318,6 +336,11 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
             pbr["baseColorTexture"] = {
                 "index": add_texture(slot_textures.diffuse)
             }
+
+            if uses_alpha(slot_textures.diffuse):
+                material["alphaMode"] = "MASK"
+                material["alphaCutoff"] = 0.1
+                material["doubleSided"] = True
 
         if slot_textures.normal:
             material["normalTexture"] = {

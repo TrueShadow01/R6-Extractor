@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import struct
 from dataclasses import dataclass
-from typing import Collection
+from typing import Collection, Iterable
 
 from src.metadata import (
     FileMetadata,
@@ -111,6 +111,33 @@ def referenced_uids(
 
     return tuple(uid for _, uid in matches)
 
+def embedded_texture_uids(payload: bytes) -> tuple[int, ...]:
+    """Return compiled texture UIDs stored directly in TextureMap records"""
+
+    found = []
+    seen = set()
+
+    for entry in scan_nested_entries(payload):
+        if entry.metadata.file_type != CURRENT_TEXTURE_MAP:
+            continue
+
+        # Current TextureMap records contain five resolution-tiers
+        # UID slots beginning 105 bytes into their data
+        first_uid = entry.data_offset + 105
+        end = first_uid + 40
+
+        if end > entry.end:
+            continue
+
+        for offset in range(first_uid, end, 8):
+            uid = struct.unpack_from("<Q", payload, offset)[0]
+
+            if uid and uid not in seen:
+                seen.add(uid)
+                found.append(uid)
+
+    return tuple(found)
+
 def read_texture_map_spec(payload: bytes, entry: NestedEntry) -> tuple[int, int] | None:
     """Return the texture role and referenced TextureMap UID"""
 
@@ -129,16 +156,20 @@ def read_texture_map_spec(payload: bytes, entry: NestedEntry) -> tuple[int, int]
 
     return texture_role, texture_map_uid
 
-def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int], material_count: int) -> tuple[MaterialTextureSet, ...]:
-    """Resolve each mesh material slot to its compiled texture tiers"""
+def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int], geometry_uids: Iterable[int]) -> tuple[tuple[MaterialTextureSet, ...], ...]:
+    """Resolve local mesh material slots for each geometry part"""
 
-    if material_count < 0:
-        raise ValueError("Material count cannot be negative")
-
-    if material_count == 0:
-        return ()
-
+    geometry_uids = tuple(geometry_uids)
     entries = scan_nested_entries(payload)
+
+    if not entries:
+        return tuple(() for _ in geometry_uids)
+
+    material_entries = {
+        entry.metadata.uid: entry
+        for entry in entries
+        if entry.metadata.file_type == CURRENT_MATERIAL
+    }
 
     spec_entries = {
         entry.metadata.uid: entry
@@ -152,22 +183,20 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
         if entry.metadata.file_type == CURRENT_TEXTURE_MAP
     }
 
-    materials = []
+    mesh_entries = [
+        entry
+        for entry in entries
+        if entry.metadata.file_type == CURRENT_MESH
+    ]
 
-    for material_entry in entries:
-        if material_entry.metadata.file_type != CURRENT_MATERIAL:
-            continue
+    textured_materials: dict[int, MaterialTextureSet] = {}
 
+    for material_uid, material_entry in material_entries.items():
         material_blob = payload[material_entry.offset:material_entry.end]
-
-        spec_uids = referenced_uids(material_blob, spec_entries.keys())
-
-        if not spec_uids:
-            continue
 
         roles: dict[int, tuple[int, ...]] = {}
 
-        for spec_uid in spec_uids:
+        for spec_uid in referenced_uids(material_blob, spec_entries.keys()):
             spec = read_texture_map_spec(payload, spec_entries[spec_uid])
 
             if spec is None:
@@ -192,19 +221,67 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
             if compiled_uids:
                 roles[texture_role] = compiled_uids
 
-        if not roles:
-            continue
-
-        materials.append(
-            MaterialTextureSet(
+        if roles:
+            textured_materials[material_uid] = MaterialTextureSet(
                 diffuse_uids=roles.get(DIFFUSE_ROLE, ()),
                 normal_uids=roles.get(NORMAL_ROLE, ()),
                 specular_uids=roles.get(SPECULAR_ROLE, ()),
                 mask_uids=roles.get(MASK_ROLE, ())
             )
+
+    # The model header contains adjacent pairs:
+    #
+    # base mesh material UID -> texture-bearing override UID
+    header = payload[:entries[0].offset]
+    material_overrides: dict[int, int] = {}
+
+    for base_uid in material_entries:
+        needle = struct.pack("<Q", base_uid)
+        position = 0
+
+        while True:
+            position = header.find(needle, position)
+
+            if position < 0:
+                break
+
+            if position + 16 <= len(header):
+                override_uid = struct.unpack_from("<Q", header, position + 8)[0]
+
+                if override_uid in textured_materials:
+                    material_overrides[base_uid] = override_uid
+                    break
+
+            position += 1
+
+    part_materials = []
+
+    for geometry_uid in geometry_uids:
+        geometry_reference = struct.pack("<Q", geometry_uid)
+
+        mesh_entry = next(
+            (
+                entry
+                for entry in mesh_entries
+                if geometry_reference in payload[entry.offset:entry.end]
+            ),
+            None
         )
 
-        if len(materials) == material_count:
-            break
 
-    return tuple(materials)
+        if mesh_entry is None:
+            part_materials.append(())
+            continue
+
+        mesh_blob = payload[mesh_entry.offset:mesh_entry.end]
+
+        base_material_uids = referenced_uids(mesh_blob, material_entries.keys())
+
+        part_materials.append(
+            tuple(
+                textured_materials.get(material_overrides.get(base_uid, base_uid), MaterialTextureSet())
+                for base_uid in base_material_uids
+            )
+        )
+
+    return tuple(part_materials)

@@ -76,17 +76,17 @@ def read_skin_weights(payload, vbo, verts_len, num_verts, vert_len):
     return tuple(joints), tuple(weights)
 
 def read_bone_palettes(payload, tail, num_lods, num_islands):
-    """Read the global bone IDs used by each LOD0 material island"""
+    """Read each LOD0 island's global bone IDs"""
 
     palette_table = tail + num_lods * num_islands * 36 + num_islands * 32
 
-    palettes = []
+    palettes = [None] * num_islands
 
-    for island_index in range(num_islands):
-        record = palette_table + island_index * 268
+    for record_index in range(num_islands):
+        record = palette_table + record_index * 268
 
         if record + 10 > len(payload):
-            raise ValueError(f"Bone palette {island_index} is truncated")
+            raise ValueError(f"Bone palette record {record_index} is truncated")
 
         (
             enabled,
@@ -97,21 +97,27 @@ def read_bone_palettes(payload, tail, num_lods, num_islands):
         ) = struct.unpack_from("<HBBIH", payload, record)
 
         if enabled != 1:
-            raise ValueError(f"Bone palette {island_index} has unsupported state {enabled}")
+            raise ValueError(f"Bone palette record {record_index} has unsupported state {enabled}")
 
-        if stored_island != island_index:
-            raise ValueError(f"Expected bone palette {island_index}, found {stored_island}")
+        if stored_island >= num_islands:
+            raise ValueError(f"Bone palette record {record_index} targets invalid island {stored_island}")
 
         if repeated_count != bone_count:
-            raise ValueError(f"Bone palette {island_index} has conflicting counts {bone_count} and {repeated_count}")
+            raise ValueError(f"Bone palette record {record_index} has conflicting counts")
 
         start = record + 10
         end = start + bone_count
 
         if end > len(payload):
-            raise ValueError(f"Bone palette {island_index} data is truncated")
+            raise ValueError(f"Bone palette record {record_index} data is truncated")
 
-        palettes.append(tuple(payload[start:end]))
+        if palettes[stored_island] is not None:
+            raise ValueError(f"Duplicate bone palette for island {stored_island}")
+
+        palettes[stored_island] = tuple(payload[start:end])
+
+    if any(palette is None for palette in palettes):
+        raise ValueError("One or more mesh islands have no bone palettes")
 
     return tuple(palettes)
 

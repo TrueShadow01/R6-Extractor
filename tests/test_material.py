@@ -68,6 +68,10 @@ class MaterialTests(unittest.TestCase):
         mask = 0x3004
         detail = 0x3005
 
+        base_material = 0x4000
+        override_material = 0x4001
+        geometry = 0x5000
+
         material_data = struct.pack(
             "<I5Q",
             CURRENT_MATERIAL,
@@ -78,12 +82,11 @@ class MaterialTests(unittest.TestCase):
             detail_spec
         )
 
-        payload = b"".join(
+        payload = struct.pack("<QQ", base_material, override_material) + b"".join(
             [
-                make_entry(CURRENT_MATERIAL, 0x4001, material_data),
-
-                # Ends the material record before the spec entries
-                make_entry(CURRENT_MESH, 0x4002, b""),
+                make_entry(CURRENT_MATERIAL, override_material, material_data),
+                make_entry(CURRENT_MESH, 0x4002, struct.pack("<QQ", geometry, base_material)),
+                make_entry(CURRENT_MATERIAL, base_material, struct.pack("<I", CURRENT_MATERIAL)),
 
                 make_spec(diffuse_spec, 0, diffuse_map),
                 make_spec(normal_spec, 1, normal_map),
@@ -111,17 +114,19 @@ class MaterialTests(unittest.TestCase):
                 mask,
                 detail
             },
-            material_count=1
+            geometry_uids=(geometry,)
         )
 
         self.assertEqual(
             materials,
             (
-                MaterialTextureSet(
-                    diffuse_uids=(diffuse,),
-                    normal_uids=(normal,),
-                    specular_uids=(specular,),
-                    mask_uids=(mask,)
+                (
+                    MaterialTextureSet(
+                        diffuse_uids=(diffuse,),
+                        normal_uids=(normal,),
+                        specular_uids=(specular,),
+                        mask_uids=(mask,)
+                    ),
                 ),
             )
         )

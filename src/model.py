@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Iterable, Mapping
 
@@ -16,6 +16,7 @@ from src.index import (
 )
 from src.material import (
     MaterialTextureSet,
+    embedded_texture_uids,
     resolve_material_texture_sets
 )
 from src.mesh import read_mesh_with_islands, MeshIsland
@@ -64,6 +65,16 @@ def load_asset_payload(record: AssetRecord) -> bytes:
     with map_archive(record.archive) as data:
         return read_container(data, record.container_offset)
 
+def resolve_direct_texture_uids(model_uid: int, index: AssetIndex) -> tuple[int, ...]:
+    """Read texture UIDs embedded directly in a model package"""
+
+    record = index.primary(model_uid)
+
+    if record is None:
+        return ()
+
+    return embedded_texture_uids(load_asset_payload(record))
+
 def resolve_dependency_uids(model_uid: int, children: Mapping[int, Iterable[int]]) -> tuple[int, ...]:
     """Return the model UID and every recursively reachable child UID"""
 
@@ -82,11 +93,15 @@ def resolve_dependency_uids(model_uid: int, children: Mapping[int, Iterable[int]
     return tuple(sorted(seen))
 
 def resolve_texture_uids(model_uid: int, children: Mapping[int, Iterable[int]], index: AssetIndex) -> tuple[int, ...]:
-    """Collect indexed texture assets reachable from a model"""
+    """Collect indexed texture assets from the depgraph and model package"""
+
+    candidate_uids = set(resolve_dependency_uids(model_uid, children))
+
+    candidate_uids.update(resolve_direct_texture_uids(model_uid, index))
 
     textures = {
         uid
-        for uid in resolve_dependency_uids(model_uid, children)
+        for uid in candidate_uids
         if (record := index.primary(uid)) is not None and record.file_type in TEXTURE_TYPES
     }
 
@@ -252,21 +267,51 @@ def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: A
         specular
     ) = decode_model_textures(model_uid, children, index, output_directory)
 
-    material_count = max(
-        (
-            island.material_id
-            for part in parts
-            for island in part.islands
-        ),
-        default=0
-    ) + 1
-
+    export_parts = parts
     material_textures: tuple[MaterialTextures, ...] = ()
     model_record = index.primary(model_uid)
 
     if model_record is not None:
-        texture_sets = resolve_material_texture_sets(load_asset_payload(model_record), resolve_texture_uids(model_uid, children, index), material_count)
-        material_textures = resolve_export_material_textures(texture_sets, decoded_textures)
+        part_texture_sets = resolve_material_texture_sets(load_asset_payload(model_record), resolve_texture_uids(model_uid, children, index), (record.uid for record in geometry_records))
+
+        if any(part_texture_sets):
+            rebased_parts = []
+            resolved_materials = []
+            material_offset = 0
+
+            for part, texture_set in zip(parts, part_texture_sets):
+                local_material_ids = tuple(dict.fromkeys(island.material_id for island in part.islands))
+                local_material_count = max(local_material_ids, default=-1) + 1
+
+                slot_sets = [
+                    MaterialTextureSet()
+                    for _ in range(local_material_count)
+                ]
+
+                for material_id, texture_set_for_slot in zip(local_material_ids, texture_set):
+                    slot_sets[material_id] = texture_set_for_slot
+
+                rebased_parts.append(
+                    replace(
+                        part,
+                        islands=tuple(
+                            replace(
+                                island,
+                                material_id=(
+                                    island.material_id + material_offset
+                                )
+                            )
+                            for island in part.islands
+                        )
+                    )
+                )
+
+                resolved_materials.extend(resolve_export_material_textures(slot_sets, decoded_textures))
+
+                material_offset += local_material_count
+
+            export_parts = tuple(rebased_parts)
+            material_textures = tuple(resolved_materials)
 
     part_count = len(parts)
     vertex_count = sum(len(part.vertices) for part in parts)
@@ -274,7 +319,7 @@ def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: A
 
     gltf_path = write_gltf(
         model_uid,
-        parts,
+        export_parts,
         output_directory,
         diffuse=diffuse,
         normal=normal,
