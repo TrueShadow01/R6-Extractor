@@ -73,31 +73,6 @@ def resolve_input(value: str, *, allow_directory: bool = True) -> Path:
 
     raise FileNotFoundError(f"Input not found: {value}")
 
-def resolve_depgraph(value: str | Path) -> Path:
-    direct = Path(value).expanduser()
-    candidates = [direct]
-
-    if not str(direct).lower().endswith(".depgraphbin"):
-        candidates.append(Path(f"{direct}.depgraphbin"))
-
-    for candidate in candidates:
-        if candidate.is_file():
-            return candidate.resolve()
-
-    game_dir = game_directory()
-
-    if game_dir is not None:
-        for candidate in candidates:
-            if candidate.is_absolute():
-                continue
-
-            game_candidate = game_dir / candidate
-
-            if game_candidate.is_file():
-                return game_candidate.resolve()
-
-    raise FileNotFoundError(f"Dependency graph was not found: {value}")
-
 def discover_archives(value: str | None, *, all_archives: bool, pattern: str) -> tuple[Path, ...]:
     if value is None:
         if not all_archives:
@@ -340,17 +315,11 @@ def command_model(args: argparse.Namespace) -> int:
 
     uid = int(uid_text, 16)
 
-    explicit_depgraph = (
-        resolve_depgraph(args.depgraph)
-        if args.depgraph
-        else None
-    )
-
     (
         _,
         depgraph,
         archives
-    ) = resolve_bundle_paths(archive, depgraph_path=explicit_depgraph, include_textures=True, archive_only=args.archive_only)
+    ) = resolve_bundle_paths(archive, depgraph_path=args.depgraph, include_textures=True, archive_only=args.archive_only)
 
     children = load_depgraph(depgraph)
 

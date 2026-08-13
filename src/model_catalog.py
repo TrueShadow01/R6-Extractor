@@ -106,9 +106,7 @@ def resolve_bundle_paths(mesh_archive: str | Path, *, depgraph_path: str | Path 
     directory = mesh_archive.parent
 
     if archive_only:
-        archives = (
-            mesh_archive,
-        )
+        archives = (mesh_archive,)
     else:
         selected = list(
             directory.glob(f"{prefix}_bnk_*mesh.forge")
@@ -119,11 +117,7 @@ def resolve_bundle_paths(mesh_archive: str | Path, *, depgraph_path: str | Path 
                 directory.glob(f"{prefix}_bnk_*textures*.forge")
             )
 
-        archives = tuple(
-            sorted(
-                set(selected)
-            )
-        )
+        archives = tuple(sorted(set(selected)))
 
     if not archives:
         raise FileNotFoundError(f"No bundled archives found for {prefix}")
@@ -131,16 +125,37 @@ def resolve_bundle_paths(mesh_archive: str | Path, *, depgraph_path: str | Path 
     if depgraph_path is None:
         depgraph = directory / f"{prefix}.depgraphbin"
     else:
-        depgraph = Path(depgraph_path).resolve()
+        requested = Path(depgraph_path).expanduser()
+        requested_names = [requested]
+
+        if not str(requested).lower().endswith(".depgraphbin"):
+            requested_names.append(Path(f"{requested}.depgraphbin"))
+
+        depgraph = None
+
+        for requested_name in requested_names:
+            candidates = [requested_name]
+
+            if not requested_name.is_absolute():
+                candidates.append(directory / requested_name)
+
+            for candidate in candidates:
+                if candidate.is_file():
+                    depgraph = candidate.resolve()
+                    break
+
+            if depgraph is not None:
+                break
+
+        if depgraph is None:
+            raise FileNotFoundError(f"Dependency graph not found: {depgraph_path}")
+
+    depgraph = depgraph.resolve()
 
     if not depgraph.is_file():
         raise FileNotFoundError(f"Dependency graph not found: {depgraph}")
 
-    return (
-        prefix,
-        depgraph,
-        archives
-    )
+    return prefix, depgraph, archives
 
 def discover_models(children: Mapping[int, Iterable[int]], index: AssetIndex) -> tuple[ModelRecord, ...]:
     """Find parents with one or more compiled geometry children"""

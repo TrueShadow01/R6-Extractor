@@ -320,7 +320,7 @@ class CliTests(unittest.TestCase):
             self.assertIn("source=r6-uid-sheet-2022", text)
             self.assertIn("Matches: 2", text)
 
-    def test_cross_bundle_depgraph_with_archive_only(self):
+    def test_bundle_paths_support_depgraph_name_and_archive_only(self):
         with tempfile.TemporaryDirectory() as root:
             root = Path(root)
 
@@ -336,7 +336,7 @@ class CliTests(unittest.TestCase):
                 prefix,
                 selected_depgraph,
                 archives
-            ) = resolve_bundle_paths(archive, depgraph_path=depgraph, archive_only=True)
+            ) = resolve_bundle_paths(archive, depgraph_path=depgraph.name, archive_only=True)
 
             self.assertEqual(prefix, "datapc64_merged")
             self.assertEqual(
