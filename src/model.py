@@ -43,6 +43,8 @@ class MeshPart:
     uvs: list[tuple[float, float]]
     normals: list[tuple[float, float, float]]
     islands: tuple[MeshIsland, ...]
+    joints: tuple[tuple[int, int, int, int], ...] = ()
+    weights: tuple[tuple[float, float, float, float], ...] = ()
 
 @dataclass(frozen=True)
 class ModelExportResult:
@@ -121,6 +123,8 @@ def decode_mesh_parts(records: Iterable[AssetRecord]) -> tuple[MeshPart, ...]:
             vertices,
             uvs,
             normals,
+            joints,
+            weights,
             islands
         ) = read_mesh_with_islands(payload)
 
@@ -130,7 +134,17 @@ def decode_mesh_parts(records: Iterable[AssetRecord]) -> tuple[MeshPart, ...]:
         if len(normals) != len(vertices):
             raise ValueError(f"Geometry {record.uid:016X} has {len(vertices)} vertices but {len(normals)} normals")
 
-        parts.append(MeshPart(uid=record.uid, vertices=vertices, uvs=uvs, normals=normals, islands=islands))
+        parts.append(
+            MeshPart(
+                uid=record.uid,
+                vertices=vertices,
+                uvs=uvs,
+                normals=normals,
+                islands=islands,
+                joints=joints,
+                weights=weights
+            )
+        )
 
     return tuple(parts)
 

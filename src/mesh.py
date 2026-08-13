@@ -14,6 +14,7 @@ _PRE_UV = {0x24: 24, 0x28: 24, 0x2C: 24, 0x18: 20, 0x1C: 24}
 class MeshIsland:
     material_id: int
     faces: tuple[tuple[int, int, int], ...]
+    bone_palette: tuple[int, ...] = ()
 
 def read_lod0_islands(payload, tris, tail, num_islands):
     """Read LOD0 faces while preserving Siege material IDs"""
@@ -42,6 +43,77 @@ def read_lod0_islands(payload, tris, tail, num_islands):
             )
         )
     return tuple(islands)
+
+def read_skin_weights(payload, vbo, verts_len, num_verts, vert_len):
+    """Read four joint indices and normalized weights from a skinned vertex buffer"""
+
+    if vert_len != 0x24:
+        return (), ()
+
+    joints_offset = vbo + verts_len - num_verts * 8
+    weight_offsets = joints_offset + num_verts * 4
+
+    joints = []
+    weights = []
+
+    for index in range(num_verts):
+        joint_values = struct.unpack_from("<4B", payload, joints_offset + index * 4)
+        weight_values = struct.unpack_from("<4B", payload, weight_offsets + index * 4)
+
+        total = sum(weight_values)
+
+        if total:
+            normalized = tuple(
+                value / total
+                for value in weight_values
+            )
+        else:
+            normalized = (1.0, 0.0, 0.0, 0.0)
+
+        joints.append(joint_values)
+        weights.append(normalized)
+
+    return tuple(joints), tuple(weights)
+
+def read_bone_palettes(payload, tail, num_lods, num_islands):
+    """Read the global bone IDs used by each LOD0 material island"""
+
+    palette_table = tail + num_lods * num_islands * 36 + num_islands * 32
+
+    palettes = []
+
+    for island_index in range(num_islands):
+        record = palette_table + island_index * 268
+
+        if record + 10 > len(payload):
+            raise ValueError(f"Bone palette {island_index} is truncated")
+
+        (
+            enabled,
+            bone_count,
+            stored_island,
+            _,
+            repeated_count
+        ) = struct.unpack_from("<HBBIH", payload, record)
+
+        if enabled != 1:
+            raise ValueError(f"Bone palette {island_index} has unsupported state {enabled}")
+
+        if stored_island != island_index:
+            raise ValueError(f"Expected bone palette {island_index}, found {stored_island}")
+
+        if repeated_count != bone_count:
+            raise ValueError(f"Bone palette {island_index} has conflicting counts {bone_count} and {repeated_count}")
+
+        start = record + 10
+        end = start + bone_count
+
+        if end > len(payload):
+            raise ValueError(f"Bone palette {island_index} data is truncated")
+
+        palettes.append(tuple(payload[start:end]))
+
+    return tuple(palettes)
 
 def read_mesh_with_islands(payload):
     mPayload = payload.find(COMPILED_MESH)
@@ -84,5 +156,20 @@ def read_mesh_with_islands(payload):
     # LOD0 faces only, ObjectHeader table (footer) sits after all 6 data blocks
     tail = vbo + sum(f[4:10]) # verts+face+vertmaps+unk1+faceStat+faceUnk
 
+    joints, weights = read_skin_weights(payload, vbo, verts_len, num_verts, vert_len)
+
     islands = read_lod0_islands(payload, tris, tail, num_islands)
-    return verts, uvs, normals, islands
+
+    if joints:
+        palettes = read_bone_palettes(payload, tail, f[13], num_islands)
+
+        islands = tuple(
+            MeshIsland(
+                material_id=island.material_id,
+                faces=island.faces,
+                bone_palette=palette
+            )
+            for island, palette in zip(islands, palettes)
+        )
+
+    return verts, uvs, normals, joints, weights, islands
