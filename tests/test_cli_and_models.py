@@ -146,6 +146,32 @@ class CliTests(unittest.TestCase):
             self.assertIn("Status: indexed", first_output.getvalue())
             self.assertIn("Containers: 2", first_output.getvalue())
             self.assertIn("Assets: 1", first_output.getvalue())
+
+            uid_output = StringIO()
+
+            with redirect_stdout(uid_output):
+                uid_result = main(
+                    [
+                        "search",
+                        f"{TEST_UID:016X}",
+                        "--database",
+                        str(database)
+                    ]
+                )
+
+            uid_text = uid_output.getvalue()
+
+            self.assertEqual(uid_result, 0)
+            self.assertIn(f"{TEST_UID:016X} Unknown", uid_text)
+            self.assertIn("[unknown]", uid_text)
+            self.assertIn("source=unresolved", uid_text)
+            self.assertIn("1 location", uid_text)
+            self.assertIn("Matches: 1", uid_text)
+            self.assertIn("Asset: CompiledMeshObject (0xABEB2DFB)", uid_text)
+            self.assertIn(f"Archive: {archive.resolve()}", uid_text)
+            self.assertIn("Container: 0x", uid_text)
+            self.assertIn("bytes=", uid_text)
+
             self.assertIn("Companion containers: 1", first_output.getvalue())
             self.assertTrue(database.is_file())
 

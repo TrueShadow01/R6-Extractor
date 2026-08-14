@@ -20,7 +20,7 @@ The long-term goal is geometry, material, texture, skeleton and animation suppor
 - Character joint indices, skin weights and per-island bone palettes
 - Composite LOD0 glTF 2.0 export
 - Per-part glTF materials with alpha cutouts and KHR_materials_specular support
-- Specular and mask relationships stored as glTF metadata
+- Mask relationships stored as glTF metadata
 - Siege Z-up to glTF Y-up coordinate conversion
 
 ## Limitations
@@ -89,7 +89,7 @@ py -3 -B main.py models <mesh.forge> --json-output output/models.json
 py -3 -B main.py model <mesh.forge> --uid <modelUID> -o output/model
 ```
 
-`search` checks dependency graphs under `GAME_DIR` and prints geometry locations and a ready model-export command for matching model parents.
+`search` accepts names or exact UIDs. It reports asset locations, direct dependency parents and ready model-export commands when geometry is available.
 
 `--all` processes every Forge archive under `GAME_DIR`. Run any command with `-h` for its available options.
 

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Sequence
 
 from src.database import (
+    AssetName,
     index_archive,
     load_asset_index,
     search_asset_names
@@ -22,7 +23,8 @@ from src.index import (
 )
 from src.name_catalog import (
     import_column_name_catalog,
-    import_name_catalog
+    import_name_catalog,
+    parse_catalog_uid
 )
 from src.model import (
     export_model,
@@ -258,15 +260,76 @@ def command_names_import(args: argparse.Namespace) -> int:
     return 0
 
 def command_search(args: argparse.Namespace) -> int:
-    matches = search_asset_names(args.database, args.query, limit=args.limit)
+    query = args.query.strip()
+    compact = query.replace("_", "")
+    uid_query = None
+
+    if compact:
+        prefixed_hex = compact.lower().startswith("0x")
+        bare = compact[2:] if prefixed_hex else compact
+
+        looks_like_uid = (
+            prefixed_hex
+            or bare.isdecimal()
+            or (
+                8 <= len(bare) <= 16
+                and any(character in "abcdefABCDEF" for character in bare)
+                and all(character in "0123456789abcdefABCDEF" for character in bare)
+            )
+        )
+
+        if looks_like_uid:
+            try:
+                uid_query = parse_catalog_uid(compact)
+            except ValueError:
+                pass
+
+    normalized_query = f"{uid_query:016X}" if uid_query is not None else query
+
+    matches = list(
+        search_asset_names(
+            args.database,
+            normalized_query,
+            limit=args.limit
+        )
+    )
+
+    direct_index = None
+
+    if uid_query is not None:
+        direct_index = load_asset_index(
+            args.database,
+            {
+                uid_query
+            }
+        )
+
+        if not any(match.uid == uid_query for match in matches):
+            matches.append(
+                AssetName(
+                    uid=uid_query,
+                    name="Unknown",
+                    category="unknown",
+                    source="unresolved",
+                    confidence=0,
+                    locations=direct_index.total_records
+                )
+            )
 
     model_locations = {}
+    parent_locations = {}
+
     dependency_uids = set()
     game_dir = game_directory()
 
     if game_dir is not None:
         for depgraph in sorted(game_dir.glob("*.depgraphbin")):
             children = load_depgraph(depgraph)
+
+            if uid_query is not None:
+                for parent_uid, child_uids in children.items():
+                    if uid_query in child_uids:
+                        parent_locations.setdefault(parent_uid, []).append(depgraph)
 
             for match in matches:
                 if match.uid not in children:
@@ -289,8 +352,23 @@ def command_search(args: argparse.Namespace) -> int:
         else None
     )
 
+    parent_names = {}
+
+    for parent_uid in parent_locations:
+        candidates = search_asset_names(args.database, f"{parent_uid:016X}", limit=100)
+
+        parent_names[parent_uid] = next(
+            (
+                candidate
+                for candidate in candidates
+                if candidate.uid == parent_uid
+            ),
+            None
+        )
+
     database_path = Path(args.database).expanduser().resolve()
 
+    direct_index_printed = False
     for match in matches:
         availability = (
             f"{match.locations} location"
@@ -299,6 +377,30 @@ def command_search(args: argparse.Namespace) -> int:
         )
 
         print(f"{match.uid:016X} {match.name} [{match.category}] confidence={match.confidence} source={match.source} {availability}")
+
+        if direct_index is not None and match.uid == uid_query and not direct_index_printed:
+            direct_index_printed = True
+            for record in direct_index.records():
+                asset_type = (
+                    "CompiledMeshObject"
+                    if record.file_type == COMPILED_MESH_OBJECT
+                    else "Unknown"
+                )
+
+                print(f"  Asset: {asset_type} (0x{record.file_type:08X})")
+                print(f"  Archive: {record.archive}")
+                print(f"  Container: 0x{record.container_offset:X} bytes={record.unpacked_size}")
+
+            for parent_uid, depgraphs in sorted(parent_locations.items()):
+                parent_name = parent_names[parent_uid]
+
+                if parent_name is None:
+                    print(f"  Parent: {parent_uid:016X} Unknown")
+                else:
+                    print(f"  Parent: {parent_uid:016X} {parent_name.name} [{parent_name.category}] confidence={parent_name.confidence} source={parent_name.source}")
+
+                for depgraph in depgraphs:
+                    print(f"    Depgraph: {depgraph}")
 
         for depgraph, dependencies in model_locations.get(match.uid, ()):
             dependency_set = set(dependencies)
