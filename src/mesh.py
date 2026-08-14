@@ -1,5 +1,6 @@
 # Parse .forge mesh payloads
 
+import math
 import struct
 from dataclasses import dataclass
 
@@ -121,6 +122,70 @@ def read_bone_palettes(payload, tail, num_lods, num_islands):
 
     return tuple(palettes)
 
+def normalize_direction(value: tuple[float, float, float]) -> tuple[float, float, float]:
+    length = math.sqrt(sum(component * component for component in value))
+
+    if length <= 1e-8:
+        raise ValueError("Mesh contains a zero length direction")
+
+    return tuple(component / length for component in value)
+
+def read_tangent_frame(payload, normal_offset, num_vertices):
+    """Decode Siege normal, tangent and binormal vertex blocks"""
+
+    tangent_offset = normal_offset + num_vertices * 4
+    binormal_offset = tangent_offset + num_vertices * 4
+
+    normals = []
+    tangents = []
+
+    for index in range(num_vertices):
+        def read_direction(offset):
+            values = struct.unpack_from("<3B", payload, offset + index * 4)
+
+            return normalize_direction(tuple(component / 127.5 - 1.0 for component in values))
+
+        normal = read_direction(normal_offset)
+        tangent = read_direction(tangent_offset)
+        binormal = read_direction(binormal_offset)
+
+        # Remove quantization induced normal components from the tangent
+        projection = sum(
+            normal_component * tangent_component
+            for normal_component, tangent_component in zip(normal, tangent)
+        )
+
+        orthogonal_tangent = tuple(
+            tangent_component - normal_component * projection
+            for tangent_component, normal_component in zip(tangent, normal)
+        )
+
+        tangent = normalize_direction(orthogonal_tangent)
+
+        cross = (
+            normal[1] * tangent[2] - normal[2] * tangent[1],
+            normal[2] * tangent[0] - normal[0] * tangent[2],
+            normal[0] * tangent[1] - normal[1] * tangent[0]
+        )
+
+        handedness = (
+            1.0
+            if sum(cross_component * binormal_component for cross_component, binormal_component in zip(cross, binormal)) >= 0.0
+            else -1.0
+        )
+
+        normals.append(normal)
+        tangents.append(
+            (
+                tangent[0],
+                tangent[1],
+                tangent[2],
+                handedness
+            )
+        )
+
+    return normals, tangents
+
 def read_mesh_with_islands(payload):
     mPayload = payload.find(COMPILED_MESH)
     if mPayload == -1:
@@ -147,10 +212,7 @@ def read_mesh_with_islands(payload):
 
     # normals: 4 bytes per vertex, planar block after positions
     nrm_off = vbo + num_verts * (12 if vert_len in FLOAT_VERT_LENS else 8)
-    normals = []
-    for i in range(num_verts):
-        x, y, z, _ = struct.unpack_from("<BBBB", payload, nrm_off + i * 4)
-        normals.append((x / 127.0 -1, y / 127.0 - 1, z / 127.0 - 1))
+    normals, tangents = read_tangent_frame(payload, nrm_off, num_verts)
 
     # UVs: 2 half floats per vertex, planar block after pos/normal/tangent/binormal(/color)
     uv_block = vbo + num_verts * _PRE_UV[vert_len]
@@ -178,4 +240,4 @@ def read_mesh_with_islands(payload):
             for island, palette in zip(islands, palettes)
         )
 
-    return verts, uvs, normals, joints, weights, islands
+    return verts, uvs, normals, tangents, joints, weights, islands

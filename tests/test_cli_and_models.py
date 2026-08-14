@@ -600,13 +600,21 @@ class GltfExportTests(unittest.TestCase):
 
             self.assertEqual([image["uri"] for image in document["images"]], [
                 "diffuse.png",
-                "normal.png"
+                "normal.png",
+                "specular.png"
             ])
 
             material = document["materials"][0]
 
             self.assertIn("pbrMetallicRoughness", material)
-            self.assertEqual(material["extras"]["siegeSpecularTexture"], "specular.png")
+
+            specular_extension = material["extensions"]["KHR_materials_specular"]
+            specular_texture = specular_extension["specularColorTexture"]["index"]
+            specular_image = document["textures"][specular_texture]["source"]
+
+            self.assertEqual(document["images"][specular_image]["uri"], "specular.png")
+            self.assertEqual(specular_extension["specularColorFactor"], [0.4, 0.4, 0.4])
+            self.assertIn("KHR_materials_specular", document["extensionsUsed"])
 
     def test_gltf_exports_material_islands_as_primitives(self):
         part = MeshPart(
@@ -685,7 +693,12 @@ class GltfExportTests(unittest.TestCase):
             self.assertEqual(textured_document["images"][slot0_diffuse_image]["uri"], "slot0_diffuse.png")
             self.assertEqual(textured_document["images"][slot3_diffuse_image]["uri"], "slot3_diffuse.png")
             self.assertEqual(slot0["normalTexture"]["index"], slot3["normalTexture"]["index"])
-            self.assertEqual(slot3["extras"]["siegeSpecularTexture"], "slot3_specular.png")
+
+            specular_extension = slot3["extensions"]["KHR_materials_specular"]
+            specular_texture = specular_extension["specularColorTexture"]["index"]
+            specular_image = textured_document["textures"][specular_texture]["source"]
+
+            self.assertEqual(textured_document["images"][specular_image]["uri"], "slot3_specular.png")
             self.assertEqual(slot3["extras"]["siegeMaskTexture"], "slot3_mask.png")
 
             self.assertEqual(

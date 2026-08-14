@@ -44,6 +44,7 @@ class MeshPart:
     uvs: list[tuple[float, float]]
     normals: list[tuple[float, float, float]]
     islands: tuple[MeshIsland, ...]
+    tangents: tuple[tuple[float, float, float, float], ...] = ()
     joints: tuple[tuple[int, int, int, int], ...] = ()
     weights: tuple[tuple[float, float, float, float], ...] = ()
 
@@ -138,6 +139,7 @@ def decode_mesh_parts(records: Iterable[AssetRecord]) -> tuple[MeshPart, ...]:
             vertices,
             uvs,
             normals,
+            tangents,
             joints,
             weights,
             islands
@@ -149,6 +151,9 @@ def decode_mesh_parts(records: Iterable[AssetRecord]) -> tuple[MeshPart, ...]:
         if len(normals) != len(vertices):
             raise ValueError(f"Geometry {record.uid:016X} has {len(vertices)} vertices but {len(normals)} normals")
 
+        if len(tangents) != len(vertices):
+            raise ValueError(f"Geometry {record.uid:016X} has {len(vertices)} vertices but {len(tangents)} tangents")
+
         parts.append(
             MeshPart(
                 uid=record.uid,
@@ -156,6 +161,7 @@ def decode_mesh_parts(records: Iterable[AssetRecord]) -> tuple[MeshPart, ...]:
                 uvs=uvs,
                 normals=normals,
                 islands=islands,
+                tangents=tangents,
                 joints=joints,
                 weights=weights
             )

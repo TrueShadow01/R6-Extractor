@@ -16,10 +16,10 @@ The long-term goal is geometry, material, texture, skeleton and animation suppor
 - BC1, BC3 and BC4 textures to PNG with BC5 normal reconstruction
 - Wwise audio extraction to WEM
 - Optional WEM-to-WAV conversion with vgmstream
-- Float and packed-position meshes with UVs and normals
+- Float and packed-position meshes with UVs, normals and tangents
 - Character joint indices, skin weights and per-island bone palettes
 - Composite LOD0 glTF 2.0 export
-- Per-part glTF materials with cross-bundle textures and alpha cutouts
+- Per-part glTF materials with alpha cutouts and KHR_materials_specular support
 - Specular and mask relationships stored as glTF metadata
 - Siege Z-up to glTF Y-up coordinate conversion
 

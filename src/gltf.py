@@ -25,6 +25,7 @@ class MeshPartLike(Protocol):
     uvs: Sequence[tuple[float, float]]
     normals: Sequence[tuple[float, float, float]]
     islands: Sequence
+    tangents: Sequence[tuple[float, float, float, float]]
 
 @dataclass(frozen=True)
 class MaterialTextures:
@@ -123,6 +124,7 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
     meshes: list[dict] = []
     nodes: list[dict] = []
     used_material_ids: set[int] = set()
+    used_extensions: set[str] = set()
 
     def add_accessor(raw: bytes, *, target: int, component_type: int, count: int, value_type: str, name: str, minimum: list[float] | None = None, maximum: list[float] | None = None) -> int:
         view = binary.add(raw, target=target, name=name)
@@ -157,6 +159,9 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
         if len(part.normals) != len(part.vertices):
             raise ValueError(f"Part {part.uid:016X} has mismatched normals")
 
+        if part.tangents and len(part.tangents) != len(part.vertices):
+            raise ValueError(f"Part {part.uid:016X} has mismatched tangents")
+
         converted_vertices = [
             siege_to_gltf_vector(vertex)
             for vertex in part.vertices
@@ -165,6 +170,20 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
         converted_normals = [
             siege_to_gltf_vector(normal)
             for normal in part.normals
+        ]
+
+        converted_tangents = [
+            (
+                *siege_to_gltf_vector(
+                    (
+                        tangent[0],
+                        tangent[1],
+                        tangent[2]
+                    )
+                ),
+                tangent[3]
+            )
+            for tangent in part.tangents
         ]
 
         positions = [
@@ -177,6 +196,12 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
             component
             for normal_value in converted_normals
             for component in normal_value
+        ]
+
+        tangents = [
+            component
+            for tangent in converted_tangents
+            for component in tangent
         ]
 
         # The mesh parser flips Siege UVs vertically.
@@ -204,6 +229,10 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
         position_accessor = add_accessor(pack_floats(positions), target=ARRAY_BUFFER, component_type=FLOAT, count=len(part.vertices), value_type="VEC3", name=f"{prefix}_positions", minimum=component_minimums(converted_vertices), maximum=component_maximums(converted_vertices))
         normal_accessor = add_accessor(pack_floats(normals), target=ARRAY_BUFFER, component_type=FLOAT, count=len(part.normals), value_type="VEC3", name=f"{prefix}_normals")
         uv_accessor = add_accessor(pack_floats(texture_coordinates), target=ARRAY_BUFFER, component_type=FLOAT, count=len(part.uvs), value_type="VEC2", name=f"{prefix}_uvs")
+        tangent_accessor = None
+
+        if converted_tangents:
+            tangent_accessor = add_accessor(pack_floats(tangents), target=ARRAY_BUFFER, component_type=FLOAT, count=len(converted_tangents), value_type="VEC4", name=f"{prefix}_tangents")
 
         primitives = []
 
@@ -227,7 +256,12 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
                     "attributes": {
                         "POSITION": position_accessor,
                         "NORMAL": normal_accessor,
-                        "TEXCOORD_0": uv_accessor
+                        "TEXCOORD_0": uv_accessor,
+                        **(
+                            {"TANGENT": tangent_accessor}
+                            if tangent_accessor is not None
+                            else {}
+                        )
                     },
                     "indices": index_accessor,
                     "material": material_id,
@@ -351,7 +385,16 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
         extras = {}
 
         if slot_textures.specular:
-            extras["siegeSpecularTexture"] = slot_textures.specular
+            material["extensions"] = {
+                "KHR_materials_specular": {
+                    "specularColorFactor": [0.4, 0.4, 0.4],
+                    "specularColorTexture": {
+                        "index": add_texture(slot_textures.specular)
+                    }
+                }
+            }
+
+            used_extensions.add("KHR_materials_specular")
 
         if slot_textures.mask:
             extras["siegeMaskTexture"] = slot_textures.mask
@@ -385,6 +428,9 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
         "bufferViews": binary.views,
         "accessors": accessors
     }
+
+    if used_extensions:
+        document["extensionsUsed"] = sorted(used_extensions)
 
     if images:
         document["samplers"] = [
