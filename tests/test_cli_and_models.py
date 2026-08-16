@@ -10,6 +10,7 @@ from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
 
+from src.database import AssetName
 from src.cli import main
 from src.index import (
     AssetIndex,
@@ -25,6 +26,7 @@ from src.model import (
 from src.model_catalog import (
     COMPILED_MESH_OBJECT,
     discover_models,
+    discover_unknown_operator_candidates,
     resolve_bundle_paths
 )
 from src.parser import (
@@ -511,6 +513,69 @@ class ModelDiscoveryTests(unittest.TestCase):
                     0x5000
                 ]
             }
+        )
+
+    def test_unknown_operator_candidates_use_named_mesh_children(self):
+        operator_mesh = 0x2000
+        gadget_mesh = 0x3000
+        named_parent = 0x4000
+        unknown_parent = 0x5000
+
+        names = (
+            AssetName(
+                uid=operator_mesh,
+                name="Example operator body",
+                category="operator-body",
+                source="community",
+                confidence=70,
+                locations=1
+            ),
+            AssetName(
+                uid=gadget_mesh,
+                name="Example gadget",
+                category="gadget",
+                source="community",
+                confidence=70
+            ),
+            AssetName(
+                uid=named_parent,
+                name="Already named model",
+                category="operator-body",
+                source="manual",
+                confidence=100
+            )
+        )
+
+        candidates = discover_unknown_operator_candidates(
+            {
+                Path("example.depgraphbin"): {
+                    unknown_parent: [
+                        operator_mesh,
+                        gadget_mesh
+                    ],
+                    named_parent: [
+                        operator_mesh
+                    ],
+                    0x6000: [
+                        gadget_mesh
+                    ]
+                }
+            },
+            names,
+            max_parent_references=2
+        )
+
+        self.assertEqual(len(candidates), 1)
+
+        candidate = candidates[0]
+
+        self.assertEqual(candidate.uid, unknown_parent)
+        self.assertEqual(candidate.category, "operator-body")
+        self.assertEqual(
+            tuple(entry.uid for entry in candidate.evidence),
+            (
+                operator_mesh,
+            )
         )
 
 class GltfExportTests(unittest.TestCase):

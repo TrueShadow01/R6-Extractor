@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import csv
 from collections import Counter
 from pathlib import Path
 from typing import Sequence
@@ -12,6 +13,7 @@ from src.database import (
     AssetName,
     index_archive,
     load_asset_index,
+    load_asset_names,
     search_asset_names
 )
 from src.depgraph import load_depgraph
@@ -34,6 +36,7 @@ from src.model import (
 from src.model_catalog import (
     COMPILED_MESH_OBJECT,
     build_model_catalog,
+    discover_unknown_operator_candidates,
     resolve_bundle_paths,
     write_model_catalog
 )
@@ -441,6 +444,147 @@ def command_search(args: argparse.Namespace) -> int:
 
     return 0
 
+def _prepare_operator_previews(candidates, depgraphs, database: Path, output_directory: str | Path) -> None:
+    output = Path(output_directory).expanduser().resolve()
+    models_directory = output / "models"
+
+    models_directory.mkdir(parents=True, exist_ok=True)
+
+    rows = []
+    failed = 0
+
+    for candidate in candidates:
+        uid_text = f"{candidate.uid:016X}"
+        model_directory = models_directory / uid_text
+        gltf_path = model_directory / f"{uid_text}.gltf"
+
+        selected_depgraph = None
+        last_error = None
+
+        if gltf_path.is_file():
+            selected_depgraph = candidate.depgraphs[0]
+            print(f"  Resumed: {uid_text}")
+        else:
+            for depgraph in candidate.depgraphs:
+                children = depgraphs[depgraph]
+
+                try:
+                    index = _load_database_model_index(database, candidate.uid, children)
+                    result = export_model(candidate.uid, children, index, model_directory)
+                except (FileNotFoundError, ValueError) as error:
+                    last_error = error
+                    continue
+
+                gltf_path = result.gltf_path
+                selected_depgraph = depgraph
+                print(f"  Exported: {uid_text}")
+                break
+
+        if selected_depgraph is None:
+            failed += 1
+            print(f"  Failed: {uid_text}: {last_error}")
+            continue
+
+        evidence = " | ".join(f"{entry.uid:016X} {entry.name}" for entry in candidate.evidence)
+
+        rows.append(
+            (
+                uid_text,
+                "",
+                candidate.category,
+                "manual-preview",
+                "",
+                str(gltf_path),
+                str(selected_depgraph),
+                evidence
+            )
+        )
+
+    review_path = output / "review.csv"
+
+    with review_path.open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.writer(stream)
+
+        writer.writerow(
+            (
+                "UID",
+                "Name",
+                "Category",
+                "Source",
+                "Confidence",
+                "glTF",
+                "Depgraph",
+                "Evidence"
+            )
+        )
+
+        writer.writerows(rows)
+
+    print()
+    print(f"Prepared models: {len(rows)}")
+    print(f"Failed: {failed}")
+    print(f"Review CSV: {review_path}")
+
+def command_operators(args: argparse.Namespace) -> int:
+    game_dir = game_directory()
+
+    if game_dir is None:
+        raise ValueError("operators requires GAME_DIR in config.py")
+
+    depgraph_paths = tuple(sorted(game_dir.glob("*.depgraphbin")))
+
+    if not depgraph_paths:
+        raise FileNotFoundError(f"No dependency graphs found under {game_dir}")
+
+    depgraphs = {
+        path: load_depgraph(path)
+        for path in depgraph_paths
+    }
+
+    database = Path(args.database).expanduser().resolve()
+    names = load_asset_names(database)
+
+    candidates = discover_unknown_operator_candidates(depgraphs, names, max_parent_references=args.max_parents)
+
+    if args.limit < 0:
+        raise ValueError("--limit cannot be negative")
+
+    selected = (
+        candidates[:args.limit]
+        if args.limit
+        else candidates
+    )
+
+    for candidate in selected:
+        print(f"{candidate.uid:016X} [{candidate.category}]")
+
+        for evidence in candidate.evidence:
+            print(f"  Evidence: {evidence.uid:016X} {evidence.name} confidence={evidence.confidence} source={evidence.source}")
+
+        for depgraph in candidate.depgraphs:
+            print(f"  Depgraph: {depgraph}")
+
+        print(
+            "  Inspect: "
+            f'py -3 -B main.py search {candidate.uid:016X} '
+            f'--database "{database}"'
+        )
+
+    if selected:
+        print()
+
+    print(f"Candidates: {len(candidates)}")
+
+    if len(selected) != len(candidates):
+        print(f"Displayed: {len(selected)}")
+
+    if args.previews:
+        print()
+
+        _prepare_operator_previews(selected, depgraphs, database, args.previews)
+
+    return 0
+
 def command_models(args: argparse.Namespace) -> int:
     archive = resolve_input(args.input, allow_directory=False)
 
@@ -479,6 +623,27 @@ def command_models(args: argparse.Namespace) -> int:
 
     return 1 if catalog.scan_errors else 0
 
+def _load_database_model_index(database: str | Path, uid: int, children: dict[int, list[int]]):
+    dependency_uids = set(resolve_dependency_uids(uid, children))
+
+    index = load_asset_index(database, dependency_uids)
+
+    direct_texture_uids = set(resolve_direct_texture_uids(uid, index))
+
+    missing_texture_uids = {
+        texture_uid
+        for texture_uid in direct_texture_uids
+        if texture_uid not in index
+    }
+
+    if missing_texture_uids:
+        additional_index = load_asset_index(database, missing_texture_uids)
+
+        for record in additional_index.records():
+            index.add(record)
+
+    return index
+
 def command_model(args: argparse.Namespace) -> int:
     archive = resolve_input(args.input, allow_directory=False)
 
@@ -498,20 +663,7 @@ def command_model(args: argparse.Namespace) -> int:
     children = load_depgraph(depgraph)
 
     if args.database:
-        dependency_uids = set(resolve_dependency_uids(uid, children))
-        index = load_asset_index(args.database, dependency_uids)
-        direct_texture_uids = set(resolve_direct_texture_uids(uid, index))
-        missing_texture_uids = {
-            texture_uid
-            for texture_uid in direct_texture_uids
-            if texture_uid not in index
-        }
-
-        if missing_texture_uids:
-            additional_index = load_asset_index(args.database, missing_texture_uids)
-
-            for record in additional_index.records():
-                index.add(record)
+        index = _load_database_model_index(args.database, uid, children)
     else:
         index = build_index(archives)
 
@@ -576,6 +728,13 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("-d", "--database", default="output/r6-assets.sqlite", help="SQLite database path")
     search.add_argument("--limit", type=int, default=20, help="maximum number of matches")
     search.set_defaults(handler=command_search)
+
+    operators = commands.add_parser("operators", help="list unnamed operator model candidates")
+    operators.add_argument("-d", "--database", default="output/r6-assets.sqlite", help="SQLite database path")
+    operators.add_argument("--limit", type=int, default=0, help="maximum candidates to display, 0 displays all")
+    operators.add_argument("--max-parents", type=int, default=20, help="ignore generic evidence referenced by more than this many parents")
+    operators.add_argument("--previews", metavar="DIRECTORY", help="prepare glTF files and a CSV for Blender previews")
+    operators.set_defaults(handler=command_operators)
 
     models = commands.add_parser("models", help="discover model UIDs and geometry parts")
     models.add_argument("input", help="mesh Forge archive")

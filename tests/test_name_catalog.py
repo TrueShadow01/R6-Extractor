@@ -34,6 +34,10 @@ class NameCatalogTests(unittest.TestCase):
                             "Rook Armor Pack,"
                             "model,manual,100"
                         ),
+                        (
+                            "0x000000156B734071,,"
+                            "operator-headgear,manual-preview,"
+                        ),
                         ",,,,",
                     ]
                 )
@@ -43,9 +47,9 @@ class NameCatalogTests(unittest.TestCase):
 
             result = import_name_catalog(catalog, database)
 
-            self.assertEqual(result.rows, 3)
+            self.assertEqual(result.rows, 4)
             self.assertEqual(result.imported, 2)
-            self.assertEqual(result.skipped, 1)
+            self.assertEqual(result.skipped, 2)
 
             matches = search_asset_names(database, "rook")
 

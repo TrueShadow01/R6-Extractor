@@ -86,7 +86,7 @@ def read_bone_palettes(payload, tail, num_lods, num_islands):
     for record_index in range(num_islands):
         record = palette_table + record_index * 268
 
-        if record + 10 > len(payload):
+        if record + 9 > len(payload):
             raise ValueError(f"Bone palette record {record_index} is truncated")
 
         (
@@ -95,7 +95,7 @@ def read_bone_palettes(payload, tail, num_lods, num_islands):
             stored_island,
             _,
             repeated_count
-        ) = struct.unpack_from("<HBBIH", payload, record)
+        ) = struct.unpack_from("<HBBIB", payload, record)
 
         if enabled != 1:
             raise ValueError(f"Bone palette record {record_index} has unsupported state {enabled}")
@@ -106,7 +106,7 @@ def read_bone_palettes(payload, tail, num_lods, num_islands):
         if repeated_count != bone_count:
             raise ValueError(f"Bone palette record {record_index} has conflicting counts")
 
-        start = record + 10
+        start = record + 9
         end = start + bone_count
 
         if end > len(payload):
@@ -159,6 +159,24 @@ def read_tangent_frame(payload, normal_offset, num_vertices):
             tangent_component - normal_component * projection
             for tangent_component, normal_component in zip(tangent, normal)
         )
+
+        tangent_length_squared = sum(component * component for component in orthogonal_tangent)
+
+        if tangent_length_squared <= 1e-16:
+            reference = (
+                (0.0, 0.0, 1.0)
+                if abs(normal[2]) < 0.999
+                else (0.0, 1.0, 0.0)
+            )
+
+            orthogonal_tangent = (
+                reference[1] * normal[2]
+                - reference[2] * normal[1],
+                reference[2] * normal[0]
+                - reference[0] * normal[2],
+                reference[0] * normal[1]
+                - reference[1] * normal[0]
+            )
 
         tangent = normalize_direction(orthogonal_tangent)
 

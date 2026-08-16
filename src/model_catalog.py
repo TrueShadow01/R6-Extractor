@@ -8,10 +8,27 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Mapping
 
+from src.database import AssetName
 from src.depgraph import load_depgraph
 from src.index import AssetIndex, build_index
 
 COMPILED_MESH_OBJECT = 0xABEB2DFB
+
+OPERATOR_CATEGORIES = frozenset(
+    {
+        "operator-body",
+        "operator-headgear",
+        "operator-hands",
+        "operator-legs"
+    }
+)
+
+@dataclass(frozen=True)
+class OperatorCandidate:
+    uid: int
+    category: int
+    evidence: tuple[AssetName, ...]
+    depgraphs: tuple[Path, ...]
 
 @dataclass(frozen=True)
 class ModelRecord:
@@ -193,6 +210,100 @@ def discover_models(children: Mapping[int, Iterable[int]], index: AssetIndex) ->
         sorted(
             models,
             key=lambda model: model.uid
+        )
+    )
+
+def discover_unknown_operator_candidates(depgraphs: Mapping[Path, Mapping[int, Iterable[int]]], names: Iterable[AssetName], *, max_parent_references: int = 20) -> tuple[OperatorCandidate, ...]:
+    """Find unnamed parents that reference sufficiently specific operator meshes"""
+
+    if max_parent_references < 1:
+        raise ValueError("Maximum parent references must be at least 1")
+
+    ordered_names = sorted(
+        names,
+        key=lambda entry: (
+            -entry.confidence,
+            entry.name.casefold(),
+            entry.source.casefold()
+        )
+    )
+
+    named_uids = {
+        entry.uid
+        for entry in ordered_names
+    }
+
+    operator_names: dict[int, AssetName] = {}
+
+    for entry in ordered_names:
+        if entry.category in OPERATOR_CATEGORIES and entry.locations > 0:
+            operator_names.setdefault(entry.uid, entry)
+
+    parents_by_child: dict[int, set[int]] = {}
+
+    for children in depgraphs.values():
+        for parent_uid, child_uids in children.items():
+            for child_uid in set(child_uids):
+                parents_by_child.setdefault(child_uid, set()).add(parent_uid)
+
+    evidence_by_parent: dict[int, set[AssetName]] = {}
+    depgraphs_by_parent: dict[int, set[Path]] = {}
+
+    for depgraph, children in depgraphs.items():
+        for parent_uid, child_uids in children.items():
+            if parent_uid in named_uids:
+                continue
+
+            evidence = {
+                operator_names[child_uid]
+                for child_uid in set(child_uids)
+                if child_uid in operator_names and len(parents_by_child[child_uid]) <= max_parent_references
+            }
+
+            if not evidence:
+                continue
+
+            evidence_by_parent.setdefault(parent_uid, set()).update(evidence)
+            depgraphs_by_parent.setdefault(parent_uid, set()).add(Path(depgraph))
+
+    candidates: list[OperatorCandidate] = []
+
+    for parent_uid, evidence in evidence_by_parent.items():
+        ordered_evidence = tuple(
+            sorted(
+                evidence,
+                key=lambda entry: (
+                    entry.category,
+                    entry.name.casefold(),
+                    entry.uid,
+                )
+            )
+        )
+
+        categories = {
+            entry.category
+            for entry in ordered_evidence
+        }
+
+        category = (
+            next(iter(categories))
+            if len(categories) == 1
+            else "operator-mixed"
+        )
+
+        candidates.append(
+            OperatorCandidate(
+                uid=parent_uid,
+                category=category,
+                evidence=ordered_evidence,
+                depgraphs=tuple(sorted(depgraphs_by_parent[parent_uid]))
+            )
+        )
+
+    return tuple(
+        sorted(
+            candidates,
+            key=lambda candidate: candidate.uid
         )
     )
 

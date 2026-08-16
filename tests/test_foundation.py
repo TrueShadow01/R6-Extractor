@@ -16,6 +16,7 @@ from src.database import (
     AssetName,
     index_archive,
     load_asset_index,
+    load_asset_names,
     search_asset_names,
     upsert_asset_names
 )
@@ -293,6 +294,24 @@ class IndexTests(unittest.TestCase):
 
             self.assertEqual(unavailable.uid, 0x2000)
             self.assertEqual(unavailable.locations, 0)
+
+            all_names = load_asset_names(database)
+
+            self.assertEqual(
+                {entry.uid for entry in all_names},
+                {
+                    TEST_UID,
+                    0x2000
+                }
+            )
+
+            names_by_uid = {
+                entry.uid: entry
+                for entry in all_names
+            }
+
+            self.assertEqual(names_by_uid[TEST_UID].locations, 1)
+            self.assertEqual(names_by_uid[0x2000].locations, 0)
 
             uid_match = search_asset_names(database, f"0x{TEST_UID:016X}")
 

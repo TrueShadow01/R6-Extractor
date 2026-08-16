@@ -125,15 +125,12 @@ def import_name_catalog(catalog: str | Path, database: str | Path, *, default_so
             uid_text = _row_value(row, uid_column)
             name = _row_value(row, name_column)
 
-            if not uid_text and not name:
+            if not name:
                 skipped += 1
                 continue
 
             if not uid_text:
                 raise ValueError(f"Catalog row {line_number} has no UID")
-
-            if not name:
-                raise ValueError(f"Catalog row {line_number} has no name")
 
             category = _row_value(row, category_column) or default_category
             source = _row_value(row, source_column) or default_source

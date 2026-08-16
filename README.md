@@ -12,6 +12,7 @@ The long-term goal is geometry, material, texture, skeleton and animation suppor
 - Lossless extraction with manifests and resume
 - Persistent, resumable SQLite asset indexing
 - Human-readable UID catalogs with source and confidence tracking
+- Unknown operator discovery with Blender thumbnail previews
 - Cross-bundle geometry and texture resolution
 - BC1, BC3 and BC4 textures to PNG with BC5 normal reconstruction
 - Wwise audio extraction to WEM
@@ -80,6 +81,12 @@ py -3 -B main.py names import <catalog.csv>
 py -3 -B main.py names import <catalog.csv> --layout columns
 py -3 -B main.py search <name-or-UID>
 
+# Prepare unknown operator review files
+py -3 -B main.py operators --database output/r6-assets.sqlite --previews output/operator-previews
+
+# Import confirmed review names, blank rows are skipped
+py -3 -B main.py names import output/operator-previews/review.csv --database output/r6-assets.sqlite
+
 # Discover model UIDs
 py -3 -B main.py models <mesh.forge>
 py -3 -B main.py models <mesh.forge> --minimum-parts 2
@@ -90,6 +97,14 @@ py -3 -B main.py model <mesh.forge> --uid <modelUID> -o output/model
 ```
 
 `search` accepts names or exact UIDs. It reports asset locations, direct dependency parents and ready model-export commands when geometry is available.
+
+Render the prepared models with Blender:
+
+```powershell
+& "<path-to-blender>\blender.exe" --factory-startup --background --python-exit-code 1 --python blender_preview.py -- output/operator-previews
+```
+
+The process is resumable and produces UID-stamped PNGs plus `review.csv`. Fill confirmed names and import it with the command above, untouched rows are skipped.
 
 `--all` processes every Forge archive under `GAME_DIR`. Run any command with `-h` for its available options.
 
@@ -140,7 +155,7 @@ Audio extraction is not connected to the main CLI yet.
 4. Reconstruct streamed textures and decode packed PBR channels
 5. Add GLB export
 6. Decode skeleton hierarchy and animations, export rigged glTF
-7. Add bulk model export
+7. Add general bulk model export
 8. Build a desktop asset browser and Blender integration
 
 ## Tests
