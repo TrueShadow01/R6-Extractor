@@ -6,8 +6,18 @@ from src.material import (
     CURRENT_MESH,
     CURRENT_TEXTURE_MAP,
     CURRENT_TEXTURE_MAP_SPEC,
+    CURRENT_SHADER_UNIFORMS,
+    CURRENT_SHADER_DEFINES,
+    CURRENT_TEXTURE_SELECTOR,
+    UNIFORM_MARKER,
+    ShaderUniform,
+    ShaderBinding,
     MaterialTextureSet,
-    resolve_material_texture_sets
+    MaterialTextureSelector,
+    resolve_material_texture_sets,
+    read_shader_uniforms,
+    read_shader_bindings,
+    apply_material_uniform_overrides
 )
 
 
@@ -49,7 +59,7 @@ def make_texture_map(uid: int, compiled_uid: int) -> bytes:
 
 
 class MaterialTests(unittest.TestCase):
-    def test_resolves_material_roles_and_ignores_later_detail_map(self):
+    def test_resolves_material_roles_and_preserves_later_detail_map(self):
         diffuse_spec = 0x1001
         normal_spec = 0x1002
         specular_spec = 0x1003
@@ -72,14 +82,21 @@ class MaterialTests(unittest.TestCase):
         override_material = 0x4001
         geometry = 0x5000
 
-        material_data = struct.pack(
-            "<I5Q",
-            CURRENT_MATERIAL,
-            diffuse_spec,
-            normal_spec,
-            specular_spec,
-            mask_spec,
-            detail_spec
+        shader_uid = 0x6000
+
+        def base_selector(spec_uid: int) -> bytes:
+            return struct.pack("<I8xQ", CURRENT_TEXTURE_SELECTOR, spec_uid)
+
+        def detail_selector(spec_uid: int) -> bytes:
+            return struct.pack("<I8xQ", UNIFORM_MARKER | 1, spec_uid)
+
+        material_data = (
+            struct.pack("<IQ", CURRENT_MATERIAL, shader_uid)
+            + base_selector(diffuse_spec)
+            + base_selector(normal_spec)
+            + base_selector(specular_spec)
+            + base_selector(mask_spec)
+            + detail_selector(detail_spec)
         )
 
         payload = struct.pack("<QQ", base_material, override_material) + b"".join(
@@ -87,6 +104,7 @@ class MaterialTests(unittest.TestCase):
                 make_entry(CURRENT_MATERIAL, override_material, material_data),
                 make_entry(CURRENT_MESH, 0x4002, struct.pack("<QQ", geometry, base_material)),
                 make_entry(CURRENT_MATERIAL, base_material, struct.pack("<I", CURRENT_MATERIAL)),
+                make_entry(CURRENT_SHADER_DEFINES, shader_uid, struct.pack("<I", CURRENT_SHADER_DEFINES) + b"\x00" * 24 + b"#define NormalDetail _CustomParamTexture0\r\n"),
 
                 make_spec(diffuse_spec, 0, diffuse_map),
                 make_spec(normal_spec, 1, normal_map),
@@ -117,19 +135,194 @@ class MaterialTests(unittest.TestCase):
             geometry_uids=(geometry,)
         )
 
+        material = materials[0][0]
+
+        self.assertEqual(material.shader_uid, shader_uid)
         self.assertEqual(
-            materials,
+            material.shader_bindings,
             (
-                (
-                    MaterialTextureSet(
-                        diffuse_uids=(diffuse,),
-                        normal_uids=(normal,),
-                        specular_uids=(specular,),
-                        mask_uids=(mask,)
-                    ),
+                ShaderBinding(
+                    shader_uid=shader_uid,
+                    name="NormalDetail",
+                    target="_CustomParamTexture0"
                 ),
             )
         )
+        self.assertEqual(material.diffuse_uids, (diffuse,))
+        self.assertEqual(material.normal_uids, (normal,))
+        self.assertEqual(material.specular_uids, (specular,))
+        self.assertEqual(material.mask_uids, (mask,))
+
+        self.assertEqual(
+            material.selectors,
+            (
+                MaterialTextureSelector(
+                    role=0,
+                    spec_uid=diffuse_spec,
+                    texture_map_uid=diffuse_map,
+                    texture_uids=(diffuse,),
+                    source="base"
+                ),
+                MaterialTextureSelector(
+                    role=1,
+                    spec_uid=normal_spec,
+                    texture_map_uid=normal_map,
+                    texture_uids=(normal,),
+                    source="base"
+                ),
+                MaterialTextureSelector(
+                    role=2,
+                    spec_uid=specular_spec,
+                    texture_map_uid=specular_map,
+                    texture_uids=(specular,),
+                    source="base"
+                ),
+                MaterialTextureSelector(
+                    role=7,
+                    spec_uid=mask_spec,
+                    texture_map_uid=mask_map,
+                    texture_uids=(mask,),
+                    source="base"
+                ),
+                MaterialTextureSelector(
+                    role=0,
+                    spec_uid=detail_spec,
+                    texture_map_uid=detail_map,
+                    texture_uids=(detail,),
+                    source="detail"
+                )
+            )
+        )
+
+    def test_reads_embedded_shader_uniform_names_and_values(self):
+        owner_uid = 0x6000
+        texture_spec_uid = 0x7000
+
+        def make_uniform(index: int, name: str, uniform_type: int, value_data: bytes) -> bytes:
+            encoded_name = name.encode("utf-8")
+
+            return (
+                b"\x00"
+                + struct.pack(
+                    "<IIIII",
+                    0xFBF80000 | index,
+                    0,
+                    0x12345678,
+                    uniform_type,
+                    len(encoded_name)
+                )
+                + encoded_name
+                + b"\x00"
+                + value_data
+            )
+
+        texture_value = struct.pack("<II16xQ", 2, 0, texture_spec_uid)
+        scalar_value = struct.pack("<II16xf", 0, 0, 0.75)
+        uniform_data = struct.pack("<II", CURRENT_SHADER_UNIFORMS, 2) + make_uniform(0, "SecondaryEnv", 0, texture_value) + make_uniform(1, "IrisGlossiness", 1, scalar_value)
+
+        payload = make_entry(CURRENT_SHADER_UNIFORMS, owner_uid, uniform_data)
+
+        self.assertEqual(
+            read_shader_uniforms(payload),
+            (
+                ShaderUniform(
+                    owner_uid=owner_uid,
+                    index=0,
+                    name="SecondaryEnv",
+                    uniform_type=0,
+                    texture_spec_uid=texture_spec_uid
+                ),
+                ShaderUniform(
+                    owner_uid=owner_uid,
+                    index=1,
+                    name="IrisGlossiness",
+                    uniform_type=1,
+                    values=(0.75,)
+                )
+            )
+        )
+
+    def test_reads_custom_shader_parameter_bindings(self):
+        shader_uid = 0x7000
+
+        shader_data = (
+            struct.pack("<I", CURRENT_SHADER_DEFINES)
+            + b"\x00" * 24
+            + b"#define NormalDetail _CustomParamTexture0\r\n"
+            + b"#define AlbedoDetail _CustomParamTexture1\r\n"
+            + b"#define UnrelatedValue SOMETHING_ELSE\r\n"
+        )
+
+        payload = make_entry(CURRENT_SHADER_DEFINES, shader_uid, shader_data)
+
+        self.assertEqual(
+            read_shader_bindings(payload),
+            (
+                ShaderBinding(
+                    shader_uid=shader_uid,
+                    name="NormalDetail",
+                    target="_CustomParamTexture0"
+                ),
+                ShaderBinding(
+                    shader_uid=shader_uid,
+                    name="AlbedoDetail",
+                    target="_CustomParamTexture1"
+                )
+            )
+        )
+
+    def test_applies_material_vector_overrides(self):
+        shader_uid = 0x7000
+
+        uniforms = (
+            ShaderUniform(
+                owner_uid=0x7002,
+                index=2,
+                name="ScleraColorWhite",
+                uniform_type=1,
+                values=(1.0, 1.0, 1.0, 0.0)
+            ),
+            ShaderUniform(
+                owner_uid=0x7002,
+                index=6,
+                name="IrisGlossiness",
+                uniform_type=1,
+                values=(0.0,)
+            )
+        )
+
+        bindings = (
+            ShaderBinding(
+                shader_uid=shader_uid,
+                name="ScleraColorWhite",
+                target="UM_CustomParamVector0"
+            ),
+            ShaderBinding(
+                shader_uid=shader_uid,
+                name="IrisGlossiness",
+                target="UM_CustomParamVector4.x"
+            )
+        )
+
+        vectors = (
+            0.73, 0.73, 0.73, 1.0,
+            0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 0.0,
+            0.25, 0.5, 0.75, 1.0
+        )
+
+        material_blob = struct.pack("<I", UNIFORM_MARKER | 2) + b"\x00" * 36 + struct.pack("<20f", *vectors)
+
+        resolved = apply_material_uniform_overrides(material_blob, uniforms, bindings)
+
+        self.assertEqual(resolved[0].name, "ScleraColorWhite")
+
+        for actual, expected in zip(resolved[0].values, (0.73, 0.73, 0.73, 1.0)):
+            self.assertAlmostEqual(actual, expected, places=5)
+
+        self.assertEqual(resolved[1].name, "IrisGlossiness")
+        self.assertAlmostEqual(resolved[1].values[0], 0.25, places=5)
 
 
 if __name__ == "__main__":

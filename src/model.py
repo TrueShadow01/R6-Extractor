@@ -16,6 +16,7 @@ from src.index import (
 )
 from src.material import (
     MaterialTextureSet,
+    NORMAL_ROLE,
     embedded_texture_uids,
     resolve_material_texture_sets
 )
@@ -246,13 +247,50 @@ def resolve_export_material_textures(texture_sets: Iterable[MaterialTextureSet],
 
         return max(matches, key=lambda item: item[0])[1]
 
-    return tuple(
-        MaterialTextures(
+    def resolve(texture_set: MaterialTextureSet) -> MaterialTextures:
+        detail_normals = []
+
+        for selector in texture_set.selectors:
+            if selector.source != "detail" or selector.role != NORMAL_ROLE:
+                continue
+
+            filename = choose(selector.texture_uids)
+
+            if filename is not None and filename not in detail_normals:
+                detail_normals.append(filename)
+
+        shader_candidates: dict[str, list[int]] = {}
+
+        for selector in texture_set.selectors:
+            if selector.source != "shader" or selector.shader_binding is None:
+                continue
+
+            shader_candidates.setdefault(selector.shader_binding, []).extend(selector.texture_uids)
+
+        shader_textures = []
+
+        for binding in sorted(shader_candidates):
+            filename = choose(shader_candidates[binding])
+
+            if filename is not None:
+                shader_textures.append((binding, filename))
+
+        return MaterialTextures(
             diffuse=choose(texture_set.diffuse_uids),
             normal=choose(texture_set.normal_uids),
             specular=choose(texture_set.specular_uids),
-            mask=choose(texture_set.mask_uids)
+            mask=choose(texture_set.mask_uids),
+            detail_normals=tuple(detail_normals),
+            shader_textures=tuple(shader_textures),
+            shader_uid=texture_set.shader_uid,
+            shader_uniforms=tuple(
+                (uniform.name, uniform.values)
+                for uniform in texture_set.shader_uniforms
+            ),
         )
+
+    return tuple(
+        resolve(texture_set)
         for texture_set in texture_sets
     )
 

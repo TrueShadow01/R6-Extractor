@@ -16,7 +16,8 @@ FORMATS = {
     4: (77, 16),    # BC3 (alternate diffuse code)
     5: (77, 16),    # BC3 (diffuse + alpha)
     6: (83, 16),    # BC5 (normal maps)
-    14: (80, 8)     # BC4 (single channel mask)
+    14: (80, 8),    # BC4 (single channel mask)
+    15: (98, 16),   # BC7
 }
 
 BC5_Z_TABLE = bytes(
@@ -51,6 +52,25 @@ def reconstruct_bc5_z(image: Image.Image) -> Image.Image:
 
     return Image.frombytes("RGBA", image.size, bytes(pixels))
 
+def compressed_mip_chain_size(width: int, height: int, block_size: int) -> int:
+    """Return the exact byte size of a complete BCn mip chain"""
+
+    total = 0
+
+    while True:
+        blocks = (
+            ((width + 3) // 4)
+            * ((height + 3) // 4)
+        )
+
+        total += blocks * block_size
+
+        if width == 1 and height == 1:
+            return total
+
+        width = max(1, width // 2)
+        height = max(1, height // 2)
+
 def parse_texture(payload):
     texture_offset = payload.find(TEXMAPDATA_MAGIC)
 
@@ -60,22 +80,35 @@ def parse_texture(payload):
     pixel_start = texture_offset + 12
     tail_start = max(pixel_start, len(payload) - 200)
 
-    # complete trailer requires 48 bytes
+    # A complete current texture trailer requires at least 48 bytes
     for dimension_offset in range(tail_start, len(payload) - 47):
-        width = int.from_bytes(
+        stored_width = int.from_bytes(
             payload[dimension_offset: dimension_offset + 4],
             "little"
         )
-        height = int.from_bytes(
+        stored_height = int.from_bytes(
             payload[dimension_offset + 4: dimension_offset + 8],
             "little"
         )
 
-        if width not in POW2 or height not in POW2:
+        if stored_width not in POW2 or stored_height not in POW2:
+            continue
+
+        channel_shift = int.from_bytes(
+            payload[dimension_offset  + 16:dimension_offset + 20],
+            "little"
+        )
+
+        if channel_shift > 16:
+            continue
+
+        width = stored_width >> channel_shift
+        height = stored_height >> channel_shift
+
+        if width <= 0 or height <= 0:
             continue
 
         surface_size = dimension_offset - pixel_start
-        blocks = (width // 4) * (height // 4)
 
         format_code = int.from_bytes(
             payload[dimension_offset + 32: dimension_offset + 36],
@@ -84,15 +117,31 @@ def parse_texture(payload):
 
         format_info = FORMATS.get(format_code)
 
-        if format_info is not None:
-            _, block_size = format_info
+        surface_end = dimension_offset
 
-            if surface_size != blocks * block_size:
+        if format_code == 0:
+            # PixelFormat_RGBA8888 is stored as 4 BGRA bytes per pixel
+            if surface_size != width * height * 4:
                 continue
-        elif surface_size not in (blocks * 8, blocks * 16):
-            # Preserve detection of unknown formats so save_png()
-            # can report their numeric format code
-            continue
+        else:
+            blocks = ((width + 3) // 4) * ((height + 3) // 4)
+
+            if format_info is not None:
+                _, block_size = format_info
+                top_level_size = blocks * block_size
+                mip_chain_size = compressed_mip_chain_size(width, height, block_size)
+
+                if surface_size == top_level_size:
+                    pass
+                elif surface_size == mip_chain_size:
+                    # PNG export only needs the largest mip
+                    surface_end = pixel_start + top_level_size
+                else:
+                    continue
+            elif surface_size not in (blocks * 8, blocks * 16):
+                # Preserve detection of unknown block formats so save_png()
+                # can report their numeric format code
+                continue
 
         texture_type = int.from_bytes(
             payload[dimension_offset + 44: dimension_offset + 48],
@@ -104,10 +153,7 @@ def parse_texture(payload):
             height,
             format_code,
             texture_type,
-            payload[
-                pixel_start:
-                dimension_offset
-            ]
+            payload[pixel_start:surface_end]
         )
     
     raise ValueError("No Full Tier Surface (partial tier or unrecognized)")
@@ -130,25 +176,29 @@ def _dds_dx10(width, height, surface, dxgi):
 
 
 def save_png(path, payload):
-    w, h, fmt, textype, surface = parse_texture(payload)
-    if fmt not in FORMATS:
-        raise ValueError(f"Unsupported Format Code {fmt} ({w}x{h})")
-    dxgi, _ = FORMATS[fmt]
-    dds = _dds_dx10(w, h, surface, dxgi)
-    with Image.open(io.BytesIO(dds)) as source:
-        image = source.convert("RGBA")
+    width, height, format_code, texture_type, surface = parse_texture(payload)
+    if format_code == 0:
+        image = Image.frombytes("RGBA", (width, height), surface, "raw", "BGRA")
+    else:
+        if format_code not in FORMATS:
+            raise ValueError(f"Unsupported Format Code {format_code} ({width}x{height})")
 
-    if fmt == 6 and textype == 1:
+        dxgi, _ = FORMATS[format_code]
+        dds = _dds_dx10(width, height, surface, dxgi)
+
+        with Image.open(io.BytesIO(dds)) as source:
+            image = source.convert("RGBA")
+
+    if format_code == 6 and texture_type == 1:
         image = reconstruct_bc5_z(image)
 
     # Some Siege diffuse maps contain valid RGB texture but use a
     # zero unused alpha channel. Blender premultiplies those
-    # pixels to black, only fully-zero diffuse alpha channels
-    # should be opaque. Preserve alpha when it contains real data.
-
-    if (textype == 0 and image.getextrema()[3] == (0, 0)):
+    # pixels to black. Only fully-zero diffuse alpha channels
+    # should become opaque.
+    if texture_type == 0 and image.getextrema()[3] == (0, 0):
         image.putalpha(255)
 
     image.save(path)
 
-    return w, h, fmt, textype
+    return width, height, format_code, texture_type

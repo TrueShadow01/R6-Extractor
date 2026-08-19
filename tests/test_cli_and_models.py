@@ -1,6 +1,7 @@
 """Tests for CLI routing and model discovery."""
 
 from __future__ import annotations
+from PIL import Image
 
 import json
 import struct
@@ -34,7 +35,11 @@ from src.parser import (
     SCIMITAR_MAGIC,
 )
 from src.mesh import MeshIsland
-from src.material import MaterialTextureSet
+from src.material import (
+    MaterialTextureSet,
+    MaterialTextureSelector,
+    ShaderUniform
+)
 from src.depgraph import load_depgraph
 
 TEST_UID = 0x123456789ABCDEF0
@@ -426,7 +431,7 @@ class ModelDiscoveryTests(unittest.TestCase):
 
         index.add(self.make_record(geometry_a, COMPILED_MESH_OBJECT, 100))
         index.add(self.make_record(geometry_b, COMPILED_MESH_OBJECT, 200))
-        index.add( self.make_record(unrelated, 0xDEADBEEF, 300))
+        index.add(self.make_record(unrelated, 0xDEADBEEF, 300))
 
         children = {
             model_uid: [
@@ -460,7 +465,34 @@ class ModelDiscoveryTests(unittest.TestCase):
                 diffuse_uids=(0x10, 0x11),
                 normal_uids=(0x20,),
                 specular_uids=(0x30,),
-                mask_uids=(0x40,)
+                mask_uids=(0x40,),
+                selectors=(
+                    MaterialTextureSelector(
+                        role=1,
+                        spec_uid=0x50,
+                        texture_map_uid=0x51,
+                        texture_uids=(0x52,),
+                        source="detail"
+                    ),
+                    MaterialTextureSelector(
+                        role=3,
+                        spec_uid=0x60,
+                        texture_map_uid=0x61,
+                        texture_uids=(0x62,),
+                        source="shader",
+                        shader_binding="NormalDetail"
+                    )
+                ),
+                shader_uid=0x7000,
+                shader_uniforms=(
+                    ShaderUniform(
+                        owner_uid=0x7002,
+                        index=0,
+                        name="IrisGlossiness",
+                        uniform_type=1,
+                        values=(0.75,)
+                    ),
+                ),
             ),
         )
 
@@ -469,7 +501,9 @@ class ModelDiscoveryTests(unittest.TestCase):
             (4096, 0, "0000000000000011.png"),
             (1024, 1, "0000000000000020.png"),
             (1024, 2, "0000000000000030.png"),
-            (1024, 7, "0000000000000040.png")
+            (1024, 7, "0000000000000040.png"),
+            (8192, 1, "0000000000000052.png"),
+            (4096, 3, "0000000000000062.png")
         ]
 
         resolved = resolve_export_material_textures(texture_sets, decoded)
@@ -481,7 +515,21 @@ class ModelDiscoveryTests(unittest.TestCase):
                     diffuse="0000000000000011.png",
                     normal="0000000000000020.png",
                     specular="0000000000000030.png",
-                    mask="0000000000000040.png"
+                    mask="0000000000000040.png",
+                    detail_normals=("0000000000000052.png",),
+                    shader_textures=(
+                        (
+                            "NormalDetail",
+                            "0000000000000062.png"
+                        ),
+                    ),
+                    shader_uid=0x7000,
+                    shader_uniforms=(
+                        (
+                            "IrisGlossiness",
+                            (0.75,)
+                        ),
+                    ),
                 ),
             )
         )
@@ -750,6 +798,9 @@ class GltfExportTests(unittest.TestCase):
             self.assertEqual([primitive["material"] for primitive in primitives], [0, 3])
             self.assertEqual(len(document["materials"]), 4)
 
+            for filename in ("slot0_diffuse.png", "slot1_diffuse.png", "slot3_diffuse.png"):
+                Image.new("RGBA", (1, 1), (255, 255, 255, 0)).save(Path(root) / filename)
+
             textured_path = write_gltf(
                 TEST_UID,
                 [part],
@@ -757,15 +808,33 @@ class GltfExportTests(unittest.TestCase):
                 material_textures=(
                     MaterialTextures(
                         diffuse="slot0_diffuse.png",
-                        normal="shared_normal.png"
+                        normal="shared_normal.png",
+                        shader_uid=0x1397A32F38
                     ),
-                    MaterialTextures(),
+                    MaterialTextures(
+                        diffuse="slot1_diffuse.png",
+                        shader_uid=0x3051C028
+                    ),
                     MaterialTextures(),
                     MaterialTextures(
                         diffuse="slot3_diffuse.png",
                         normal="shared_normal.png",
                         specular="slot3_specular.png",
-                        mask="slot3_mask.png"
+                        mask="slot3_mask.png",
+                        detail_normals=("slot3_detail_normal.png",),
+                        shader_textures=(
+                            (
+                                "NormalDetail",
+                                "slot3_shader.png"
+                            ),
+                        ),
+                        shader_uid=0x557005948D,
+                        shader_uniforms=(
+                            (
+                                "IrisGlossiness",
+                                (0.75,)
+                            ),
+                        ),
                     )
                 )
             )
@@ -773,7 +842,12 @@ class GltfExportTests(unittest.TestCase):
             textured_document = json.loads(textured_path.read_text(encoding="utf-8"))
 
             slot0 = textured_document["materials"][0]
+            slot1 = textured_document["materials"][1]
             slot3 = textured_document["materials"][3]
+
+            self.assertEqual(slot0["alphaMode"], "OPAQUE")
+            self.assertEqual(slot1["alphaMode"], "MASK")
+            self.assertEqual(slot3["alphaMode"], "OPAQUE")
 
             slot0_diffuse_texture = slot0["pbrMetallicRoughness"]["baseColorTexture"]["index"]
             slot3_diffuse_texture = slot3["pbrMetallicRoughness"]["baseColorTexture"]["index"]
@@ -791,6 +865,14 @@ class GltfExportTests(unittest.TestCase):
 
             self.assertEqual(textured_document["images"][specular_image]["uri"], "slot3_specular.png")
             self.assertEqual(slot3["extras"]["siegeMaskTexture"], "slot3_mask.png")
+            self.assertEqual(slot3["extras"]["siegeDetailNormalTextures"], ["slot3_detail_normal.png"])
+            self.assertEqual(slot3["extras"]["siegeShaderTextures"], {
+                "NormalDetail": "slot3_shader.png"
+            })
+            self.assertEqual(slot3["extras"]["siegeShaderUid"], "000000557005948D")
+            self.assertEqual(slot3["extras"]["siegeShaderUniforms"], {
+                "IrisGlossiness": [0.75]
+            })
 
             self.assertEqual(
                 [

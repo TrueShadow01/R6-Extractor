@@ -14,14 +14,14 @@ The long-term goal is geometry, material, texture, skeleton and animation suppor
 - Human-readable UID catalogs with source and confidence tracking
 - Unknown operator discovery with Blender thumbnail previews
 - Cross-bundle geometry and texture resolution
-- BC1, BC3 and BC4 textures to PNG with BC5 normal reconstruction
+- BC1, BC3, BC4 and BC7 textures to PNG with BC5 normal reconstruction
 - Wwise audio extraction to WEM
 - Optional WEM-to-WAV conversion with vgmstream
 - Float and packed-position meshes with UVs, normals and tangents
 - Character joint indices, skin weights and per-island bone palettes
 - Composite LOD0 glTF 2.0 export
-- Per-part glTF materials with alpha cutouts and KHR_materials_specular support
-- Mask relationships stored as glTF metadata
+- Per-part glTF materials with shader-aware alpha and KHR_materials_specular support
+- Mask, detail-normal, shader-texture, shader UID and uniform metadata preserved in glTF
 - Siege Z-up to glTF Y-up coordinate conversion
 
 ## Limitations
@@ -33,7 +33,7 @@ The long-term goal is geometry, material, texture, skeleton and animation suppor
 - Skeleton hierarchy, rigged glTF export and animations are not supported
 - Model export requires a known UID
 - GLB export is not available
-- Masks and layered character shaders are not yet applied
+- Layered, detail and eye-parallax shaders are preserved as metadata but not automatically reconstructed
 - Human-readable names depend on imported catalogs
 
 ## Setup
@@ -149,7 +149,7 @@ Audio extraction is not connected to the main CLI yet.
 
 ## Roadmap
 
-1. Apply masks and reconstruct layered character shaders
+1. Reconstruct layered, detail and eye shaders from preserved metadata
 2. Ship an attributed, versioned UID catalog and import it during setup
 3. Validate the remaining vertex layouts
 4. Reconstruct streamed textures and decode packed PBR channels

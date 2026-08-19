@@ -19,6 +19,17 @@ UNSIGNED_INT = 5125
 
 TRIANGLES = 4
 
+# Confirmed Siege shader transparency behavior
+# Unknown shaders still use the image alpha fallback
+OPAQUE_SHADER_UIDS = {
+    0x0000001397A32F38, # solid cosmetic mask
+    0x000000557005948D, # eye shader
+}
+
+ALPHA_MASK_SHADER_UIDS = {
+    0x000000003051C028, # hair and eyelashes
+}
+
 class MeshPartLike(Protocol):
     uid: int
     vertices: Sequence[tuple[float, float, float]]
@@ -33,6 +44,10 @@ class MaterialTextures:
     normal: str | None = None
     specular: str | None = None
     mask: str | None = None
+    detail_normals: tuple[str, ...] = ()
+    shader_textures: tuple[tuple[str, str], ...] = ()
+    shader_uid: int | None = None
+    shader_uniforms: tuple[tuple[str, tuple[float, ...]], ...] = ()
 
 @dataclass
 class BinaryBuffer: 
@@ -371,7 +386,14 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
                 "index": add_texture(slot_textures.diffuse)
             }
 
-            if uses_alpha(slot_textures.diffuse):
+            if slot_textures.shader_uid in ALPHA_MASK_SHADER_UIDS:
+                alpha_mask = True
+            elif slot_textures.shader_uid in OPAQUE_SHADER_UIDS:
+                alpha_mask = False
+            else:
+                alpha_mask = uses_alpha(slot_textures.diffuse)
+
+            if alpha_mask:
                 material["alphaMode"] = "MASK"
                 material["alphaCutoff"] = 0.1
                 material["doubleSided"] = True
@@ -383,6 +405,15 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
             }
 
         extras = {}
+
+        if slot_textures.shader_uid is not None:
+            extras["siegeShaderUid"] = f"{slot_textures.shader_uid:016X}"
+
+        if slot_textures.shader_uniforms:
+            extras["siegeShaderUniforms"] = {
+                name: list(values)
+                for name, values in slot_textures.shader_uniforms
+            }
 
         if slot_textures.specular:
             material["extensions"] = {
@@ -398,6 +429,15 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
 
         if slot_textures.mask:
             extras["siegeMaskTexture"] = slot_textures.mask
+
+        if slot_textures.detail_normals:
+            extras["siegeDetailNormalTextures"] = slot_textures.detail_normals
+
+        if slot_textures.shader_textures:
+            extras["siegeShaderTextures"] = {
+                binding: filename
+                for binding, filename in slot_textures.shader_textures
+            }
 
         if extras:
             material["extras"] = extras
