@@ -18,7 +18,8 @@ The long-term goal is geometry, material, texture, skeleton and animation suppor
 - Wwise audio extraction to WEM
 - Optional WEM-to-WAV conversion with vgmstream
 - Float and packed-position meshes with UVs, normals and tangents
-- Character joint indices, skin weights and per-island bone palettes
+- Character skin weights, bone palettes, inverse-bind matrices and per-part glTF skins
+- Shared eye and mouth meshes aligned from embedded neutral-pose data
 - Composite LOD0 glTF 2.0 export
 - Per-part glTF materials with shader-aware alpha and KHR_materials_specular support
 - Mask, detail-normal, shader-texture, shader UID and uniform metadata preserved in glTF
@@ -30,7 +31,7 @@ The long-term goal is geometry, material, texture, skeleton and animation suppor
 - Streamed and virtual textures are not reconstructed
 - Packed PBR channels are not decoded
 - Only LOD0 geometry is exported
-- Skeleton hierarchy, rigged glTF export and animations are not supported
+- Skeleton hierarchy and animations are not supported, skins use flat per-part joints and facial alignment currently covers the known shared four-bone rig
 - Model export requires a known UID
 - GLB export is not available
 - Layered, detail and eye-parallax shaders are preserved as metadata but not automatically reconstructed
@@ -154,7 +155,7 @@ Audio extraction is not connected to the main CLI yet.
 3. Validate the remaining vertex layouts
 4. Reconstruct streamed textures and decode packed PBR channels
 5. Add GLB export
-6. Decode skeleton hierarchy and animations, export rigged glTF
+6. Decode skeleton hierarchy and animations for reusable Blender rigs
 7. Add general bulk model export
 8. Build a desktop asset browser and Blender integration
 

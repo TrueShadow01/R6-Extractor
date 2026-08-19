@@ -18,11 +18,20 @@ from src.index import (
     AssetRecord,
 )
 from src.metadata import FileMetadata
-from src.gltf import MaterialTextures, write_gltf
+from src.gltf import (
+    MaterialTextures,
+    invert_gltf_matrix,
+    siege_to_gltf_matrix,
+    write_gltf
+)
 from src.model import (
+    BoneTransform,
     MeshPart,
+    MeshBinding,
+    read_mesh_bindings,
     resolve_dependency_uids,
-    resolve_export_material_textures
+    resolve_export_material_textures,
+    resolve_static_face_bindings
 )
 from src.model_catalog import (
     COMPILED_MESH_OBJECT,
@@ -36,6 +45,7 @@ from src.parser import (
 )
 from src.mesh import MeshIsland
 from src.material import (
+    CURRENT_MESH,
     MaterialTextureSet,
     MaterialTextureSelector,
     ShaderUniform
@@ -403,6 +413,143 @@ class ModelDiscoveryTests(unittest.TestCase):
             metadata=metadata,
         )
 
+    def test_reads_mesh_bindings(self):
+        geometry_uid = 0x123456789ABCDEF0
+        binding_uid = 0x1111222233334444
+
+        first_matrix = (
+            1.0, 0.0, 0.0, 0.0,
+            0.0, 1.0, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            1.0, 2.0, 3.0, 1.0,
+        )
+        second_matrix = (
+            1.0, 0.0, 0.0, 0.0,
+            0.0, 1.0, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            4.0, 5.0, 6.0, 1.0,
+        )
+
+        def bone_record(bone_id, matrix):
+            return struct.pack("<II16fQ", 0xB883D0BA, bone_id, *matrix, 0)
+
+        def pose_record(index, bone_id, translation, rotation):
+            prefix = b"\x00" + struct.pack("<H", index) + b"\xF8\xFB\x00\x00\x00\x00"
+            return prefix + struct.pack("<II3f4f", 0x914532EB, bone_id, *translation, *rotation)
+
+        pose_blob = struct.pack("<III", 0x922E539C, 0xFFB49035, 2) + pose_record(1, 0x29A684AC, (1.0, 2.0, 3.0), (0.0, 0.0, 0.0, 1.0)) + pose_record(2, 0x4ED9C94E, (4.0, 5.0, 6.0), (0.0, 0.5, 0.0, 0.5))
+        binding_blob = struct.pack("<IIIII", CURRENT_MESH, 1, 2, 0, 0) + bone_record(0xAAAABBBB, first_matrix) + bone_record(0xCCCCDDDD, second_matrix) + b"\x00" + struct.pack("<Q", geometry_uid) + pose_blob
+        payload = struct.pack("<HHI", 0, 2, 0) + struct.pack("<IQ", CURRENT_MESH, binding_uid) + binding_blob
+
+        bindings = read_mesh_bindings(payload)
+
+        self.assertEqual(tuple(bindings), (geometry_uid,))
+
+        binding = bindings[geometry_uid]
+
+        self.assertEqual(
+            binding.bone_ids,
+            (
+                0xAAAABBBB,
+                0xCCCCDDDD
+            )
+        )
+        self.assertEqual(
+            binding.inverse_bind_matrices,
+            (
+                first_matrix,
+                second_matrix
+            )
+        )
+
+        self.assertEqual(
+            tuple(
+                transform.bone_id
+                for transform in binding.pose_transforms
+            ),
+            (
+                0x29A684AC,
+                0x4ED9C94E
+            )
+        )
+        self.assertEqual(binding.pose_transforms[0].translation, (1.0, 2.0, 3.0))
+        self.assertEqual(binding.pose_transforms[1].rotation, (0.0, 0.5, 0.0, 0.5))
+
+    def test_resolves_static_shared_face_pose(self):
+        identity = (
+            1.0, 0.0, 0.0, 0.0,
+            0.0, 1.0, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0,
+        )
+
+        def translated_inverse_bind(x, y, z):
+            return (*identity[:12], x, y, z, 1.0,)
+
+        face_bone_ids = (
+            0x22FE4DA9,
+            0xD8F170CA,
+            0x29A684AC,
+            0x4ED9C94E,
+        )
+
+        host = MeshBinding(
+            geometry_uid=0x3000,
+            bone_ids=(
+                0x88575789,
+                0x72586AEA,
+                0x07C159A2,
+            ),
+            inverse_bind_matrices=(
+                translated_inverse_bind(1.0, 0.0, 0.0),
+                translated_inverse_bind(-1.0, 0.0, 0.0),
+                identity,
+            ),
+            pose_transforms=tuple(
+                BoneTransform(
+                    bone_id=bone_id,
+                    translation=(0.0, 0.0, 0.0),
+                    rotation=(0.0, 0.0, 0.0, 1.0),
+                )
+                for bone_id in face_bone_ids
+            ),
+        )
+
+        shared = MeshBinding(
+            geometry_uid=0x2000,
+            bone_ids=face_bone_ids,
+            inverse_bind_matrices=(
+                identity,
+                identity,
+                translated_inverse_bind(0.0, 2.0, 0.0),
+                translated_inverse_bind(0.0, 1.0, 0.0),
+            ),
+        )
+
+        resolved = resolve_static_face_bindings(
+            {
+                shared.geometry_uid: shared,
+                host.geometry_uid: host,
+            }
+        )
+
+        corrected = resolved[shared.geometry_uid]
+
+        self.assertIs(resolved[host.geometry_uid], host)
+        self.assertEqual(corrected.inverse_bind_matrices, shared.inverse_bind_matrices,)
+        self.assertEqual(
+            tuple(
+                matrix[12:15]
+                for matrix in corrected.joint_node_matrices
+            ),
+            (
+                (-1.0, 0.0, 0.0),
+                (1.0, 0.0, 0.0),
+                (0.0, 0.0, 1.0),
+                (0.0, 0.0, 0.0),
+            ),
+        )
+
     def test_dependency_uids_include_indirect_children_and_cycles(self):
         children = {
             0x1000: [0x2000, 0x3000],
@@ -628,6 +775,35 @@ class ModelDiscoveryTests(unittest.TestCase):
 
 class GltfExportTests(unittest.TestCase):
     def test_gltf_structure_axis_and_uv_conversion(self):
+        siege_inverse_bind = (
+            1.0, 0.0, 0.0, 0.0,
+            0.0, 1.0, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            1.0, 2.0, 3.0, 1.0,
+        )
+
+        gltf_inverse_bind = siege_to_gltf_matrix(siege_inverse_bind)
+
+        self.assertEqual(
+            gltf_inverse_bind,
+            (
+                1.0, 0.0, 0.0, 0.0,
+                0.0, 1.0, 0.0, 0.0,
+                0.0, 0.0, 1.0, 0.0,
+                1.0, 3.0, -2.0, 1.0,
+            )
+        )
+
+        self.assertEqual(
+            invert_gltf_matrix(gltf_inverse_bind),
+            (
+                1.0, 0.0, 0.0, 0.0,
+                0.0, 1.0, 0.0, 0.0,
+                0.0, 0.0, 1.0, 0.0,
+                -1.0, -3.0, 2.0, 1.0,
+            )
+        )
+
         part = MeshPart(
             uid=0x2000,
             vertices=[
@@ -652,6 +828,32 @@ class GltfExportTests(unittest.TestCase):
                         (0, 1, 2),
                     )
                 ),
+            ),
+            joints=(
+                (0, 1, 0, 0),
+                (1, 0, 0, 0),
+                (0, 1, 0, 0),
+            ),
+            weights=(
+                (1.0, 0.0, 0.0, 0.0),
+                (0.25, 0.75, 0.0, 0.0),
+                (0.0, 1.0, 0.0, 0.0),
+            ),
+            binding=MeshBinding(
+                geometry_uid=0x2000,
+                bone_ids=(
+                    0xAAAABBBB,
+                    0xCCCCDDDD,
+                ),
+                inverse_bind_matrices=(
+                    (
+                        1.0, 0.0, 0.0, 0.0,
+                        0.0, 1.0, 0.0, 0.0,
+                        0.0, 0.0, 1.0, 0.0,
+                        0.0, 0.0, 0.0, 1.0,
+                    ),
+                    siege_inverse_bind
+                )
             )
         )
 
@@ -672,14 +874,47 @@ class GltfExportTests(unittest.TestCase):
             binary_path = root / document["buffers"][0]["uri"]
             binary = binary_path.read_bytes()
 
-            self.assertEqual(len(document["nodes"]), 1)
+            self.assertEqual(len(document["nodes"]), 3)
+            self.assertEqual(len(document["skins"]), 1)
             self.assertEqual(len(document["meshes"]), 1)
-            self.assertEqual(len(document["accessors"]), 4)
-            self.assertEqual(len(document["bufferViews"]), 4)
+            self.assertEqual(len(document["accessors"]), 7)
+            self.assertEqual(len(document["bufferViews"]), 7)
 
             self.assertEqual(document["buffers"][0]["byteLength"], len(binary))
 
             primitive = document["meshes"][0]["primitives"][0]
+
+            mesh_node = next(
+                node
+                for node in document["nodes"]
+                if "mesh" in node
+            )
+
+            skin = document["skins"][mesh_node["skin"]]
+
+            self.assertEqual(len(skin["joints"]), 2)
+
+            first_joint = document["nodes"][skin["joints"][0]]
+            second_joint = document["nodes"][skin["joints"][1]]
+
+            self.assertEqual(
+                first_joint["matrix"],
+                [
+                    1.0, 0.0, 0.0, 0.0,
+                    0.0, 1.0, 0.0, 0.0,
+                    0.0, 0.0, 1.0, 0.0,
+                    0.0, 0.0, 0.0, 1.0,
+                ]
+            )
+
+            self.assertEqual(second_joint["matrix"], list(invert_gltf_matrix(gltf_inverse_bind)))
+
+            inverse_bind_accessor = document["accessors"][skin["inverseBindMatrices"]]
+            inverse_bind_view = document["bufferViews"][inverse_bind_accessor["bufferView"]]
+
+            self.assertNotIn("target", inverse_bind_view)
+            self.assertEqual(inverse_bind_accessor["type"], "MAT4")
+            self.assertEqual(inverse_bind_accessor["count"], 2)
 
             accessor_references = [
                 *primitive["attributes"].values(),
@@ -734,6 +969,38 @@ class GltfExportTests(unittest.TestCase):
                     0.25, 0.25,
                     0.50, 0.75,
                     0.00, 0.00
+                )
+            )
+
+            joint_accessor = document["accessors"][primitive["attributes"]["JOINTS_0"]]
+            joint_view = document["bufferViews"][joint_accessor["bufferView"]]
+            joint_offset = joint_view.get("byteOffset", 0) + joint_accessor.get("byteOffset", 0)
+
+            exported_joints = struct.unpack_from("<12B", binary, joint_offset)
+
+            self.assertEqual(
+                exported_joints,
+                (
+                    0, 1, 0, 0,
+                    1, 0, 0, 0,
+                    0, 1, 0, 0,
+                )
+            )
+
+            self.assertEqual(joint_accessor["componentType"], 5121)
+
+            weight_accessor = document["accessors"][primitive["attributes"]["WEIGHTS_0"]]
+            weight_view = document["bufferViews"][weight_accessor["bufferView"]]
+            weight_offset = weight_view.get("byteOffset", 0) + weight_accessor.get("byteOffset", 0)
+
+            exported_weights = struct.unpack_from("<12f", binary, weight_offset)
+
+            self.assertEqual(
+                exported_weights,
+                (
+                    1.0, 0.0, 0.0, 0.0,
+                    0.25, 0.75, 0.0, 0.0,
+                    0.0, 1.0, 0.0, 0.0,
                 )
             )
 

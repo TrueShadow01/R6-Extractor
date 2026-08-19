@@ -4,7 +4,6 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 
 import struct
-from dataclasses import dataclass
 from typing import Collection, Iterable
 
 from src.metadata import (

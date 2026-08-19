@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import struct
 from collections import deque
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -9,7 +10,14 @@ from typing import Iterable, Mapping
 
 from PIL import Image
 
-from src.gltf import write_gltf, MaterialTextures
+from src.gltf import (
+    MaterialTextures,
+    invert_gltf_matrix,
+    multiply_matrices,
+    siege_to_gltf_matrix,
+    transpose_matrix,
+    write_gltf
+)
 from src.index import (
     AssetIndex,
     AssetRecord
@@ -17,8 +25,10 @@ from src.index import (
 from src.material import (
     MaterialTextureSet,
     NORMAL_ROLE,
+    CURRENT_MESH,
     embedded_texture_uids,
-    resolve_material_texture_sets
+    resolve_material_texture_sets,
+    scan_nested_entries
 )
 from src.mesh import read_mesh_with_islands, MeshIsland
 from src.parser import (
@@ -38,6 +48,50 @@ TEXTURE_TYPES = {
     0xD7B5C478, # LowResTexMap
 }
 
+BONE_RECORD_TAG = 0xB883D0BA
+BONE_RECORD_SIZE = 80
+
+POSE_GROUP_TAG = 0x922E539C
+POSE_TRANSFORM_TAG = 0x914532EB
+POSE_ENTRY_PREFIX_SIZE = 9
+POSE_TRANSFORM_SIZE = 45
+
+FACE_LEFT_EYE = 0x22FE4DA9
+FACE_RIGHT_EYE = 0xD8F170CA
+FACE_LOWER_MOUTH = 0x29A684AC
+FACE_UPPER_MOUTH = 0x4ED9C94E
+
+HOST_LEFT_EYE = 0x88575789
+HOST_RIGHT_EYE = 0x72586AEA
+HOST_HEAD_ROOT = 0x07C159A2
+
+SHARED_FACE_BONES = {
+    FACE_LEFT_EYE,
+    FACE_RIGHT_EYE,
+    FACE_LOWER_MOUTH,
+    FACE_UPPER_MOUTH,
+}
+
+REQUIRED_HOST_BONES = {
+    HOST_LEFT_EYE,
+    HOST_RIGHT_EYE,
+    HOST_HEAD_ROOT,
+}
+
+@dataclass(frozen=True)
+class BoneTransform:
+    bone_id: int
+    translation: tuple[float, float, float]
+    rotation: tuple[float, float, float, float]
+
+@dataclass(frozen=True)
+class MeshBinding:
+    geometry_uid: int
+    bone_ids: tuple[int, ...]
+    inverse_bind_matrices: tuple[tuple[float, ...], ...]
+    pose_transforms: tuple[BoneTransform, ...] = ()
+    joint_node_matrices: tuple[tuple[float, ...], ...] = ()
+
 @dataclass(frozen=True)
 class MeshPart:
     uid: int
@@ -48,6 +102,7 @@ class MeshPart:
     tangents: tuple[tuple[float, float, float, float], ...] = ()
     joints: tuple[tuple[int, int, int, int], ...] = ()
     weights: tuple[tuple[float, float, float, float], ...] = ()
+    binding: MeshBinding | None = None
 
 @dataclass(frozen=True)
 class ModelExportResult:
@@ -66,6 +121,248 @@ def load_asset_payload(record: AssetRecord) -> bytes:
 
     with map_archive(record.archive) as data:
         return read_container(data, record.container_offset)
+
+def _read_pose_transforms(blob: bytes, start: int) -> tuple[BoneTransform, ...]:
+    """Read the first embedded bone pose group after a mesh binding"""
+
+    group_marker = struct.pack("<I", POSE_GROUP_TAG)
+    group_offset = blob.find(group_marker, start)
+
+    if group_offset < 0:
+        return ()
+
+    if group_offset + 12 > len(blob):
+        raise ValueError("Mesh pose group is truncated")
+
+    pose_count = struct.unpack_from("<I", blob, group_offset + 8)[0]
+    cursor = group_offset + 12
+    transforms = []
+
+    for pose_index in range(pose_count):
+        tag_offset = cursor + POSE_ENTRY_PREFIX_SIZE
+        record_end = tag_offset + 36
+
+        if record_end > len(blob):
+            raise ValueError(f"Mesh pose transform {pose_index} is truncated")
+
+        (
+            record_tag,
+            bone_id,
+            tx,
+            ty,
+            tz,
+            qx,
+            qy,
+            qz,
+            qw
+        ) = struct.unpack_from("<II3f4f", blob, tag_offset)
+
+        if record_tag != POSE_TRANSFORM_TAG:
+            raise ValueError(f"Mesh pose transform {pose_index} has an invalid tag")
+
+        transforms.append(
+            BoneTransform(
+                bone_id=bone_id,
+                translation=(tx, ty, tz),
+                rotation=(qx, qy, qz, qw)
+            )
+        )
+
+        cursor += POSE_TRANSFORM_SIZE
+
+    return tuple(transforms)
+
+def read_mesh_bindings(payload: bytes) -> dict[int, MeshBinding]:
+    """Read per geometry bone identifiers and inverse bind matrices"""
+
+    bindings: dict[int, MeshBinding] = {}
+
+    for entry in scan_nested_entries(payload):
+        if entry.metadata.file_type != CURRENT_MESH:
+            continue
+
+        blob = payload[entry.data_offset:entry.end]
+
+        if len(blob) < 20:
+            raise ValueError(f"Mesh binding {entry.metadata.uid:016X} is truncated")
+
+        embedded_type = struct.unpack_from("<I", blob, 0)[0]
+
+        if embedded_type != CURRENT_MESH:
+            raise ValueError(f"Mesh binding {entry.metadata.uid:016X} has an invalid type")
+
+        bone_count = struct.unpack_from("<I", blob, 8)[0]
+        records_end = 20 + bone_count * BONE_RECORD_SIZE
+
+        # Siege places one separator byte between the bone table and UID
+        geometry_offset = records_end + 1
+
+        if geometry_offset +8 > len(blob):
+            raise ValueError(f"Mesh binding {entry.metadata.uid:016X} has a truncated bone table")
+
+        bone_ids = []
+        inverse_bind_matrices = []
+
+        for bone_index in range(bone_count):
+            record_offset = 20 + bone_index * BONE_RECORD_SIZE
+            record_tag, bone_id = struct.unpack_from("<II", blob, record_offset)
+
+            if record_tag != BONE_RECORD_TAG:
+                raise ValueError(f"Mesh binding {entry.metadata.uid:016X} bone {bone_index} has an invalid record tag")
+
+            inverse_bind_matrix = struct.unpack_from("<16f", blob, record_offset + 8)
+
+            bone_ids.append(bone_id)
+            inverse_bind_matrices.append(inverse_bind_matrix)
+
+        geometry_uid = struct.unpack_from("<Q", blob, geometry_offset)[0]
+        pose_transforms = _read_pose_transforms(blob, geometry_offset + 8)
+
+        if geometry_uid in bindings:
+            raise ValueError(f"Geometry {geometry_uid:016X} has duplicate mesh bindings")
+
+        bindings[geometry_uid] = MeshBinding(
+            geometry_uid=geometry_uid,
+            bone_ids=tuple(bone_ids),
+            inverse_bind_matrices=tuple(inverse_bind_matrices),
+            pose_transforms=pose_transforms
+        )
+
+    return bindings
+
+def _gltf_multiply(left: tuple[float, ...], right: tuple[float, ...]) -> tuple[float, ...]:
+    """Mutliply two glTF column-major matrices"""
+
+    return transpose_matrix(
+        multiply_matrices(
+            transpose_matrix(left),
+            transpose_matrix(right)
+        )
+    )
+
+def _pose_to_gltf_matrix(transform: BoneTransform) -> tuple[float, ...]:
+    """Convert a Siege translation and quaternion into a glTF matrix"""
+
+    x, y, z, w = transform.rotation
+
+    xx = x * x
+    yy = y * y
+    zz = z * z
+    xy = x * y
+    xz = x * z
+    yz = y * z
+    wx = w * x
+    wy = w * y
+    wz = w * z
+
+    siege_row_matrix = (
+        1.0 - 2.0 * (yy + zz),
+        2.0 * (xy + wz),
+        2.0 * (xz - wy),
+        0.0,
+
+        2.0 * (xy - wz),
+        1.0 - 2.0 * (xx + zz),
+        2.0 * (yz + wx),
+        0.0,
+
+        2.0 * (xz + wy),
+        2.0 * (yz - wx),
+        1.0 - 2.0 * (xx + yy),
+        0.0,
+
+        *transform.translation,
+        1.0,
+    )
+
+    return siege_to_gltf_matrix(siege_row_matrix)
+
+def _default_joint_node_matrices(binding: MeshBinding) -> tuple[tuple[float, ...], ...]:
+    """Return explicit glTF joint matrices for one binding"""
+
+    if binding.joint_node_matrices:
+        return binding.joint_node_matrices
+
+    return tuple(
+        invert_gltf_matrix(siege_to_gltf_matrix(inverse_bind_matrix))
+        for inverse_bind_matrix in binding.inverse_bind_matrices
+    )
+
+def resolve_static_face_bindings(bindings: Mapping[int, MeshBinding]) -> dict[int, MeshBinding]:
+    """Apply the package's neutral pose to its shared facial geometry"""
+
+    resolved = dict(bindings)
+
+    shared = next(
+        (
+            binding
+            for binding in bindings.values()
+            if len(binding.bone_ids) == len(SHARED_FACE_BONES) and set(binding.bone_ids) == SHARED_FACE_BONES
+        ),
+        None
+    )
+
+    if shared is None:
+        return resolved
+
+    host = next(
+        (
+            binding
+            for binding in bindings.values()
+            if REQUIRED_HOST_BONES.issubset(binding.bone_ids) and SHARED_FACE_BONES.issubset(transform.bone_id for transform in binding.pose_transforms)
+        ),
+        None
+    )
+
+    if host is None:
+        return resolved
+
+    host_matrices = _default_joint_node_matrices(host)
+    face_matrices = list(_default_joint_node_matrices(shared))
+
+    for face_bone, host_bone in (FACE_LEFT_EYE, HOST_LEFT_EYE), (FACE_RIGHT_EYE, HOST_RIGHT_EYE):
+        face_index = shared.bone_ids.index(face_bone)
+        host_index = host.bone_ids.index(host_bone)
+
+        face_matrices[face_index] = host_matrices[host_index]
+
+    pose_by_bone = {
+        transform.bone_id: transform
+        for transform in host.pose_transforms
+    }
+
+    root_index = host.bone_ids.index(HOST_HEAD_ROOT)
+    upper_mouth_index = shared.bone_ids.index(FACE_UPPER_MOUTH)
+
+    upper_mouth_target = _gltf_multiply(
+        host_matrices[root_index],
+        _pose_to_gltf_matrix(pose_by_bone[FACE_UPPER_MOUTH])
+    )
+
+    upper_mouth_matrix = face_matrices[upper_mouth_index]
+
+    mouth_delta = tuple(
+        upper_mouth_target[index] - upper_mouth_matrix[index]
+        for index in (12, 13, 14)
+    )
+
+    # Both facial mouth joints influence shared vertices
+    # Moving them by different amounts stretches the teeth, gums and tongue
+    for bone_id in FACE_LOWER_MOUTH, FACE_UPPER_MOUTH:
+        bone_index = shared.bone_ids.index(bone_id)
+        matrix = list(face_matrices[bone_index])
+
+        for matrix_index, amount in zip((12, 13, 14), mouth_delta):
+            matrix[matrix_index] += amount
+
+        face_matrices[bone_index] = tuple(matrix)
+
+    resolved[shared.geometry_uid] = replace(
+        shared,
+        joint_node_matrices=tuple(face_matrices)
+    )
+
+    return resolved
 
 def resolve_direct_texture_uids(model_uid: int, index: AssetIndex) -> tuple[int, ...]:
     """Read texture UIDs embedded directly in a model package"""
@@ -130,8 +427,9 @@ def resolve_geometry_records(model_uid: int, children: Mapping[int, Iterable[int
 
     return tuple(sorted(records, key=lambda record: record.uid))
 
-def decode_mesh_parts(records: Iterable[AssetRecord]) -> tuple[MeshPart, ...]:
+def decode_mesh_parts(records: Iterable[AssetRecord], bindings: Mapping[int, MeshBinding] | None = None) -> tuple[MeshPart, ...]:
     parts: list[MeshPart] = []
+    bindings = bindings or {}
 
     for record in records:
         payload = load_asset_payload(record)
@@ -145,6 +443,21 @@ def decode_mesh_parts(records: Iterable[AssetRecord]) -> tuple[MeshPart, ...]:
             weights,
             islands
         ) = read_mesh_with_islands(payload)
+
+        binding = bindings.get(record.uid)
+
+        if binding is not None and joints:
+            used_joint_indices = [
+                joint
+                for joint_values, weight_values in zip(joints, weights)
+                for joint, weight in zip(joint_values, weight_values)
+                if weight > 0.0
+            ]
+
+            highest_joint = max(used_joint_indices, default=-1)
+
+            if highest_joint >= len(binding.bone_ids):
+                raise ValueError(f"Geometry {record.uid:016X} uses joint {highest_joint} but its binding contains only {len(binding.bone_ids)} bones")
 
         if len(uvs) != len(vertices):
             raise ValueError(f"Geometry {record.uid:016X} has {len(vertices)} vertices but {len(uvs)} UV coordinates")
@@ -164,7 +477,8 @@ def decode_mesh_parts(records: Iterable[AssetRecord]) -> tuple[MeshPart, ...]:
                 islands=islands,
                 tangents=tangents,
                 joints=joints,
-                weights=weights
+                weights=weights,
+                binding=binding
             )
         )
 
@@ -301,8 +615,19 @@ def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: A
     output_directory.mkdir(parents=True, exist_ok=True)
 
     geometry_records = resolve_geometry_records(model_uid, children, index)
+    model_record = index.primary(model_uid)
+    model_payload = (
+        load_asset_payload(model_record)
+        if model_record is not None
+        else None
+    )
+    mesh_bindings = (
+        resolve_static_face_bindings(read_mesh_bindings(model_payload))
+        if model_payload is not None
+        else {}
+    )
 
-    parts = decode_mesh_parts(geometry_records)
+    parts = decode_mesh_parts(geometry_records, mesh_bindings)
 
     (
         decoded_textures,
@@ -313,10 +638,9 @@ def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: A
 
     export_parts = parts
     material_textures: tuple[MaterialTextures, ...] = ()
-    model_record = index.primary(model_uid)
 
-    if model_record is not None:
-        part_texture_sets = resolve_material_texture_sets(load_asset_payload(model_record), resolve_texture_uids(model_uid, children, index), (record.uid for record in geometry_records))
+    if model_payload is not None:
+        part_texture_sets = resolve_material_texture_sets(model_payload, resolve_texture_uids(model_uid, children, index), (record.uid for record in geometry_records))
 
         if any(part_texture_sets):
             rebased_parts = []

@@ -11,9 +11,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Protocol, Sequence
 
-ARRAY_BUFFER = 3492
-ELEMENT_ARRAY_BUFFER = 3493
+ARRAY_BUFFER = 34962
+ELEMENT_ARRAY_BUFFER = 34963
 
+UNSIGNED_BYTE = 5121
 FLOAT = 5126
 UNSIGNED_INT = 5125
 
@@ -30,6 +31,25 @@ ALPHA_MASK_SHADER_UIDS = {
     0x000000003051C028, # hair and eyelashes
 }
 
+SIEGE_TO_GLTF_BASIS = (
+    1.0, 0.0, 0.0, 0.0,
+    0.0, 0.0, 1.0, 0.0,
+    0.0, -1.0, 0.0, 0.0,
+    0.0, 0.0, 0.0, 1.0,
+)
+
+GLTF_TO_SIEGE_BASIS = (
+    1.0, 0.0, 0.0, 0.0,
+    0.0, 0.0, -1.0, 0.0,
+    0.0, 1.0, 0.0, 0.0,
+    0.0, 0.0, 0.0, 1.0,
+)
+
+class MeshBindingLike(Protocol):
+    bone_ids: Sequence[int]
+    inverse_bind_matrices: Sequence[Sequence[float]]
+    joint_node_matrices: Sequence[Sequence[float]]
+
 class MeshPartLike(Protocol):
     uid: int
     vertices: Sequence[tuple[float, float, float]]
@@ -37,6 +57,9 @@ class MeshPartLike(Protocol):
     normals: Sequence[tuple[float, float, float]]
     islands: Sequence
     tangents: Sequence[tuple[float, float, float, float]]
+    joints: Sequence[tuple[int, int, int, int]]
+    weights: Sequence[tuple[float, float, float, float]]
+    binding: MeshBindingLike | None
 
 @dataclass(frozen=True)
 class MaterialTextures:
@@ -66,15 +89,17 @@ class BinaryBuffer:
 
         index = len(self.views)
 
-        self.views.append(
-            {
-                "name": name,
-                "buffer": 0,
-                "byteOffset": offset,
-                "byteLength": len(raw),
-                "target": target
-            }
-        )
+        view = {
+            "name": name,
+            "buffer": 0,
+            "byteOffset": offset,
+            "byteLength": len(raw)
+        }
+
+        if target is not None:
+            view["target"] = target
+
+        self.views.append(view)
 
         return index
 
@@ -86,6 +111,15 @@ def pack_floats(values: Sequence[float]) -> bytes:
         raise ValueError("glTF attributes contain NaN or infinity")
 
     return struct.pack(f"<{len(values)}f", *values)
+
+def pack_unsigned_bytes(values: Sequence[int]) -> bytes:
+    if not values:
+        return b""
+
+    if min(values) < 0 or max(values) > 255:
+        raise ValueError("Unsigned byte values must be between 0 and 255")
+
+    return struct.pack(f"<{len(values)}B", *values)
 
 def pack_unsigned_ints(values: Sequence[int]) -> bytes:
     if not values:
@@ -111,6 +145,102 @@ def component_maximums(values: Sequence[tuple[float, ...]])-> list[float]:
         max(value[index] for value in values)
         for index in range(width)
     ]
+
+def transpose_matrix(values: Sequence[float]) -> tuple[float, ...]:
+    if len(values) != 16:
+        raise ValueError("A 4x4 matrix must contain 16 values")
+
+    return tuple(
+        values[column * 4 + row]
+        for row in range(4)
+        for column in range(4)
+    )
+
+def multiply_matrices(left: Sequence[float], right: Sequence[float]) -> tuple[float, ...]:
+    if len(left) != 16 or len(right) != 16:
+        raise ValueError("A 4x4 matrix must contain 16 values")
+
+    return tuple(
+        sum(
+            left[row * 4 + index] * right[index * 4 + column]
+            for index in range(4)
+        )
+        for row in range(4)
+        for column in range(4)
+    )
+
+def invert_matrix(values: Sequence[float]) -> tuple[float, ...]:
+    if len(values) != 16:
+        raise ValueError("A 4x4 matrix must contain 16 values")
+
+    rows = [
+        [
+            *(
+                float(values[row * 4 + column])
+                for column in range(4)
+            ),
+            *(
+                1.0 if row == column else 0.0
+                for column in range(4)
+            )
+        ]
+        for row in range(4)
+    ]
+
+    for column in range(4):
+        pivot = max(range(column, 4), key=lambda row: abs(rows[row][column]))
+
+        if abs(rows[pivot][column]) <= 1e-12:
+            raise ValueError("Matrix is not invertible")
+
+        rows[column], rows[pivot] = rows[pivot], rows[column]
+
+        divisor = rows[column][column]
+
+        rows[column] = [
+            value / divisor
+            for value in rows[column]
+        ]
+
+        for row in range(4):
+            if row == column:
+                continue
+
+            factor = rows[row][column]
+
+            rows[row] = [
+                value - factor * pivot_value
+                for value, pivot_value in zip(rows[row], rows[column])
+            ]
+
+    return tuple(
+        rows[row][column + 4]
+        for row in range(4)
+        for column in range(4)
+    )
+
+def siege_to_gltf_matrix(values: Sequence[float]) -> tuple[float, ...]:
+    """Convert a Siege row vector matrix to glTF column major form"""
+
+    siege_column_matrix = transpose_matrix(values)
+
+    converted = multiply_matrices(
+        SIEGE_TO_GLTF_BASIS,
+        multiply_matrices(
+            siege_column_matrix,
+            GLTF_TO_SIEGE_BASIS
+        )
+    )
+
+    return transpose_matrix(converted)
+
+def invert_gltf_matrix(values: Sequence[float]) -> tuple[float, ...]:
+    """Invert a glTF column major matrix"""
+
+    row_major = transpose_matrix(values)
+    inverted = invert_matrix(row_major)
+
+    return transpose_matrix(inverted)
 
 def siege_to_gltf_vector(value: tuple[float, float, float]) -> tuple[float, float, float]:
     """Convert Siege Z-up coordinates to glTF Y-up coordinates"""
@@ -138,10 +268,11 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
     accessors: list[dict] = []
     meshes: list[dict] = []
     nodes: list[dict] = []
+    skins: list[dict] = []
     used_material_ids: set[int] = set()
     used_extensions: set[str] = set()
 
-    def add_accessor(raw: bytes, *, target: int, component_type: int, count: int, value_type: str, name: str, minimum: list[float] | None = None, maximum: list[float] | None = None) -> int:
+    def add_accessor(raw: bytes, *, target: int | None, component_type: int, count: int, value_type: str, name: str, minimum: list[float] | None = None, maximum: list[float] | None = None) -> int:
         view = binary.add(raw, target=target, name=name)
 
         accessor = {
@@ -176,6 +307,37 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
 
         if part.tangents and len(part.tangents) != len(part.vertices):
             raise ValueError(f"Part {part.uid:016X} has mismatched tangents")
+
+        if bool(part.joints) != bool(part.weights):
+            raise ValueError(f"Part {part.uid:016X} must contain both joints and weights")
+
+        if part.joints and len(part.joints) != len(part.vertices):
+            raise ValueError(f"Part {part.uid:016X} has mismatched joint indices")
+
+        if part.weights and len(part.weights) != len(part.vertices):
+            raise ValueError(f"Part {part.uid:016X} has mismatched skin weights")
+
+        binding = part.binding
+
+        if binding is not None:
+            if not part.joints:
+                raise ValueError(f"Part {part.uid:016X} has a binding but no joints")
+
+            if len(binding.bone_ids) != len(binding.inverse_bind_matrices):
+                raise ValueError(f"Part {part.uid:016X} has mismatched bone IDs and inverse bind matrices")
+
+            if binding.joint_node_matrices and len(binding.joint_node_matrices) != len(binding.bone_ids):
+                raise ValueError(f"Part {part.uid:016X} has mismatched joint node matrices")
+
+            used_joints = [
+                joint
+                for vertex_joints, vertex_weights in zip(part.joints, part.weights)
+                for joint, weight in zip(vertex_joints, vertex_weights)
+                if weight > 0.0
+            ]
+
+            if used_joints and max(used_joints) >= len(binding.bone_ids):
+                raise ValueError(f"Part {part.uid:016X} references a joint outside its binding table")
 
         converted_vertices = [
             siege_to_gltf_vector(vertex)
@@ -219,6 +381,18 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
             for component in tangent
         ]
 
+        joint_values = [
+            joint
+            for vertex_joints in part.joints
+            for joint in vertex_joints
+        ]
+
+        weight_values = [
+            weight
+            for vertex_weights in part.weights
+            for weight in vertex_weights
+        ]
+
         # The mesh parser flips Siege UVs vertically.
         # Convert them for glTF's upper-left texture origin
         texture_coordinates = [
@@ -245,9 +419,15 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
         normal_accessor = add_accessor(pack_floats(normals), target=ARRAY_BUFFER, component_type=FLOAT, count=len(part.normals), value_type="VEC3", name=f"{prefix}_normals")
         uv_accessor = add_accessor(pack_floats(texture_coordinates), target=ARRAY_BUFFER, component_type=FLOAT, count=len(part.uvs), value_type="VEC2", name=f"{prefix}_uvs")
         tangent_accessor = None
+        joint_accessor = None
+        weight_accessor = None
 
         if converted_tangents:
             tangent_accessor = add_accessor(pack_floats(tangents), target=ARRAY_BUFFER, component_type=FLOAT, count=len(converted_tangents), value_type="VEC4", name=f"{prefix}_tangents")
+
+        if joint_values:
+            joint_accessor = add_accessor(pack_unsigned_bytes(joint_values), target=ARRAY_BUFFER, component_type=UNSIGNED_BYTE, count=len(part.joints), value_type="VEC4", name=f"{prefix}_joints")
+            weight_accessor = add_accessor(pack_floats(weight_values), target=ARRAY_BUFFER, component_type=FLOAT, count=len(part.weights), value_type="VEC4", name=f"{prefix}_weights")
 
         primitives = []
 
@@ -276,6 +456,14 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
                             {"TANGENT": tangent_accessor}
                             if tangent_accessor is not None
                             else {}
+                        ),
+                        **(
+                            {
+                                "JOINTS_0": joint_accessor,
+                                "WEIGHTS_0": weight_accessor
+                            }
+                            if joint_accessor is not None and weight_accessor is not None
+                            else {}
                         )
                     },
                     "indices": index_accessor,
@@ -294,12 +482,65 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
             }
         )
 
-        nodes.append(
-            {
-                "name": prefix,
-                "mesh": mesh_index
-            }
-        )
+        skin_index = None
+
+        if binding is not None:
+            converted_inverse_bind_matrices = tuple(
+                siege_to_gltf_matrix(matrix)
+                for matrix in binding.inverse_bind_matrices
+            )
+
+            inverse_bind_values = [
+                value
+                for matrix in converted_inverse_bind_matrices
+                for value in matrix
+            ]
+
+            inverse_bind_accessor = add_accessor(pack_floats(inverse_bind_values), target=None, component_type=FLOAT, count=len(converted_inverse_bind_matrices), value_type="MAT4", name=f"{prefix}_inverse_bind_matrices")
+
+            joint_node_matrices = (
+                tuple(
+                    tuple(matrix)
+                    for matrix in binding.joint_node_matrices
+                )
+                if binding.joint_node_matrices
+                else tuple(
+                    invert_gltf_matrix(inverse_bind_matrix)
+                    for inverse_bind_matrix in converted_inverse_bind_matrices
+                )
+            )
+
+            joint_nodes = []
+
+            for bone_index, (bone_id, joint_node_matrix) in enumerate(zip(binding.bone_ids, joint_node_matrices)):
+                joint_nodes.append(len(nodes))
+
+                nodes.append(
+                    {
+                        "name": f"{prefix}_join_{bone_index:03d}_{bone_id:08X}",
+                        "matrix": list(joint_node_matrix)
+                    }
+                )
+
+            skin_index = len(skins)
+
+            skins.append(
+                {
+                    "name": f"{prefix}_skin",
+                    "joints": joint_nodes,
+                    "inverseBindMatrices": inverse_bind_accessor
+                }
+            )
+
+        mesh_node = {
+            "name": prefix,
+            "mesh": mesh_index
+        }
+
+        if skin_index is not None:
+            mesh_node["skin"] = skin_index
+
+        nodes.append(mesh_node)
 
     images: list[dict] = []
     textures: list[dict] = []
@@ -471,6 +712,9 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
 
     if used_extensions:
         document["extensionsUsed"] = sorted(used_extensions)
+
+    if skins:
+        document["skins"] = skins
 
     if images:
         document["samplers"] = [

@@ -34,7 +34,6 @@ from src.parser import (
     SCIMITAR_MAGIC,
     ForgeFormatError,
     iter_container_offsets,
-    map_archive,
     parse_container,
     read_container
 )

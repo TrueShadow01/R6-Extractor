@@ -26,7 +26,7 @@ OPERATOR_CATEGORIES = frozenset(
 @dataclass(frozen=True)
 class OperatorCandidate:
     uid: int
-    category: int
+    category: str
     evidence: tuple[AssetName, ...]
     depgraphs: tuple[Path, ...]
 

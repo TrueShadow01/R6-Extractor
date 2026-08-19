@@ -12,7 +12,6 @@ from src.material import (
     UNIFORM_MARKER,
     ShaderUniform,
     ShaderBinding,
-    MaterialTextureSet,
     MaterialTextureSelector,
     resolve_material_texture_sets,
     read_shader_uniforms,
