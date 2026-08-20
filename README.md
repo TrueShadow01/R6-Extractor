@@ -1,40 +1,25 @@
 # Rainbow Six Siege Forge Extractor
 
-A Python toolkit for extracting Rainbow Six Siege `.forge`
-archives and exporting models for Blender.
-
-The long-term goal is geometry, material, texture, skeleton and animation support. Unknown assets are preserved as decompressed binary files.
+A Python toolkit for extracting Rainbow Six Siege `.forge` archives and exporting models for Blender. Unknown assets can be preserved as decompressed binary files.
 
 ## Support
 
-- Bounded-memory Scimitar archive scanning
-- Oodle Kraken decompression
-- Lossless extraction with manifests and resume
-- Persistent, resumable SQLite asset indexing
-- Human-readable UID catalogs with source and confidence tracking
-- Unknown operator discovery with Blender thumbnail previews
-- Cross-bundle geometry and texture resolution
-- BC1, BC3, BC4 and BC7 textures to PNG with BC5 normal reconstruction
-- Wwise audio extraction to WEM
-- Optional WEM-to-WAV conversion with vgmstream
-- Float and packed-position meshes with UVs, normals and tangents
-- Character skin weights, bone palettes, inverse-bind matrices and per-part glTF skins
-- Shared eye and mouth meshes aligned from embedded neutral-pose data
-- Composite LOD0 glTF 2.0 export
-- Per-part glTF materials with shader-aware alpha and KHR_materials_specular support
-- Mask, detail-normal, shader-texture, shader UID and uniform metadata preserved in glTF
-- Siege Z-up to glTF Y-up coordinate conversion
+- Scimitar archive scanning, Oodle Kraken decompression and resumable raw extraction
+- Persistent SQLite indexing and human-readable UID catalogs
+- Cross-bundle geometry, material and texture resolution
+- BC1, BC3, BC4 and BC7 textures, including BC5 normal reconstruction
+- LOD0 meshes with UVs, normals, tangents and material islands
+- glTF 2.0 export with Siege shader metadata and coordinate conversion
+- Character weights, bone palettes, per-part skins and shared facial alignment
+- Wwise WEM extraction and optional WAV conversion with bundled vgmstream
 
 ## Limitations
 
-- Relevant archives must be indexed for cross-bundle resolution
-- Streamed and virtual textures are not reconstructed
-- Packed PBR channels are not decoded
-- Only LOD0 geometry is exported
-- Skeleton hierarchy and animations are not supported, skins use flat per-part joints and facial alignment currently covers the known shared four-bone rig
-- Model export requires a known UID
-- GLB export is not available
-- Layered, detail and eye-parallax shaders are preserved as metadata but not automatically reconstructed
+- Model export requires a known UID and access to the relevant archives
+- Only LOD0 glTF is exported, GLB is unavailable
+- Streamed textures and packed PBR channels are not reconstructed
+- Layered, detail and eye shaders are preserved as metadata but not fully rebuilt
+- Skeleton hierarchy and animations are not supported
 - Human-readable names depend on imported catalogs
 
 ## Setup
@@ -45,7 +30,6 @@ Requirements:
 - 64-bit Python 3.10 or newer
 - Pillow
 - A compatible `oo2core_*_win64.dll`
-- vgmstream for optional WAV conversion
 
 Install Python dependency:
 ```powershell
@@ -65,65 +49,50 @@ GAME_DIR = r"Path\to\Tom Clancy's Rainbow Six Siege"
 ## CLI
 
 ```powershell
-# Inspect archives
+# Inspect, extract or index archives
 py -3 -B main.py scan <archive-or-directory>
-py -3 -B main.py scan --all
-
-# Extract archives
 py -3 -B main.py extract <archive-or-directory> -o output/raw
-py -3 -B main.py extract --all -o output/raw
-
-# Build or update the asset index
 py -3 -B main.py index <archive-or-directory> -o output/r6-assets.sqlite
-py -3 -B main.py index --all -o output/r6-assets.sqlite
 
-# Import and search asset names
+# Import and search names
 py -3 -B main.py names import <catalog.csv>
-py -3 -B main.py names import <catalog.csv> --layout columns
 py -3 -B main.py search <name-or-UID>
 
-# Prepare unknown operator review files
-py -3 -B main.py operators --database output/r6-assets.sqlite --previews output/operator-previews
-
-# Import confirmed review names, blank rows are skipped
-py -3 -B main.py names import output/operator-previews/review.csv --database output/r6-assets.sqlite
-
-# Discover model UIDs
+# Discover and export models
 py -3 -B main.py models <mesh.forge>
-py -3 -B main.py models <mesh.forge> --minimum-parts 2
-py -3 -B main.py models <mesh.forge> --json-output output/models.json
-
-# Export one model
 py -3 -B main.py model <mesh.forge> --uid <modelUID> -o output/model
 ```
+Use `--all` with `scan`, `extract` or `index` to process every Forge archive under `GAME_DIR`. Run any command with `-h` for additional options.
 
-`search` accepts names or exact UIDs. It reports asset locations, direct dependency parents and ready model-export commands when geometry is available.
+`search` reports asset locations, dependency parents and ready-to-run export commands when geometry is available.
 
-Render the prepared models with Blender:
+### Operator review
+Prepare unknown operator models:
+```powershell
+py -3 -B main.py operators --database output/r6-assets.sqlite --previews output/operator-previews
+```
 
+Render their resumable UID-stamped previews:
 ```powershell
 & "<path-to-blender>\blender.exe" --factory-startup --background --python-exit-code 1 --python blender_preview.py -- output/operator-previews
 ```
 
-The process is resumable and produces UID-stamped PNGs plus `review.csv`. Fill confirmed names and import it with the command above, untouched rows are skipped.
+Fill confirmed names in `review.csv`, then import it:
+```powershell
+py -3 -B main.py names import output/operator-previews/review.csv --database output/r6-assets.sqlite
+```
 
-`--all` processes every Forge archive under `GAME_DIR`. Run any command with `-h` for its available options.
+### Cross-bundle model export
 
-Index updates are committed per archive. Interrupted scans can be rerun because unchanged archives are skipped. Use `--force` to rescan them.
-
-Raw extraction writes `<UID>_<FILETYPE>_<CONTAINER_OFFSET>.bin` files and records results in `output/raw/manifest.jsonl`.
-
-### Cross-bundle models
-
-Use a dependency graph and the persistent index when geometry and textures belong to different bundles:
+Use the persistent index when model geometry and textures reside in different bundles:
 
 ```powershell
 py -3 -B main.py model datapc64_merged_bnk_mesh --depgraph datapc64_ondemand.depgraphbin --database output/r6-assets.sqlite --uid <modelUID> -o output/model
 ```
 
-Use `--archive-only` instead of `--database` for a faster untextured geometry diagnostic.
+Use `--archive-only` for a faster untextured geometry diagnostic.
 
-glTF is the Blender import format and preserves material islands.
+Raw extraction writes `<UID>_<FILETYPE>_<CONTAINER_OFFSET>.bin` files and records results in `output/raw/manifest.jsonl`.
 
 ## Audio
 
@@ -137,7 +106,7 @@ from src.audio import extract_wems
 payload = Path(r"output/raw/<archive>/<asset>.bin").read_bytes()
 
 for path in extract_wems(payload, r"output/audio"):
-  print(path)
+    print(path)
 ```
 
 Convert WEM to WAV:

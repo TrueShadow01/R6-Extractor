@@ -357,17 +357,9 @@ def command_search(args: argparse.Namespace) -> int:
 
     parent_names = {}
 
-    for parent_uid in parent_locations:
-        candidates = search_asset_names(args.database, f"{parent_uid:016X}", limit=100)
-
-        parent_names[parent_uid] = next(
-            (
-                candidate
-                for candidate in candidates
-                if candidate.uid == parent_uid
-            ),
-            None
-        )
+    for candidate in load_asset_names(args.database):
+        if candidate.uid in parent_locations:
+            parent_names.setdefault(candidate.uid, candidate)
 
     database_path = Path(args.database).expanduser().resolve()
 
@@ -395,7 +387,7 @@ def command_search(args: argparse.Namespace) -> int:
                 print(f"  Container: 0x{record.container_offset:X} bytes={record.unpacked_size}")
 
             for parent_uid, depgraphs in sorted(parent_locations.items()):
-                parent_name = parent_names[parent_uid]
+                parent_name = parent_names.get(parent_uid)
 
                 if parent_name is None:
                     print(f"  Parent: {parent_uid:016X} Unknown")

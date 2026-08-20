@@ -409,6 +409,16 @@ def upsert_asset_names(database: str | Path, names: Iterable[AssetName]) -> int:
 
     return len(rows)
 
+def _asset_name_from_row(row: sqlite3.Row) -> AssetName:
+    return AssetName(
+        uid=int(row["uid"], 16),
+        name=row["name"],
+        category=row["category"],
+        source=row["source"],
+        confidence=row["confidence"],
+        locations=row["locations"]
+    )
+
 def load_asset_names(database: str | Path) -> tuple[AssetName, ...]:
     """Load every human readable asset name without modifying the database"""
 
@@ -442,17 +452,7 @@ def load_asset_names(database: str | Path) -> tuple[AssetName, ...]:
     finally:
         connection.close()
 
-    return tuple(
-        AssetName(
-            uid=int(row["uid"], 16),
-            name=row["name"],
-            category=row["category"],
-            source=row["source"],
-            confidence=row["confidence"],
-            locations=row["locations"]
-        )
-        for row in rows
-    )
+    return tuple(_asset_name_from_row(row) for row in rows)
 
 def search_asset_names(database: str | Path, query: str, *, limit: int = 20) -> tuple[AssetName, ...]:
     """Search names and UIDs in the asset catalog"""
@@ -517,14 +517,4 @@ def search_asset_names(database: str | Path, query: str, *, limit: int = 20) -> 
     finally:
         connection.close()
 
-    return tuple(
-        AssetName(
-            uid=int(row["uid"], 16),
-            name=row["name"],
-            category=row["category"],
-            source=row["source"],
-            confidence=row["confidence"],
-            locations=row["locations"]
-        )
-        for row in rows
-    )
+    return tuple(_asset_name_from_row(row) for row in rows)

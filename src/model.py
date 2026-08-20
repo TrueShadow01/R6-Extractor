@@ -231,7 +231,7 @@ def read_mesh_bindings(payload: bytes) -> dict[int, MeshBinding]:
     return bindings
 
 def _gltf_multiply(left: tuple[float, ...], right: tuple[float, ...]) -> tuple[float, ...]:
-    """Mutliply two glTF column-major matrices"""
+    """Multiply two glTF column-major matrices"""
 
     return transpose_matrix(
         multiply_matrices(
@@ -491,10 +491,10 @@ def is_blank_texture(path: Path) -> bool:
 
     return all(maximum < 8 for _, maximum in extrema)
 
-def decode_model_textures(model_uid: int, children: Mapping[int, Iterable[int]], index: AssetIndex, output_directory: Path) -> tuple[list[tuple[int, int, str]], str | None, str | None, str | None]:
+def decode_model_textures(texture_uids: Iterable[int], index: AssetIndex, output_directory: Path) -> tuple[list[tuple[int, int, str]], str | None, str | None, str | None]:
     decoded: list[tuple[int, int, str]] = []
 
-    for texture_uid in resolve_texture_uids(model_uid, children, index):
+    for texture_uid in texture_uids:
         record = index.primary(texture_uid)
         if record is None:
             continue
@@ -628,19 +628,20 @@ def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: A
     )
 
     parts = decode_mesh_parts(geometry_records, mesh_bindings)
+    texture_uids = resolve_texture_uids(model_uid, children, index)
 
     (
         decoded_textures,
         diffuse,
         normal,
         specular
-    ) = decode_model_textures(model_uid, children, index, output_directory)
+    ) = decode_model_textures(texture_uids, index, output_directory)
 
     export_parts = parts
     material_textures: tuple[MaterialTextures, ...] = ()
 
     if model_payload is not None:
-        part_texture_sets = resolve_material_texture_sets(model_payload, resolve_texture_uids(model_uid, children, index), (record.uid for record in geometry_records))
+        part_texture_sets = resolve_material_texture_sets(model_payload, texture_uids, (record.uid for record in geometry_records))
 
         if any(part_texture_sets):
             rebased_parts = []
