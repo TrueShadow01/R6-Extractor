@@ -444,7 +444,7 @@ def decode_mesh_parts(records: Iterable[AssetRecord], bindings: Mapping[int, Mes
             islands
         ) = read_mesh_with_islands(payload)
 
-        binding = bindings.get(record.uid)
+        binding = bindings.get(record.uid) if joints else None
 
         if binding is not None and joints:
             used_joint_indices = [

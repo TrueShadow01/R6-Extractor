@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 import bpy
+import json
 from pathlib import Path
 from mathutils import Vector
 
@@ -53,15 +54,99 @@ def mesh_bounds(objects: list[bpy.types.Object]) -> tuple[Vector, Vector]:
 
     return minimum, maximum
 
+def apply_detail_normals(gltf_path: Path) -> None:
+    document = json.loads(gltf_path.read_text(encoding="utf-8"))
+
+    extras_by_material = {
+        material["name"]: material.get("extras", {})
+        for material in document.get("materials", {})
+        if "name" in material
+    }
+
+    for material in bpy.data.materials:
+        extras = extras_by_material.get(material.name, {})
+        filenames = list(extras.get("siegeDetailNormalTextures", ()))
+
+        shader_textures = extras.get("siegeShaderTextures", {})
+        shader_normal = shader_textures.get("NormalDetail")
+
+        if shader_normal is not None and shader_normal not in filenames:
+            filenames.append(shader_normal)
+
+        if not filenames or not material.use_nodes:
+            continue
+
+        nodes = material.node_tree.nodes
+        links = material.node_tree.links
+
+        normal_map = next(
+            (
+                node
+                for node in nodes
+                if node.type == "NORMAL_MAP"
+            ),
+            None
+        )
+
+        if normal_map is None:
+            continue
+
+        color_input = normal_map.inputs.get("Color")
+
+        if color_input is None or not color_input.is_linked:
+            continue
+
+        base_link = color_input.links[0]
+        combine_color = base_link.from_socket
+
+        links.remove(base_link)
+
+        for index, filename in enumerate(filenames):
+            image_path = gltf_path.parent / filename
+
+            if not image_path.is_file():
+                continue
+
+            image = bpy.data.images.load(str(image_path), check_existing=True)
+            image.colorspace_settings.name = "Non-Color"
+
+            texture = nodes.new("ShaderNodeTexImage")
+            texture.name = f"Siege Detail Normal {index + 1}"
+            texture.label = filename
+            texture.image = image
+            texture.location = (
+                normal_map.location.x - 600,
+                normal_map.location.y - 260 * (index + 1)
+            )
+
+            blend = nodes.new("ShaderNodeMixRGB")
+            blend.name = f"Siege Detail Normal Blend {index + 1}"
+            blend.label = "Siege Detail Normal"
+            blend.blend_type = "OVERLAY"
+            blend.inputs[0].default_value = 1.0
+            blend.location = (
+                normal_map.location.x - 300,
+                normal_map.location.y - 260 * index
+            )
+
+            links.new(combine_color, blend.inputs[1])
+            links.new(texture.outputs["Color"], blend.inputs[2])
+
+            combine_color = blend.outputs["Color"]
+
+        links.new(combine_color, color_input)
+
 def render_preview(gltf_path: Path, output_path: Path) -> None:
     bpy.ops.wm.read_factory_settings(use_empty=True)
 
     bpy.ops.import_scene.gltf(filepath=str(gltf_path))
 
+    apply_detail_normals(gltf_path)
+
     meshes = [
         obj
         for obj in bpy.context.scene.objects
-        if obj.type == "MESH"
+        if obj.type == "MESH" and obj.name.startswith("part_")
     ]
 
     if not meshes:
