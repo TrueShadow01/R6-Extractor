@@ -54,7 +54,7 @@ def mesh_bounds(objects: list[bpy.types.Object]) -> tuple[Vector, Vector]:
 
     return minimum, maximum
 
-def apply_detail_normals(gltf_path: Path) -> None:
+def apply_siege_materials(gltf_path: Path) -> None:
     document = json.loads(gltf_path.read_text(encoding="utf-8"))
 
     extras_by_material = {
@@ -65,6 +65,66 @@ def apply_detail_normals(gltf_path: Path) -> None:
 
     for material in bpy.data.materials:
         extras = extras_by_material.get(material.name, {})
+
+        if not material.use_nodes:
+            continue
+
+        nodes = material.node_tree.nodes
+        links = material.node_tree.links
+
+        if extras.get("siegeShaderUid") == "000000557005948D":
+            uniforms = extras.get("siegeShaderUniforms", {})
+
+            sclera_values = uniforms.get(
+                "ScleraColorWhite",
+                (0.73, 0.73, 0.73, 1.0)
+            )
+
+            principled = next(
+                (
+                    node
+                    for node in nodes
+                    if node.type == "BSDF_PRINCIPLED"
+                ),
+                None
+            )
+
+            if principled is not None:
+                base_input = principled.inputs.get("Base Color")
+
+                if base_input is not None and base_input.is_linked:
+                    base_link = base_input.links[0]
+                    base_texture = base_link.from_node
+                    alpha_output = base_texture.outputs.get("Alpha")
+
+                    if base_texture.type == "TEX_IMAGE" and alpha_output is not None:
+                        links.remove(base_link)
+
+                        eye_mix = nodes.new("ShaderNodeMixRGB")
+                        eye_mix.name = "Siege Eye Color"
+                        eye_mix.label = "Siege Eye Color"
+                        eye_mix.blend_type = "MIX"
+                        eye_mix.inputs[0].default_value = 1.0
+                        eye_mix.inputs[1].default_value = (
+                            0.0,
+                            0.0,
+                            0.0,
+                            1.0
+                        )
+                        eye_mix.inputs[2].default_value = (
+                            float(sclera_values[0]),
+                            float(sclera_values[1]),
+                            float(sclera_values[2]),
+                            1.0
+                        )
+                        eye_mix.location = (
+                            principled.location.x - 300,
+                            principled.location.y
+                        )
+
+                        links.new(alpha_output, eye_mix.inputs[0])
+                        links.new(eye_mix.outputs["Color"], base_input)
+
         filenames = list(extras.get("siegeDetailNormalTextures", ()))
 
         shader_textures = extras.get("siegeShaderTextures", {})
@@ -73,11 +133,8 @@ def apply_detail_normals(gltf_path: Path) -> None:
         if shader_normal is not None and shader_normal not in filenames:
             filenames.append(shader_normal)
 
-        if not filenames or not material.use_nodes:
+        if not filenames:
             continue
-
-        nodes = material.node_tree.nodes
-        links = material.node_tree.links
 
         normal_map = next(
             (
@@ -141,7 +198,7 @@ def render_preview(gltf_path: Path, output_path: Path) -> None:
 
     bpy.ops.import_scene.gltf(filepath=str(gltf_path))
 
-    apply_detail_normals(gltf_path)
+    apply_siege_materials(gltf_path)
 
     meshes = [
         obj

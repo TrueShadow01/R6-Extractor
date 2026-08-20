@@ -18,7 +18,7 @@ A Python toolkit for extracting Rainbow Six Siege `.forge` archives and exportin
 - Model export requires a known UID and access to the relevant archives
 - Only LOD0 glTF is exported, GLB is unavailable
 - Streamed textures and packed PBR channels are not reconstructed
-- Layered, detail and eye shaders are preserved as metadata but not fully rebuilt
+- Preview rendering reconstructs detail normals and basic eye color, layered masks and eye parallax remain metadata only
 - Skeleton hierarchy and animations are not supported
 - Human-readable names depend on imported catalogs
 
