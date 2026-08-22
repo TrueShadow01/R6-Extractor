@@ -67,6 +67,7 @@ class MaterialTextures:
     normal: str | None = None
     specular: str | None = None
     mask: str | None = None
+    solid_color: tuple[float, float, float, float] | None = None
     detail_normals: tuple[str, ...] = ()
     shader_textures: tuple[tuple[str, str], ...] = ()
     shader_uid: int | None = None
@@ -606,12 +607,15 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
             slot_textures = fallback_textures
 
         pbr = {
-            "baseColorFactor": [
-                1.0,
-                1.0,
-                1.0,
-                1.0
-            ],
+            "baseColorFactor": list(
+                slot_textures.solid_color
+                or (
+                    1.0,
+                    1.0,
+                    1.0,
+                    1.0
+                )
+            ),
             "metallicFactor": 0.0,
             "roughnessFactor": 0.8
         }

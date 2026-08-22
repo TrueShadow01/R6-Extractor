@@ -613,6 +613,7 @@ class ModelDiscoveryTests(unittest.TestCase):
                 normal_uids=(0x20,),
                 specular_uids=(0x30,),
                 mask_uids=(0x40,),
+                solid_color=(0.25, 0.5, 0.75, 1.0),
                 selectors=(
                     MaterialTextureSelector(
                         role=1,
@@ -663,6 +664,7 @@ class ModelDiscoveryTests(unittest.TestCase):
                     normal="0000000000000020.png",
                     specular="0000000000000030.png",
                     mask="0000000000000040.png",
+                    solid_color=(0.25, 0.5, 0.75, 1.0),
                     detail_normals=("0000000000000052.png",),
                     shader_textures=(
                         (
@@ -1082,7 +1084,9 @@ class GltfExportTests(unittest.TestCase):
                         diffuse="slot1_diffuse.png",
                         shader_uid=0x3051C028
                     ),
-                    MaterialTextures(),
+                    MaterialTextures(
+                        solid_color=(0.73, 0.73, 0.73, 1.0)
+                    ),
                     MaterialTextures(
                         diffuse="slot3_diffuse.png",
                         normal="shared_normal.png",
@@ -1110,11 +1114,14 @@ class GltfExportTests(unittest.TestCase):
 
             slot0 = textured_document["materials"][0]
             slot1 = textured_document["materials"][1]
+            slot2 = textured_document["materials"][2]
             slot3 = textured_document["materials"][3]
 
             self.assertEqual(slot0["alphaMode"], "OPAQUE")
             self.assertEqual(slot1["alphaMode"], "MASK")
             self.assertEqual(slot3["alphaMode"], "OPAQUE")
+
+            self.assertEqual(slot2["pbrMetallicRoughness"]["baseColorFactor"], [0.73, 0.73, 0.73, 1.0])
 
             slot0_diffuse_texture = slot0["pbrMetallicRoughness"]["baseColorTexture"]["index"]
             slot3_diffuse_texture = slot3["pbrMetallicRoughness"]["baseColorTexture"]["index"]

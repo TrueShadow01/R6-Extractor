@@ -10,6 +10,7 @@ from src.material import (
     CURRENT_SHADER_DEFINES,
     CURRENT_TEXTURE_SELECTOR,
     UNIFORM_MARKER,
+    SOLID_COSMETIC_SHADER,
     ShaderUniform,
     ShaderBinding,
     MaterialTextureSelector,
@@ -18,7 +19,6 @@ from src.material import (
     read_shader_bindings,
     apply_material_uniform_overrides
 )
-
 
 def make_entry(file_type: int, uid: int, data: bytes) -> bytes:
     name_hash = b"nested-test"
@@ -35,7 +35,6 @@ def make_entry(file_type: int, uid: int, data: bytes) -> bytes:
 
     return metadata + data
 
-
 def make_spec(uid: int, role: int, texture_map_uid: int) -> bytes:
     data = struct.pack(
         "<II3xQ",
@@ -46,7 +45,6 @@ def make_spec(uid: int, role: int, texture_map_uid: int) -> bytes:
 
     return make_entry(CURRENT_TEXTURE_MAP_SPEC, uid, data)
 
-
 def make_texture_map(uid: int, compiled_uid: int) -> bytes:
     data = struct.pack(
         "<IQ",
@@ -56,8 +54,28 @@ def make_texture_map(uid: int, compiled_uid: int) -> bytes:
 
     return make_entry(CURRENT_TEXTURE_MAP, uid, data)
 
-
 class MaterialTests(unittest.TestCase):
+    def test_preserves_untextured_solid_cosmetic_material(self):
+        material_uid = 0x4000
+        geometry_uid = 0x5000
+        color = (0.73, 0.73, 0.73, 1.0)
+
+        material_data = struct.pack("<IQ", CURRENT_MATERIAL, SOLID_COSMETIC_SHADER) + struct.pack("<I", UNIFORM_MARKER | 2) + b"\x00" * 36 + struct.pack("<4f", *color)
+        payload = b"".join(
+            [
+                make_entry(CURRENT_MATERIAL, material_uid, material_data),
+                make_entry(CURRENT_MESH, 0x4001, struct.pack("<QQ", geometry_uid, material_uid)),
+            ]
+        )
+
+        materials = resolve_material_texture_sets(payload, set(), geometry_uids=(geometry_uid,))
+        material = materials[0][0]
+
+        self.assertEqual(material.shader_uid, SOLID_COSMETIC_SHADER)
+
+        for actual, expected in zip(material.solid_color, color):
+            self.assertAlmostEqual(actual, expected, places=6)
+
     def test_resolves_material_roles_and_preserves_later_detail_map(self):
         diffuse_spec = 0x1001
         normal_spec = 0x1002
@@ -322,7 +340,6 @@ class MaterialTests(unittest.TestCase):
 
         self.assertEqual(resolved[1].name, "IrisGlossiness")
         self.assertAlmostEqual(resolved[1].values[0], 0.25, places=5)
-
 
 if __name__ == "__main__":
     unittest.main()

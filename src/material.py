@@ -36,6 +36,9 @@ NORMAL_ROLE = 1
 SPECULAR_ROLE = 2
 MASK_ROLE = 7
 
+SOLID_COSMETIC_SHADER = 0x0000001397A32F38
+SOLID_COLOR_PARAMETER = 2
+
 @dataclass(frozen=True)
 class NestedEntry:
     offset: int
@@ -61,6 +64,7 @@ class MaterialTextureSet:
     normal_uids: tuple[int, ...] = ()
     specular_uids: tuple[int, ...] = ()
     mask_uids: tuple[int, ...] = ()
+    solid_color: tuple[float, float, float, float] | None = None
     selectors: tuple[MaterialTextureSelector, ...] = ()
     shader_uid: int | None = None
     shader_bindings: tuple[ShaderBinding, ...] = ()
@@ -376,6 +380,31 @@ def _custom_vector_target(target: str) -> tuple[int, int | None] | None:
 
     return int(vector_text), component
 
+def read_solid_material_color(material_blob: bytes, shader_uid: int | None) -> tuple[float, float, float, float] | None:
+    """Read the packed color used by Siege's solid cosmetic shader"""
+
+    if shader_uid != SOLID_COSMETIC_SHADER:
+        return None
+
+    marker = struct.pack("<I", UNIFORM_MARKER | SOLID_COLOR_PARAMETER)
+    marker_offset = material_blob.find(marker)
+
+    if marker_offset < 0:
+        return None
+
+    color_offset = marker_offset + 40
+    color_end = color_offset + 16
+
+    if color_end > len(material_blob):
+        return None
+
+    color = struct.unpack_from("<4f", material_blob, color_offset)
+
+    if not all(0.0 <= component <= 1.0 for component in color):
+        return None
+
+    return color
+
 def apply_material_uniform_overrides(material_blob: bytes, uniforms: Iterable[ShaderUniform], bindings: Iterable[ShaderBinding]) -> tuple[ShaderUniform, ...]:
     """Apply a material's packed custom vector values to shader uniforms"""
 
@@ -529,7 +558,8 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
         if entry.metadata.file_type == CURRENT_MESH
     ]
 
-    textured_materials: dict[int, MaterialTextureSet] = {}
+    resolved_materials: dict[int, MaterialTextureSet] = {}
+    textured_material_uids: set[int] = set()
 
     for material_uid, material_entry in material_entries.items():
         material_blob = payload[material_entry.offset:material_entry.end]
@@ -578,34 +608,34 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
             # Later selectors remain available for detail map research
             roles.setdefault(texture_role, compile_uids)
 
+        material_bindings = tuple(bindings_by_shader.get(shader_uid, ()))
+        binding_names = {
+            binding.name
+            for binding in material_bindings
+        }
+
+        default_uniforms = tuple(
+            uniform
+            for uniform in parsed_uniforms
+            if uniform.uniform_type == 1 and uniform.values and uniform.name in binding_names
+        )
+
+        material_uniforms = apply_material_uniform_overrides(material_blob, default_uniforms, material_bindings)
+
+        resolved_materials[material_uid] = MaterialTextureSet(
+            diffuse_uids=roles.get(DIFFUSE_ROLE, ()),
+            normal_uids=roles.get(NORMAL_ROLE, ()),
+            specular_uids=roles.get(SPECULAR_ROLE, ()),
+            mask_uids=roles.get(MASK_ROLE, ()),
+            solid_color=read_solid_material_color(material_blob, shader_uid),
+            selectors=tuple(selectors),
+            shader_uid=shader_uid,
+            shader_bindings=material_bindings,
+            shader_uniforms=material_uniforms,
+        )
+
         if selectors:
-            material_bindings = tuple(
-                bindings_by_shader.get(shader_uid, ())
-            )
-
-            binding_names = {
-                binding.name
-                for binding in material_bindings
-            }
-
-            default_uniforms = tuple(
-                uniform
-                for uniform in parsed_uniforms
-                if uniform.uniform_type == 1 and uniform.values and uniform.name in binding_names
-            )
-
-            material_uniforms = apply_material_uniform_overrides(material_blob, default_uniforms, material_bindings)
-
-            textured_materials[material_uid] = MaterialTextureSet(
-                diffuse_uids=roles.get(DIFFUSE_ROLE, ()),
-                normal_uids=roles.get(NORMAL_ROLE, ()),
-                specular_uids=roles.get(SPECULAR_ROLE, ()),
-                mask_uids=roles.get(MASK_ROLE, ()),
-                selectors=tuple(selectors),
-                shader_uid=shader_uid,
-                shader_bindings=material_bindings,
-                shader_uniforms=material_uniforms,
-            )
+            textured_material_uids.add(material_uid)
 
     # The model header contains adjacent pairs:
     #
@@ -626,7 +656,7 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
             if position + 16 <= len(header):
                 override_uid = struct.unpack_from("<Q", header, position + 8)[0]
 
-                if override_uid in textured_materials:
+                if override_uid in textured_material_uids:
                     material_overrides[base_uid] = override_uid
                     break
 
@@ -657,7 +687,7 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
 
         part_materials.append(
             tuple(
-                textured_materials.get(material_overrides.get(base_uid, base_uid), MaterialTextureSet())
+                resolved_materials.get(material_overrides.get(base_uid, base_uid), MaterialTextureSet())
                 for base_uid in base_material_uids
             )
         )
