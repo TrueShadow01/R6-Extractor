@@ -53,38 +53,26 @@ class MeshIslandTests(unittest.TestCase):
         self.assertAlmostEqual(dot, 0.0, places=6)
         self.assertAlmostEqual(tangent_length, 1.0, places=6)
 
-    def test_bone_palette_preserves_nonzero_first_bone(self):
-        payload = bytearray(68 + 268)
+    def test_bone_palette_accepts_known_states_and_preserves_bones(self):
+        for state in (0, 1):
+            with self.subTest(state=state):
+                payload = bytearray(68 + 268)
 
-        struct.pack_into(
-            "<HBBIB",
-            payload,
-            68,
-            1,
-            2,
-            0,
-            0,
-            2
-        )
+                struct.pack_into("<HBBIB", payload, 68, state, 2, 0, 0, 2)
 
-        payload[77:79] = bytes(
-            (
-                3,
-                7
-            )
-        )
+                payload[77:79] = bytes((3, 7))
 
-        palettes = read_bone_palettes(payload, 0, 1, 1)
+                palettes = read_bone_palettes(payload, 0, 1, 1)
 
-        self.assertEqual(
-            palettes,
-            (
-                (
-                    3,
-                    7
-                ),
-            )
-        )
+                self.assertEqual(
+                    palettes,
+                    (
+                        (
+                            3,
+                            7
+                        ),
+                    )
+                )
 
 if __name__ == "__main__":
     unittest.main()

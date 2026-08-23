@@ -727,7 +727,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     operators = commands.add_parser("operators", help="list operator model candidates")
     operators.add_argument("-d", "--database", default="output/r6-assets.sqlite", help="SQLite database path")
-    operators.add_argument("--defaults", action="store_true", help="list confirmed default model parents")
+    operators.add_argument("--defaults", action="store_true", help="list default-labeled model parents")
     operators.add_argument("--limit", type=int, default=0, help="maximum candidates to display, 0 displays all")
     operators.add_argument("--max-parents", type=int, default=20, help="ignore generic evidence referenced by more than this many parents")
     operators.add_argument("--previews", metavar="DIRECTORY", help="prepare glTF files and a CSV for Blender previews")

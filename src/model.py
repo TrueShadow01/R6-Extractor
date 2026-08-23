@@ -92,6 +92,36 @@ class MeshBinding:
     pose_transforms: tuple[BoneTransform, ...] = ()
     joint_node_matrices: tuple[tuple[float, ...], ...] = ()
 
+def complete_mesh_binding(binding: MeshBinding, required_bone_count: int, palette_indices: Iterable[int]) -> MeshBinding:
+    """Add identity joints for implicit slots declared by a mesh palette"""
+
+    current_bone_count = len(binding.bone_ids)
+
+    if required_bone_count <= current_bone_count:
+        return binding
+
+    missing_indices = set(range(current_bone_count, required_bone_count))
+
+    if not missing_indices.issubset(set(palette_indices)):
+        highest_joint = required_bone_count - 1
+
+        raise ValueError(f"Geometry {binding.geometry_uid:016X} uses joint {highest_joint} but its binding contains only {current_bone_count} bones")
+
+    identity = (
+        1.0, 0.0, 0.0, 0.0,
+        0.0, 1.0, 0.0, 0.0,
+        0.0, 0.0, 1.0, 0.0,
+        0.0, 0.0, 0.0, 1.0,
+    )
+    missing_count = required_bone_count - current_bone_count
+
+    return replace(
+        binding,
+        bone_ids=(binding.bone_ids + (0xFFFFFFFF,) * missing_count),
+        inverse_bind_matrices=(binding.inverse_bind_matrices + (identity,) * missing_count),
+        joint_node_matrices=(binding.joint_node_matrices + (identity,) * missing_count if binding.joint_node_matrices else ())
+    )
+
 @dataclass(frozen=True)
 class MeshPart:
     uid: int
@@ -455,9 +485,13 @@ def decode_mesh_parts(records: Iterable[AssetRecord], bindings: Mapping[int, Mes
             ]
 
             highest_joint = max(used_joint_indices, default=-1)
+            palette_indices = {
+                joint
+                for island in islands
+                for joint in island.bone_palette
+            }
 
-            if highest_joint >= len(binding.bone_ids):
-                raise ValueError(f"Geometry {record.uid:016X} uses joint {highest_joint} but its binding contains only {len(binding.bone_ids)} bones")
+            binding = complete_mesh_binding(binding, highest_joint + 1, palette_indices)
 
         if len(uvs) != len(vertices):
             raise ValueError(f"Geometry {record.uid:016X} has {len(vertices)} vertices but {len(uvs)} UV coordinates")

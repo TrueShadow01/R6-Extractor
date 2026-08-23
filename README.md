@@ -67,10 +67,13 @@ Use `--all` with `scan`, `extract` or `index` to process every Forge archive und
 `search` reports asset locations, dependency parents and ready-to-run export commands when geometry is available.
 
 ### Operator review
-List confirmed default model parents:
+List default-labeled model parents for review:
 ```powershell
 py -3 -B main.py operators --defaults --database output/r6-assets.sqlite
 ```
+
+Previews are intended for identification.
+Some Siege material and alpha variants are not reconstructed accurately yet.
 
 Prepare unknown models for visual review:
 ```powershell

@@ -28,6 +28,7 @@ from src.model import (
     BoneTransform,
     MeshPart,
     MeshBinding,
+    complete_mesh_binding,
     read_mesh_bindings,
     resolve_dependency_uids,
     resolve_export_material_textures,
@@ -476,6 +477,66 @@ class ModelDiscoveryTests(unittest.TestCase):
         self.assertEqual(binding.pose_transforms[0].translation, (1.0, 2.0, 3.0))
         self.assertEqual(binding.pose_transforms[1].rotation, (0.0, 0.5, 0.0, 0.5))
 
+    def test_completes_palette_declared_implicit_joints(self):
+        identity = (
+            1.0, 0.0, 0.0, 0.0,
+            0.0, 1.0, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0,
+        )
+
+        binding = MeshBinding(
+            geometry_uid=0x2000,
+            bone_ids=(0x11111111,),
+            inverse_bind_matrices=(identity,),
+            joint_node_matrices=(identity,)
+        )
+
+        completed = complete_mesh_binding(
+            binding,
+            3,
+            {
+                0,
+                1,
+                2
+            }
+        )
+
+        self.assertEqual(
+            completed.bone_ids,
+            (
+                0x11111111,
+                0xFFFFFFFF,
+                0xFFFFFFFF
+            )
+        )
+        self.assertEqual(
+            completed.inverse_bind_matrices,
+            (
+                identity,
+                identity,
+                identity
+            )
+        )
+        self.assertEqual(
+            completed.joint_node_matrices,
+            (
+                identity,
+                identity,
+                identity
+            )
+        )
+
+        with self.assertRaisesRegex(ValueError, "uses joint 2"):
+            complete_mesh_binding(
+                binding,
+                3,
+                {
+                    0,
+                    1
+                }
+            )
+
     def test_resolves_static_shared_face_pose(self):
         identity = (
             1.0, 0.0, 0.0, 0.0,
@@ -713,18 +774,19 @@ class ModelDiscoveryTests(unittest.TestCase):
             }
         )
 
-    def test_default_operator_candidates_require_derived_parent_names(self):
-        default_parent = 0x1000
+    def test_default_operator_candidates_use_parent_labels_and_normalize_categories(self):
+        default_head_parent = 0x1000
         cosmetic_parent = 0x2000
         default_mesh = 0x3000
         missing_parent = 0x4000
+        metadata_body_parent = 0x5000
 
         depgraph_path = Path("default.depgraphbin")
 
         names = (
             AssetName(
-                uid=default_parent,
-                name="Example default body model",
+                uid=default_head_parent,
+                name="Example default headgear model",
                 category="operator-body",
                 source="derived-community",
                 confidence=60,
@@ -753,27 +815,44 @@ class ModelDiscoveryTests(unittest.TestCase):
                 source="derived-community",
                 confidence=60,
                 locations=1
+            ),
+            AssetName(
+                uid=metadata_body_parent,
+                name="Example Default body",
+                category="operator-metadata",
+                source="r6-uid-sheet-2022",
+                confidence=40,
+                locations=0
             )
         )
 
         candidates = discover_default_operator_candidates(
             {
                 depgraph_path: {
-                    default_parent: [default_mesh],
-                    cosmetic_parent: [default_mesh]
+                    default_head_parent: [default_mesh],
+                    cosmetic_parent: [default_mesh],
+                    default_mesh: [0x6000],
+                    metadata_body_parent: [default_mesh]
                 }
             },
             names
         )
 
-        self.assertEqual(len(candidates), 1)
+        self.assertEqual(
+            tuple(candidate.uid for candidate in candidates),
+            (
+                default_head_parent,
+                metadata_body_parent
+            )
+        )
 
-        candidate = candidates[0]
+        head_candidate, body_candidate = candidates
 
-        self.assertEqual(candidate.uid, default_parent)
-        self.assertEqual(candidate.category, "operator-body")
-        self.assertEqual(candidate.evidence, (names[0],))
-        self.assertEqual(candidate.depgraphs, (depgraph_path,))
+        self.assertEqual(head_candidate.category, "operator-headgear")
+        self.assertEqual(head_candidate.evidence, (names[0],))
+        self.assertEqual(head_candidate.depgraphs, (depgraph_path,))
+        self.assertEqual(body_candidate.category, "operator-body")
+        self.assertEqual(body_candidate.evidence, (names[4],))
 
     def test_unknown_operator_candidates_use_named_mesh_children(self):
         operator_mesh = 0x2000

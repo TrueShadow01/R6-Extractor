@@ -214,7 +214,7 @@ def discover_models(children: Mapping[int, Iterable[int]], index: AssetIndex) ->
     )
 
 def discover_default_operator_candidates(depgraphs: Mapping[Path, Mapping[int, Iterable[int]]], names: Iterable[AssetName]) -> tuple[OperatorCandidate, ...]:
-    """Find explicitly named default operator model parents"""
+    """Find parent models labeled as default operator bodies or heads"""
 
     ordered_names = sorted(
         names,
@@ -228,13 +228,18 @@ def discover_default_operator_candidates(depgraphs: Mapping[Path, Mapping[int, I
     defaults: dict[int, AssetName] = {}
 
     for entry in ordered_names:
-        if entry.category not in OPERATOR_CATEGORIES:
+        label = entry.name.casefold()
+
+        derived_parent = entry.source.startswith("derived-") and entry.category in OPERATOR_CATEGORIES
+        metadata_parent = entry.source == "r6-uid-sheet-2022" and entry.category == "operator-metadata"
+
+        if not (derived_parent or metadata_parent):
             continue
 
-        if not entry.source.startswith("derived-"):
+        if "default" not in label:
             continue
 
-        if "default" not in entry.name.casefold():
+        if "body" not in label and "head" not in label:
             continue
 
         defaults.setdefault(entry.uid, entry)
@@ -249,7 +254,7 @@ def discover_default_operator_candidates(depgraphs: Mapping[Path, Mapping[int, I
     return tuple(
         OperatorCandidate(
             uid=parent_uid,
-            category=defaults[parent_uid].category,
+            category="operator-headgear" if "head" in defaults[parent_uid].name.casefold() else "operator-body",
             evidence=(defaults[parent_uid],),
             depgraphs=tuple(sorted(depgraphs_by_parent[parent_uid]))
         )

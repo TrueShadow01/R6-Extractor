@@ -90,15 +90,15 @@ def read_bone_palettes(payload, tail, num_lods, num_islands):
             raise ValueError(f"Bone palette record {record_index} is truncated")
 
         (
-            enabled,
+            state,
             bone_count,
             stored_island,
             _,
             repeated_count
         ) = struct.unpack_from("<HBBIB", payload, record)
 
-        if enabled != 1:
-            raise ValueError(f"Bone palette record {record_index} has unsupported state {enabled}")
+        if state not in (0, 1):
+            raise ValueError(f"Bone palette record {record_index} has unsupported state {state}")
 
         if stored_island >= num_islands:
             raise ValueError(f"Bone palette record {record_index} targets invalid island {stored_island}")
