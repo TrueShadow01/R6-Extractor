@@ -64,17 +64,19 @@ class MaterialTests(unittest.TestCase):
         payload = b"".join(
             [
                 make_entry(CURRENT_MATERIAL, material_uid, material_data),
-                make_entry(CURRENT_MESH, 0x4001, struct.pack("<QQ", geometry_uid, material_uid)),
+                make_entry(CURRENT_MESH, 0x4001, struct.pack("<QQQ", geometry_uid, material_uid, material_uid)),
             ]
         )
 
         materials = resolve_material_texture_sets(payload, set(), geometry_uids=(geometry_uid,))
-        material = materials[0][0]
 
-        self.assertEqual(material.shader_uid, SOLID_COSMETIC_SHADER)
+        self.assertEqual(len(materials[0]), 2)
 
-        for actual, expected in zip(material.solid_color, color):
-            self.assertAlmostEqual(actual, expected, places=6)
+        for material in materials[0]:
+            self.assertEqual(material.shader_uid, SOLID_COSMETIC_SHADER)
+
+            for actual, expected in zip(material.solid_color, color):
+                self.assertAlmostEqual(actual, expected, places=6)
 
     def test_resolves_material_roles_and_preserves_later_detail_map(self):
         diffuse_spec = 0x1001

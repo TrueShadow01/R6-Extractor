@@ -264,19 +264,32 @@ def read_shader_bindings(payload: bytes) -> tuple[ShaderBinding, ...]:
             )
     return tuple(found)
 
-def referenced_uids(
-    blob: bytes,
-    candidates: Collection[int]
-) -> tuple[int, ...]:
+def referenced_uids(blob: bytes, candidates: Collection[int], *, preserve_duplicates: bool = False) -> tuple[int, ...]:
     """Return candidate UIDs in their serialized order"""
 
     matches = []
 
     for uid in candidates:
-        position = blob.find(struct.pack("<Q", uid))
+        needle = struct.pack("<Q", uid)
+        position = 0
 
-        if position >= 0:
-            matches.append((position, uid))
+        while True:
+            position = blob.find(needle, position)
+
+            if position < 0:
+                break
+
+            matches.append(
+                (
+                    position,
+                    uid
+                )
+            )
+
+            if not preserve_duplicates:
+                break
+
+            position += len(needle)
 
     matches.sort()
 
@@ -683,7 +696,7 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
 
         mesh_blob = payload[mesh_entry.offset:mesh_entry.end]
 
-        base_material_uids = referenced_uids(mesh_blob, material_entries.keys())
+        base_material_uids = referenced_uids(mesh_blob, material_entries.keys(), preserve_duplicates=True)
 
         part_materials.append(
             tuple(
