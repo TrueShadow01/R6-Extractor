@@ -213,6 +213,49 @@ def discover_models(children: Mapping[int, Iterable[int]], index: AssetIndex) ->
         )
     )
 
+def discover_default_operator_candidates(depgraphs: Mapping[Path, Mapping[int, Iterable[int]]], names: Iterable[AssetName]) -> tuple[OperatorCandidate, ...]:
+    """Find explicitly named default operator model parents"""
+
+    ordered_names = sorted(
+        names,
+        key=lambda entry: (
+            -entry.confidence,
+            entry.name.casefold(),
+            entry.source.casefold()
+        )
+    )
+
+    defaults: dict[int, AssetName] = {}
+
+    for entry in ordered_names:
+        if entry.category not in OPERATOR_CATEGORIES:
+            continue
+
+        if not entry.source.startswith("derived-"):
+            continue
+
+        if "default" not in entry.name.casefold():
+            continue
+
+        defaults.setdefault(entry.uid, entry)
+
+    depgraphs_by_parent: dict[int, set[Path]] = {}
+
+    for depgraph, children in depgraphs.items():
+        for parent_uid in defaults:
+            if parent_uid in children:
+                depgraphs_by_parent.setdefault(parent_uid, set()).add(Path(depgraph))
+
+    return tuple(
+        OperatorCandidate(
+            uid=parent_uid,
+            category=defaults[parent_uid].category,
+            evidence=(defaults[parent_uid],),
+            depgraphs=tuple(sorted(depgraphs_by_parent[parent_uid]))
+        )
+        for parent_uid in sorted(depgraphs_by_parent)
+    )
+
 def discover_unknown_operator_candidates(depgraphs: Mapping[Path, Mapping[int, Iterable[int]]], names: Iterable[AssetName], *, max_parent_references: int = 20) -> tuple[OperatorCandidate, ...]:
     """Find unnamed parents that reference sufficiently specific operator meshes"""
 

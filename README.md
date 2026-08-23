@@ -67,7 +67,12 @@ Use `--all` with `scan`, `extract` or `index` to process every Forge archive und
 `search` reports asset locations, dependency parents and ready-to-run export commands when geometry is available.
 
 ### Operator review
-Prepare unknown operator models:
+List confirmed default model parents:
+```powershell
+py -3 -B main.py operators --defaults --database output/r6-assets.sqlite
+```
+
+Prepare unknown models for visual review:
 ```powershell
 py -3 -B main.py operators --database output/r6-assets.sqlite --previews output/operator-previews
 ```

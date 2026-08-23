@@ -36,6 +36,7 @@ from src.model import (
 from src.model_catalog import (
     COMPILED_MESH_OBJECT,
     build_model_catalog,
+    discover_default_operator_candidates,
     discover_unknown_operator_candidates,
     resolve_bundle_paths,
     write_model_catalog
@@ -536,7 +537,10 @@ def command_operators(args: argparse.Namespace) -> int:
     database = Path(args.database).expanduser().resolve()
     names = load_asset_names(database)
 
-    candidates = discover_unknown_operator_candidates(depgraphs, names, max_parent_references=args.max_parents)
+    if args.defaults:
+        candidates = discover_default_operator_candidates(depgraphs, names)
+    else:
+        candidates = discover_unknown_operator_candidates(depgraphs, names, max_parent_references=args.max_parents)
 
     if args.limit < 0:
         raise ValueError("--limit cannot be negative")
@@ -721,8 +725,9 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("--limit", type=int, default=20, help="maximum number of matches")
     search.set_defaults(handler=command_search)
 
-    operators = commands.add_parser("operators", help="list unnamed operator model candidates")
+    operators = commands.add_parser("operators", help="list operator model candidates")
     operators.add_argument("-d", "--database", default="output/r6-assets.sqlite", help="SQLite database path")
+    operators.add_argument("--defaults", action="store_true", help="list confirmed default model parents")
     operators.add_argument("--limit", type=int, default=0, help="maximum candidates to display, 0 displays all")
     operators.add_argument("--max-parents", type=int, default=20, help="ignore generic evidence referenced by more than this many parents")
     operators.add_argument("--previews", metavar="DIRECTORY", help="prepare glTF files and a CSV for Blender previews")

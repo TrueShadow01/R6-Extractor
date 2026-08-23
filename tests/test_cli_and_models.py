@@ -36,6 +36,7 @@ from src.model import (
 from src.model_catalog import (
     COMPILED_MESH_OBJECT,
     discover_models,
+    discover_default_operator_candidates,
     discover_unknown_operator_candidates,
     resolve_bundle_paths
 )
@@ -711,6 +712,68 @@ class ModelDiscoveryTests(unittest.TestCase):
                 ]
             }
         )
+
+    def test_default_operator_candidates_require_derived_parent_names(self):
+        default_parent = 0x1000
+        cosmetic_parent = 0x2000
+        default_mesh = 0x3000
+        missing_parent = 0x4000
+
+        depgraph_path = Path("default.depgraphbin")
+
+        names = (
+            AssetName(
+                uid=default_parent,
+                name="Example default body model",
+                category="operator-body",
+                source="derived-community",
+                confidence=60,
+                locations=1
+            ),
+            AssetName(
+                uid=cosmetic_parent,
+                name="Example event body model",
+                category="operator-body",
+                source="derived-community",
+                confidence=60,
+                locations=1
+            ),
+            AssetName(
+                uid=default_mesh,
+                name="Example default body",
+                category="operator-body",
+                source="rainbowforge-community-2022",
+                confidence=70,
+                locations=1
+            ),
+            AssetName(
+                uid=missing_parent,
+                name="Missing default headgear model",
+                category="operator-headgear",
+                source="derived-community",
+                confidence=60,
+                locations=1
+            )
+        )
+
+        candidates = discover_default_operator_candidates(
+            {
+                depgraph_path: {
+                    default_parent: [default_mesh],
+                    cosmetic_parent: [default_mesh]
+                }
+            },
+            names
+        )
+
+        self.assertEqual(len(candidates), 1)
+
+        candidate = candidates[0]
+
+        self.assertEqual(candidate.uid, default_parent)
+        self.assertEqual(candidate.category, "operator-body")
+        self.assertEqual(candidate.evidence, (names[0],))
+        self.assertEqual(candidate.depgraphs, (depgraph_path,))
 
     def test_unknown_operator_candidates_use_named_mesh_children(self):
         operator_mesh = 0x2000
