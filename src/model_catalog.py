@@ -225,15 +225,25 @@ def discover_default_operator_candidates(depgraphs: Mapping[Path, Mapping[int, I
         )
     )
 
+    verified_groups = {
+        (
+            entry.name.casefold().split(" default", 1)[0].strip(),
+            "head" if "head" in entry.name.casefold() else "body"
+        )
+        for entry in ordered_names
+        if entry.source == "manual-verified" and entry.category in OPERATOR_CATEGORIES and " default" in entry.name.casefold() and ("body" in entry.name.casefold() or "head" in entry.name.casefold())
+    }
+
     defaults: dict[int, AssetName] = {}
 
     for entry in ordered_names:
         label = entry.name.casefold()
 
+        verified_parent = entry.source == "manual-verified" and entry.category in OPERATOR_CATEGORIES
         derived_parent = entry.source.startswith("derived-") and entry.category in OPERATOR_CATEGORIES
         metadata_parent = entry.source == "r6-uid-sheet-2022" and entry.category == "operator-metadata"
 
-        if not (derived_parent or metadata_parent):
+        if not (verified_parent or derived_parent or metadata_parent):
             continue
 
         if "default" not in label:
@@ -241,6 +251,12 @@ def discover_default_operator_candidates(depgraphs: Mapping[Path, Mapping[int, I
 
         if "body" not in label and "head" not in label:
             continue
+
+        if metadata_parent:
+            group = label.split(" default", 1)[0].strip(), "head" if "head" in label else "body"
+
+            if group in verified_groups:
+                continue
 
         defaults.setdefault(entry.uid, entry)
 
