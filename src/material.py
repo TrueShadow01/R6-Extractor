@@ -37,7 +37,14 @@ SPECULAR_ROLE = 2
 MASK_ROLE = 7
 
 SOLID_COSMETIC_SHADER = 0x0000001397A32F38
-SOLID_COLOR_PARAMETER = 2
+SOLID_COLOR_PARAMETERS = {
+    SOLID_COSMETIC_SHADER: 2
+}
+
+UNTEXTURED_COLOR_PARAMETERS = {
+    0x0000000099E2C950: 3,
+    0x0000005DB6637AD7: 2
+}
 
 @dataclass(frozen=True)
 class NestedEntry:
@@ -393,13 +400,18 @@ def _custom_vector_target(target: str) -> tuple[int, int | None] | None:
 
     return int(vector_text), component
 
-def read_solid_material_color(material_blob: bytes, shader_uid: int | None) -> tuple[float, float, float, float] | None:
-    """Read the packed color used by Siege's solid cosmetic shader"""
+def read_solid_material_color(material_blob: bytes, shader_uid: int | None, *, has_diffuse: bool) -> tuple[float, float, float, float] | None:
+    """Read a packed material color when it is safe to use as base color"""
 
-    if shader_uid != SOLID_COSMETIC_SHADER:
+    parameter = SOLID_COLOR_PARAMETERS.get(shader_uid)
+
+    if parameter is None and not has_diffuse:
+        parameter = UNTEXTURED_COLOR_PARAMETERS.get(shader_uid)
+
+    if parameter is None:
         return None
 
-    marker = struct.pack("<I", UNIFORM_MARKER | SOLID_COLOR_PARAMETER)
+    marker = struct.pack("<I", UNIFORM_MARKER | parameter)
     marker_offset = material_blob.find(marker)
 
     if marker_offset < 0:
@@ -640,7 +652,7 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
             normal_uids=roles.get(NORMAL_ROLE, ()),
             specular_uids=roles.get(SPECULAR_ROLE, ()),
             mask_uids=roles.get(MASK_ROLE, ()),
-            solid_color=read_solid_material_color(material_blob, shader_uid),
+            solid_color=read_solid_material_color(material_blob, shader_uid, has_diffuse=bool(roles.get(DIFFUSE_ROLE))),
             selectors=tuple(selectors),
             shader_uid=shader_uid,
             shader_bindings=material_bindings,

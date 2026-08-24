@@ -78,6 +78,45 @@ class MaterialTests(unittest.TestCase):
             for actual, expected in zip(material.solid_color, color):
                 self.assertAlmostEqual(actual, expected, places=6)
 
+    def test_preserves_known_untextured_shader_colors(self):
+        geometry_uid = 0x5000
+        material_uids = (0x4000, 0x4001)
+        color = (0.25, 0.5, 0.75, 1.0)
+        shader_parameters = (
+            (
+                0x0000000099E2C950,
+                3
+            ),
+            (
+                0x0000005DB6637AD7,
+                2
+            )
+        )
+
+        entries = []
+
+        for material_uid, (shader_uid, parameter) in zip(material_uids, shader_parameters):
+            material_data = (
+                struct.pack("<IQ", CURRENT_MATERIAL,shader_uid)
+                + struct.pack("<I", UNIFORM_MARKER | parameter)
+                + b"\x00" * 36
+                + struct.pack("<4f", *color)
+            )
+
+            entries.append(make_entry(CURRENT_MATERIAL, material_uid, material_data))
+
+        entries.append(make_entry(CURRENT_MESH, 0x4002, struct.pack("<QQQ", geometry_uid, *material_uids)))
+
+        materials = resolve_material_texture_sets(b"".join(entries), set(), geometry_uids=(geometry_uid,))[0]
+
+        self.assertEqual(len(materials), 2)
+
+        for material, (shader_uid, _) in zip(materials, shader_parameters):
+            self.assertEqual(material.shader_uid, shader_uid)
+
+            for actual, expected in zip(material.solid_color, color):
+                self.assertAlmostEqual(actual, expected, places=6)
+
     def test_resolves_material_roles_and_preserves_later_detail_map(self):
         diffuse_spec = 0x1001
         normal_spec = 0x1002
