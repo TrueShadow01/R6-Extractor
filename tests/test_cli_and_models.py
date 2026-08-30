@@ -854,10 +854,11 @@ class ModelDiscoveryTests(unittest.TestCase):
         self.assertEqual(body_candidate.category, "operator-body")
         self.assertEqual(body_candidate.evidence, (names[4],))
 
-    def test_verified_defaults_replace_only_matching_metadata_group(self):
+    def test_verified_defaults_replace_matching_candidate_groups(self):
         verified_head = 0x1000
         verified_body = 0x1001
         stale_aruni_body = 0x2000
+        stale_aruni_head = 0x2001
         unresolved_caveira_body = 0x3000
         depgraph_path = Path("defaults.depgraphbin")
 
@@ -876,6 +877,14 @@ class ModelDiscoveryTests(unittest.TestCase):
                 category="operator-body",
                 source="manual-verified",
                 confidence=100,
+                locations=1
+            ),
+            AssetName(
+                uid=stale_aruni_head,
+                name="Aruni Default headgear model",
+                category="operator-headgear",
+                source="derived-community",
+                confidence=60,
                 locations=1
             ),
             AssetName(
@@ -901,6 +910,7 @@ class ModelDiscoveryTests(unittest.TestCase):
                 depgraph_path: {
                     verified_head: [0x9000],
                     verified_body: [0x9001],
+                    stale_aruni_head: [0x9004],
                     stale_aruni_body: [0x9002],
                     unresolved_caveira_body: [0x9003]
                 }

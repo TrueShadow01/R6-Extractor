@@ -252,7 +252,7 @@ def discover_default_operator_candidates(depgraphs: Mapping[Path, Mapping[int, I
         if "body" not in label and "head" not in label:
             continue
 
-        if metadata_parent:
+        if not verified_parent:
             group = label.split(" default", 1)[0].strip(), "head" if "head" in label else "body"
 
             if group in verified_groups:

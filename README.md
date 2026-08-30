@@ -128,7 +128,7 @@ Audio extraction is not connected to the main CLI yet.
 ## Roadmap
 
 1. Reconstruct layered, detail and eye shaders from preserved metadata
-2. Ship an attributed, versioned UID catalog and import it during setup
+2. Import bundled UID catalogs during setup
 3. Validate the remaining vertex layouts
 4. Reconstruct streamed textures and decode packed PBR channels
 5. Add GLB export
