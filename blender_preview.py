@@ -72,21 +72,65 @@ def apply_siege_materials(gltf_path: Path) -> None:
         nodes = material.node_tree.nodes
         links = material.node_tree.links
 
+        principled = next(
+            (
+                node
+                for node in nodes if node.type == "BSDF_PRINCIPLED"
+            ),
+            None
+        )
+
+        packed_filename = extras.get("siegePackedMaterialTexture")
+
+        if principled is not None and packed_filename is not None:
+            packed_path = gltf_path.parent / packed_filename
+
+            if packed_path.is_file():
+                image = bpy.data.images.load(str(packed_path), check_existing=True)
+                image.colorspace_settings.name = "Non-Color"
+
+                texture = nodes.new("ShaderNodeTexImage")
+                texture.name = "Siege Packed Material"
+                texture.label = packed_filename
+                texture.image = image
+                texture.location = (principled.location.x - 600, principled.location.y - 500)
+
+                separate = nodes.new("ShaderNodeSeparateColor")
+                separate.name = "Siege Material Channels"
+                separate.label = "R: Metalness G: Glossiness B: Cavity"
+                separate.location = (principled.location.x - 350, principled.location.y - 500)
+
+                roughness = nodes.new("ShaderNodeMath")
+                roughness.name = "Siege Roughness"
+                roughness.label = "1 - Glossiness"
+                roughness.operation = "SUBTRACT"
+                roughness.inputs[0].default_value = 1.0
+                roughness.location = (principled.location.x - 120, principled.location.y - 600)
+
+                links.new(texture.outputs["Color"], separate.inputs["Color"])
+                links.new(separate.outputs["Green"], roughness.inputs[1])
+
+                metallic_input = principled.inputs.get("Metallic")
+                roughness_input = principled.inputs.get("Roughness")
+
+                if metallic_input is not None:
+                    if metallic_input.is_linked:
+                        links.remove(metallic_input.links[0])
+
+                    links.new(separate.outputs["Red"], metallic_input)
+
+                if roughness_input is not None:
+                    if roughness_input.is_linked:
+                        links.remove(roughness_input.links[0])
+
+                    links.new(roughness.outputs["Value"], roughness_input)
+
         if extras.get("siegeShaderUid") == "000000557005948D":
             uniforms = extras.get("siegeShaderUniforms", {})
 
             sclera_values = uniforms.get(
                 "ScleraColorWhite",
                 (0.73, 0.73, 0.73, 1.0)
-            )
-
-            principled = next(
-                (
-                    node
-                    for node in nodes
-                    if node.type == "BSDF_PRINCIPLED"
-                ),
-                None
             )
 
             if principled is not None:

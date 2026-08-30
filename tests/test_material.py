@@ -11,12 +11,14 @@ from src.material import (
     CURRENT_TEXTURE_SELECTOR,
     UNIFORM_MARKER,
     SOLID_COSMETIC_SHADER,
+    TINTED_HEADGEAR_SHADER,
     ShaderUniform,
     ShaderBinding,
     MaterialTextureSelector,
     resolve_material_texture_sets,
     read_shader_uniforms,
     read_shader_bindings,
+    read_solid_material_color,
     apply_material_uniform_overrides
 )
 
@@ -55,6 +57,15 @@ def make_texture_map(uid: int, compiled_uid: int) -> bytes:
     return make_entry(CURRENT_TEXTURE_MAP, uid, data)
 
 class MaterialTests(unittest.TestCase):
+    def test_preserves_textured_headgear_tint(self):
+        color = (0.25, 0.25, 0.25, 1.0)
+        material_blob = struct.pack("<I", UNIFORM_MARKER) + b"\x00" * 36 + struct.pack("<4f", *color)
+
+        resolved = read_solid_material_color(material_blob, TINTED_HEADGEAR_SHADER, has_diffuse=True)
+
+        for actual, expected in zip(resolved, color):
+            self.assertAlmostEqual(actual, expected, places=6)
+
     def test_preserves_untextured_solid_cosmetic_material(self):
         material_uid = 0x4000
         geometry_uid = 0x5000

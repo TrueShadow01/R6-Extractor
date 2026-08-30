@@ -23,6 +23,8 @@ TRIANGLES = 4
 # Confirmed Siege shader transparency behavior
 # Unknown shaders still use the image alpha fallback
 OPAQUE_SHADER_UIDS = {
+    0x000000003CAE6B71, # skin
+    0x0000000841DC11F9, # tinted headgear
     0x0000001397A32F38, # solid cosmetic mask
     0x000000557005948D, # eye shader
 }
@@ -271,7 +273,6 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
     nodes: list[dict] = []
     skins: list[dict] = []
     used_material_ids: set[int] = set()
-    used_extensions: set[str] = set()
 
     def add_accessor(raw: bytes, *, target: int | None, component_type: int, count: int, value_type: str, name: str, minimum: list[float] | None = None, maximum: list[float] | None = None) -> int:
         view = binary.add(raw, target=target, name=name)
@@ -661,16 +662,7 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
             }
 
         if slot_textures.specular:
-            material["extensions"] = {
-                "KHR_materials_specular": {
-                    "specularColorFactor": [0.4, 0.4, 0.4],
-                    "specularColorTexture": {
-                        "index": add_texture(slot_textures.specular)
-                    }
-                }
-            }
-
-            used_extensions.add("KHR_materials_specular")
+            extras["siegePackedMaterialTexture"] = slot_textures.specular
 
         if slot_textures.mask:
             extras["siegeMaskTexture"] = slot_textures.mask
@@ -713,9 +705,6 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
         "bufferViews": binary.views,
         "accessors": accessors
     }
-
-    if used_extensions:
-        document["extensionsUsed"] = sorted(used_extensions)
 
     if skins:
         document["skins"] = skins

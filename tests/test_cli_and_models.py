@@ -1223,21 +1223,16 @@ class GltfExportTests(unittest.TestCase):
 
             self.assertEqual([image["uri"] for image in document["images"]], [
                 "diffuse.png",
-                "normal.png",
-                "specular.png"
+                "normal.png"
             ])
 
             material = document["materials"][0]
 
             self.assertIn("pbrMetallicRoughness", material)
 
-            specular_extension = material["extensions"]["KHR_materials_specular"]
-            specular_texture = specular_extension["specularColorTexture"]["index"]
-            specular_image = document["textures"][specular_texture]["source"]
-
-            self.assertEqual(document["images"][specular_image]["uri"], "specular.png")
-            self.assertEqual(specular_extension["specularColorFactor"], [0.4, 0.4, 0.4])
-            self.assertIn("KHR_materials_specular", document["extensionsUsed"])
+            self.assertEqual(material["extras"]["siegePackedMaterialTexture"], "specular.png")
+            self.assertNotIn("extensions", material)
+            self.assertNotIn("extensionsUsed", document)
 
     def test_gltf_exports_material_islands_as_primitives(self):
         part = MeshPart(
@@ -1293,7 +1288,7 @@ class GltfExportTests(unittest.TestCase):
                     MaterialTextures(
                         diffuse="slot0_diffuse.png",
                         normal="shared_normal.png",
-                        shader_uid=0x1397A32F38
+                        shader_uid=0x0841DC11F9
                     ),
                     MaterialTextures(
                         diffuse="slot1_diffuse.png",
@@ -1348,11 +1343,7 @@ class GltfExportTests(unittest.TestCase):
             self.assertEqual(textured_document["images"][slot3_diffuse_image]["uri"], "slot3_diffuse.png")
             self.assertEqual(slot0["normalTexture"]["index"], slot3["normalTexture"]["index"])
 
-            specular_extension = slot3["extensions"]["KHR_materials_specular"]
-            specular_texture = specular_extension["specularColorTexture"]["index"]
-            specular_image = textured_document["textures"][specular_texture]["source"]
-
-            self.assertEqual(textured_document["images"][specular_image]["uri"], "slot3_specular.png")
+            self.assertEqual(slot3["extras"]["siegePackedMaterialTexture"], "slot3_specular.png")
             self.assertEqual(slot3["extras"]["siegeMaskTexture"], "slot3_mask.png")
             self.assertEqual(slot3["extras"]["siegeDetailNormalTextures"], ["slot3_detail_normal.png"])
             self.assertEqual(slot3["extras"]["siegeShaderTextures"], {
