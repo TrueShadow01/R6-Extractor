@@ -1,3 +1,11 @@
 UID,Name,Category,Source,Confidence
 000000416F01EFF7,Aruni Default Head,operator-headgear,manual-verified,100
 000000416F01EFFA,Aruni Default Body,operator-body,manual-verified,100
+000000156B73406B,Caveira Default Head,operator-headgear,manual-verified,100
+000000156B7351DD,Caveira Default Body,operator-body,manual-verified,100
+000000156B7340D0,Ela Default Head,operator-headgear,manual-verified,100
+000000156B7352B1,IQ Default Body,operator-body,manual-verified,90
+000000156B7340BE,Twitch Default Head,operator-headgear,manual-verified,100
+000000156B73525D,Twitch Default Body,operator-body,manual-verified,100
+000000156B734171,Zofia Default Head,operator-headgear,manual-verified,90
+000000156B73527E,Zofia Default Body,operator-body,manual-verified,90
