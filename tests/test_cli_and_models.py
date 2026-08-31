@@ -927,6 +927,38 @@ class ModelDiscoveryTests(unittest.TestCase):
             )
         )
 
+    def test_manual_rejection_excludes_derived_default_candidate(self):
+        rejected_parent = 0x1000
+        depgraph_path = Path("defaults.depgraphbin")
+
+        candidates = discover_default_operator_candidates(
+            {
+                depgraph_path: {
+                    rejected_parent: [0x2000]
+                }
+            },
+            (
+                AssetName(
+                    uid=rejected_parent,
+                    name="Rook headgear default (maybe) model",
+                    category="operator-headgear",
+                    source="derived-community",
+                    confidence=40,
+                    locations=1
+                ),
+                AssetName(
+                    uid=rejected_parent,
+                    name="Rook Skull Headgear Variant",
+                    category="operator-headgear",
+                    source="manual-rejected-default",
+                    confidence=100,
+                    locations=1
+                )
+            )
+        )
+
+        self.assertEqual(candidates, ())
+
     def test_unknown_operator_candidates_use_named_mesh_children(self):
         operator_mesh = 0x2000
         gadget_mesh = 0x3000
@@ -1295,7 +1327,8 @@ class GltfExportTests(unittest.TestCase):
                         shader_uid=0x3051C028
                     ),
                     MaterialTextures(
-                        solid_color=(0.73, 0.73, 0.73, 1.0)
+                        solid_color=(0.73, 0.73, 0.73, 1.0),
+                        shader_uid=0x99E2C950
                     ),
                     MaterialTextures(
                         diffuse="slot3_diffuse.png",
@@ -1329,9 +1362,16 @@ class GltfExportTests(unittest.TestCase):
 
             self.assertEqual(slot0["alphaMode"], "OPAQUE")
             self.assertEqual(slot1["alphaMode"], "MASK")
+            self.assertEqual(slot2["alphaMode"], "BLEND")
+            self.assertTrue(slot2["doubleSided"])
             self.assertEqual(slot3["alphaMode"], "OPAQUE")
 
-            self.assertEqual(slot2["pbrMetallicRoughness"]["baseColorFactor"], [0.73, 0.73, 0.73, 1.0])
+            base_color = slot2["pbrMetallicRoughness"]["baseColorFactor"]
+
+            for actual in base_color[:3]:
+                self.assertAlmostEqual(actual, 0.491905, places=6)
+
+            self.assertEqual(base_color[3], 0.1)
 
             slot0_diffuse_texture = slot0["pbrMetallicRoughness"]["baseColorTexture"]["index"]
             slot3_diffuse_texture = slot3["pbrMetallicRoughness"]["baseColorTexture"]["index"]

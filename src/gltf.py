@@ -33,6 +33,22 @@ ALPHA_MASK_SHADER_UIDS = {
     0x000000003051C028, # hair and eyelashes
 }
 
+GLASS_SHADER_UIDS = {
+    0x0000000099E2C950,
+}
+
+def siege_color_to_gltf(color: Sequence[float]) -> tuple[float, float, float, float]:
+    """Convert stored sRGB material colors to linear glTF factors"""
+
+    linear = tuple(
+        component / 12.92
+        if component <= 0.04045
+        else ((component + 0.055) / 1.055) ** 2.4
+        for component in color[:3]
+    )
+
+    return linear + (color[3],)
+
 SIEGE_TO_GLTF_BASIS = (
     1.0, 0.0, 0.0, 0.0,
     0.0, 0.0, 1.0, 0.0,
@@ -609,8 +625,9 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
 
         pbr = {
             "baseColorFactor": list(
-                slot_textures.solid_color
-                or (
+                siege_color_to_gltf(slot_textures.solid_color)
+                if slot_textures.solid_color is not None
+                else (
                     1.0,
                     1.0,
                     1.0,
@@ -643,6 +660,12 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
                 material["alphaMode"] = "MASK"
                 material["alphaCutoff"] = 0.1
                 material["doubleSided"] = True
+
+        if slot_textures.shader_uid in GLASS_SHADER_UIDS:
+            material["alphaMode"] = "BLEND"
+            material["doubleSided"] = True
+            material.pop("alphaCutoff", None)
+            pbr["baseColorFactor"][3] = 0.1
 
         if slot_textures.normal:
             material["normalTexture"] = {

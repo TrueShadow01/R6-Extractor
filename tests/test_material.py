@@ -96,7 +96,7 @@ class MaterialTests(unittest.TestCase):
         shader_parameters = (
             (
                 0x0000000099E2C950,
-                3
+                0
             ),
             (
                 0x0000005DB6637AD7,

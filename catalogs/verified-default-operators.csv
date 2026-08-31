@@ -22,7 +22,7 @@ UID,Name,Category,Source,Confidence
 00000036D0D0E74E,Amaru Default Head,operator-headgear,manual-verified,90
 0000004EC9F5E0C0,Vigil Default Head,operator-headgear,manual-verified,90
 00000052AF234B4E,Zero Default Body,operator-body,manual-verified,90
-000000156B734088,Rook Default Head,operator-headgear,manual-verified,80
+000000156B734088,Rook Skull Headgear Variant,operator-headgear,manual-rejected-default,100
 000000156B7340E6,Blitz Default Head,operator-headgear,manual-verified,90
 000000156B734225,Tachanka Default Head,operator-headgear,manual-verified,80
 000000233E8D069D,Alibi Default Head Mask Up,operator-headgear,manual-verified,90

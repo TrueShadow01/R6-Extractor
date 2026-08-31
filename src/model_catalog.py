@@ -225,6 +225,12 @@ def discover_default_operator_candidates(depgraphs: Mapping[Path, Mapping[int, I
         )
     )
 
+    rejected_default_uids = {
+        entry.uid
+        for entry in ordered_names
+        if entry.source == "manual-rejected-default"
+    }
+
     verified_groups = {
         (
             entry.name.casefold().split(" default", 1)[0].strip(),
@@ -238,6 +244,9 @@ def discover_default_operator_candidates(depgraphs: Mapping[Path, Mapping[int, I
 
     for entry in ordered_names:
         label = entry.name.casefold()
+
+        if entry.uid in rejected_default_uids:
+            continue
 
         verified_parent = entry.source == "manual-verified" and entry.category in OPERATOR_CATEGORIES
         derived_parent = entry.source.startswith("derived-") and entry.category in OPERATOR_CATEGORIES
