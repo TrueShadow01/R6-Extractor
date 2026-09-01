@@ -37,6 +37,10 @@ GLASS_SHADER_UIDS = {
     0x0000000099E2C950,
 }
 
+HIDDEN_BY_DEFAULT_SHADER_UIDS = {
+    0x0000000F2BB85C7E, # Warden Smart Glance transition overlay
+}
+
 def siege_color_to_gltf(color: Sequence[float]) -> tuple[float, float, float, float]:
     """Convert stored sRGB material colors to linear glTF factors"""
 
@@ -666,6 +670,23 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
             material["doubleSided"] = True
             material.pop("alphaCutoff", None)
             pbr["baseColorFactor"][3] = 0.1
+
+        if slot_textures.shader_uid in HIDDEN_BY_DEFAULT_SHADER_UIDS:
+            material["alphaMode"] = "BLEND"
+            material["doubleSided"] = True
+            material.pop("alphaCutoff", None)
+            pbr["baseColorFactor"][3] = 0.0
+
+        paired_transition_base = (
+            material_textures is not None
+            and 0 < material_id < len(material_textures)
+            and material_textures[material_id - 1].shader_uid in HIDDEN_BY_DEFAULT_SHADER_UIDS
+        )
+
+        if paired_transition_base:
+            material["alphaMode"] = "BLEND"
+            material["doubleSided"] = True
+            material.pop("alphaCutoff", None)
 
         if slot_textures.normal:
             material["normalTexture"] = {

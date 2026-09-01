@@ -433,13 +433,13 @@ class ModelDiscoveryTests(unittest.TestCase):
         )
 
         def bone_record(bone_id, matrix):
-            return struct.pack("<II16fQ", 0xB883D0BA, bone_id, *matrix, 0)
+            return struct.pack("<II16fQ", 0x7B33D284, bone_id, *matrix, 0)
 
         def pose_record(index, bone_id, translation, rotation):
             prefix = b"\x00" + struct.pack("<H", index) + b"\xF8\xFB\x00\x00\x00\x00"
-            return prefix + struct.pack("<II3f4f", 0x914532EB, bone_id, *translation, *rotation)
+            return prefix + struct.pack("<II3f4f", 0x18A85CDA, bone_id, *translation, *rotation)
 
-        pose_blob = struct.pack("<III", 0x922E539C, 0xFFB49035, 2) + pose_record(1, 0x29A684AC, (1.0, 2.0, 3.0), (0.0, 0.0, 0.0, 1.0)) + pose_record(2, 0x4ED9C94E, (4.0, 5.0, 6.0), (0.0, 0.5, 0.0, 0.5))
+        pose_blob = struct.pack("<III", 0xC7197C69, 0xFFB49035, 2) + pose_record(1, 0x29A684AC, (1.0, 2.0, 3.0), (0.0, 0.0, 0.0, 1.0)) + pose_record(2, 0x4ED9C94E, (4.0, 5.0, 6.0), (0.0, 0.5, 0.0, 0.5))
         binding_blob = struct.pack("<IIIII", CURRENT_MESH, 1, 2, 0, 0) + bone_record(0xAAAABBBB, first_matrix) + bone_record(0xCCCCDDDD, second_matrix) + b"\x00" + struct.pack("<Q", geometry_uid) + pose_blob
         payload = struct.pack("<HHI", 0, 2, 0) + struct.pack("<IQ", CURRENT_MESH, binding_uid) + binding_blob
 
@@ -1394,6 +1394,48 @@ class GltfExportTests(unittest.TestCase):
                 "IrisGlossiness": [0.75]
             })
 
+            for filename in ("warden_transition.png", "warden_lens.png"):
+                Image.new("RGBA", (1, 1), (255, 255, 255, 128)).save(
+                    Path(root) / filename
+                )
+
+            inactive_path = write_gltf(
+                TEST_UID,
+                [part],
+                root,
+                material_textures=(
+                    MaterialTextures(
+                        diffuse="warden_transition.png",
+                        shader_uid=0x0F2BB85C7E
+                    ),
+                    MaterialTextures(
+                        diffuse="warden_lens.png",
+                        shader_uid=0x1397A32F38
+                    ),
+                    MaterialTextures(
+                        diffuse="warden_lens.png",
+                        shader_uid=0x1397A32F38
+                    ),
+                )
+            )
+
+            inactive_document = json.loads(inactive_path.read_text(encoding="utf-8"))
+            transition = inactive_document["materials"][0]
+            lens = inactive_document["materials"][1]
+            unrelated = inactive_document["materials"][2]
+
+            self.assertEqual(transition["alphaMode"], "BLEND")
+            self.assertTrue(transition["doubleSided"])
+            self.assertNotIn("alphaCutoff", transition)
+            self.assertEqual(transition["pbrMetallicRoughness"]["baseColorFactor"][3], 0.0)
+            self.assertIn("baseColorTexture", transition["pbrMetallicRoughness"])
+
+            self.assertEqual(lens["alphaMode"], "BLEND")
+            self.assertTrue(lens["doubleSided"])
+            self.assertNotIn("alphaCutoff", lens)
+            self.assertEqual(lens["pbrMetallicRoughness"]["baseColorFactor"][3], 1.0)
+            self.assertIn("baseColorTexture", lens["pbrMetallicRoughness"])
+            self.assertEqual(unrelated["alphaMode"], "OPAQUE")
             self.assertEqual(
                 [
                     document["accessors"][primitive["indices"]]["count"]

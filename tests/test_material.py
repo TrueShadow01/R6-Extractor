@@ -57,6 +57,28 @@ def make_texture_map(uid: int, compiled_uid: int) -> bytes:
     return make_entry(CURRENT_TEXTURE_MAP, uid, data)
 
 class MaterialTests(unittest.TestCase):
+    def test_uses_current_season_material_type_hashes(self):
+        self.assertEqual(
+            (
+                CURRENT_MATERIAL,
+                CURRENT_TEXTURE_MAP_SPEC,
+                CURRENT_TEXTURE_MAP,
+                CURRENT_TEXTURE_SELECTOR,
+                CURRENT_MESH,
+                CURRENT_SHADER_DEFINES,
+                CURRENT_SHADER_UNIFORMS,
+            ),
+            (
+                0xB3110874,
+                0xB9B8043D,
+                0xD555965D,
+                0x7C4A77EA,
+                0xEAE0EA75,
+                0x208C12C4,
+                0xD1E7D4EE,
+            )
+        )
+
     def test_preserves_textured_headgear_tint(self):
         color = (0.25, 0.25, 0.25, 1.0)
         material_blob = struct.pack("<I", UNIFORM_MARKER) + b"\x00" * 36 + struct.pack("<4f", *color)
