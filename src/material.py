@@ -30,6 +30,7 @@ RECOGNIZED_TYPES = {
 }
 
 UNIFORM_MARKER = 0xFBF80000
+TEXTURE_UNIFORM_CLASS = 0x9B57F12F
 
 DIFFUSE_ROLE = 0
 NORMAL_ROLE = 1
@@ -197,7 +198,7 @@ def read_shader_uniforms(payload: bytes) -> tuple[ShaderUniform, ...]:
             values = ()
             value_offset = name_end + 1
 
-            if uniform_type == 0:
+            if uniform_type == 0 or _uniform_class == TEXTURE_UNIFORM_CLASS:
                 # Texture uniforms finish with their TextureMapSpec UID
                 if value_offset + 32 <= entry.end:
                     candidate_uid = struct.unpack_from("<Q", payload, value_offset + 24)[0]
@@ -434,7 +435,7 @@ def read_solid_material_color(material_blob: bytes, shader_uid: int | None, *, h
 
     return color
 
-def apply_material_uniform_overrides(material_blob: bytes, uniforms: Iterable[ShaderUniform], bindings: Iterable[ShaderBinding]) -> tuple[ShaderUniform, ...]:
+def apply_material_uniform_overrides(material_blob: bytes, uniforms: Iterable[ShaderUniform], bindings: Iterable[ShaderBinding], *, parameter_index: int | None = None) -> tuple[ShaderUniform, ...]:
     """Apply a material's packed custom vector values to shader uniforms"""
 
     uniforms = tuple(uniforms)
@@ -454,9 +455,11 @@ def apply_material_uniform_overrides(material_blob: bytes, uniforms: Iterable[Sh
     if not applicable:
         return uniforms
 
-    first_uniform = min(applicable, key=lambda uniform: uniform.index)
+    if parameter_index is None:
+        first_uniform = min(applicable, key=lambda uniform: uniform.index)
+        parameter_index = first_uniform.index
 
-    marker = struct.pack("<I",  UNIFORM_MARKER | first_uniform.index)
+    marker = struct.pack("<I",  UNIFORM_MARKER | parameter_index)
     marker_offset = material_blob.find(marker)
 
     if marker_offset < 0:
@@ -649,7 +652,12 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
             if uniform.uniform_type == 1 and uniform.values and uniform.name in binding_names
         )
 
-        material_uniforms = apply_material_uniform_overrides(material_blob, default_uniforms, material_bindings)
+        material_parameter = SOLID_COLOR_PARAMETERS.get(shader_uid)
+
+        if material_parameter is None:
+            material_parameter = UNTEXTURED_COLOR_PARAMETERS.get(shader_uid)
+
+        material_uniforms = apply_material_uniform_overrides(material_blob, default_uniforms, material_bindings, parameter_index=material_parameter)
 
         resolved_materials[material_uid] = MaterialTextureSet(
             diffuse_uids=roles.get(DIFFUSE_ROLE, ()),

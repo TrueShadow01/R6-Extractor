@@ -288,8 +288,9 @@ class MaterialTests(unittest.TestCase):
     def test_reads_embedded_shader_uniform_names_and_values(self):
         owner_uid = 0x6000
         texture_spec_uid = 0x7000
+        current_texture_spec_uid = 0x7100
 
-        def make_uniform(index: int, name: str, uniform_type: int, value_data: bytes) -> bytes:
+        def make_uniform(index: int, name: str, uniform_type: int, value_data: bytes, uniform_class: int = 0x12345678) -> bytes:
             encoded_name = name.encode("utf-8")
 
             return (
@@ -298,7 +299,7 @@ class MaterialTests(unittest.TestCase):
                     "<IIIII",
                     0xFBF80000 | index,
                     0,
-                    0x12345678,
+                    uniform_class,
                     uniform_type,
                     len(encoded_name)
                 )
@@ -308,10 +309,21 @@ class MaterialTests(unittest.TestCase):
             )
 
         texture_value = struct.pack("<II16xQ", 2, 0, texture_spec_uid)
+        current_texture_value = struct.pack("<II16xQ", 2, 0, current_texture_spec_uid)
         scalar_value = struct.pack("<II16xf", 0, 0, 0.75)
-        uniform_data = struct.pack("<II", CURRENT_SHADER_UNIFORMS, 2) + make_uniform(0, "SecondaryEnv", 0, texture_value) + make_uniform(1, "IrisGlossiness", 1, scalar_value)
 
-        payload = make_entry(CURRENT_SHADER_UNIFORMS, owner_uid, uniform_data)
+        uniform_data = (
+            struct.pack("<II", CURRENT_SHADER_UNIFORMS, 3)
+            + make_uniform(0, "SecondaryEnv", 0, texture_value)
+            + make_uniform(1, "MaskRed_Detail", 1, current_texture_value, uniform_class=0x9B57F12F)
+            + make_uniform(2, "IrisGlossiness", 1, scalar_value)
+        )
+
+        payload = make_entry(
+            CURRENT_SHADER_UNIFORMS,
+            owner_uid,
+            uniform_data
+        )
 
         self.assertEqual(
             read_shader_uniforms(payload),
@@ -326,6 +338,13 @@ class MaterialTests(unittest.TestCase):
                 ShaderUniform(
                     owner_uid=owner_uid,
                     index=1,
+                    name="MaskRed_Detail",
+                    uniform_type=1,
+                    texture_spec_uid=current_texture_spec_uid
+                ),
+                ShaderUniform(
+                    owner_uid=owner_uid,
+                    index=2,
                     name="IrisGlossiness",
                     uniform_type=1,
                     values=(0.75,)
@@ -414,6 +433,41 @@ class MaterialTests(unittest.TestCase):
 
         self.assertEqual(resolved[1].name, "IrisGlossiness")
         self.assertAlmostEqual(resolved[1].values[0], 0.25, places=5)
+
+    def test_applies_material_vector_overrides_from_explicit_parameter(self):
+        uniforms = (
+            ShaderUniform(
+                owner_uid=0x7002,
+                index=1,
+                name="MaskRed_Detail_UV_Factor",
+                uniform_type=1,
+                values=(8.0,)
+            ),
+        )
+
+        bindings = (
+            ShaderBinding(
+                shader_uid=0x0000005DB6637AD7,
+                name="MaskRed_Detail_UV_Factor",
+                target="UM_CustomParamVector0.x"
+            ),
+        )
+
+        wrong_values = (0.0, 2.0, 0.0, 0.0)
+        correct_values = (0.73, 0.73, 0.73, 1.0)
+
+        material_blob = (
+            struct.pack("<I", UNIFORM_MARKER | 1)
+            + b"\x00" * 36
+            + struct.pack("<4f", *wrong_values)
+            + struct.pack("<I", UNIFORM_MARKER | 2)
+            + b"\x00" * 36
+            + struct.pack("<4f", *correct_values)
+        )
+
+        resolved = apply_material_uniform_overrides(material_blob, uniforms, bindings, parameter_index=2)
+
+        self.assertAlmostEqual(resolved[0].values[0], 0.73, places=5)
 
 if __name__ == "__main__":
     unittest.main()
