@@ -27,7 +27,7 @@ UID,Name,Category,Source,Confidence
 000000156B734225,Tachanka Default Head,operator-headgear,manual-verified,80
 000000233E8D069D,Alibi Default Head Mask Up,operator-headgear,manual-verified,90
 00000030F8318C49,Nomad Default Head,operator-headgear,manual-verified,90
-0000003F3D73CBD5,Capitao Default Head,operator-headgear,manual-verified,80
+0000003F3D73CBD5,Capitao Cosmetic Headgear Variant,operator-headgear,manual-rejected-default,100
 00000041C0A58AB6,Kaid Default Head,operator-headgear,manual-verified,90
 000000156B735272,Ela Default Body,operator-body,manual-verified,90
 000000156B735344,Sledge Default Body,operator-body,manual-verified,90
