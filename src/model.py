@@ -350,24 +350,22 @@ def resolve_static_face_bindings(bindings: Mapping[int, MeshBinding]) -> dict[in
     host_matrices = _default_joint_node_matrices(host)
     face_matrices = list(_default_joint_node_matrices(shared))
 
-    for face_bone, host_bone in (FACE_LEFT_EYE, HOST_LEFT_EYE), (FACE_RIGHT_EYE, HOST_RIGHT_EYE):
-        face_index = shared.bone_ids.index(face_bone)
-        host_index = host.bone_ids.index(host_bone)
-
-        face_matrices[face_index] = host_matrices[host_index]
-
     pose_by_bone = {
         transform.bone_id: transform
         for transform in host.pose_transforms
     }
 
     root_index = host.bone_ids.index(HOST_HEAD_ROOT)
+    root_matrix = host_matrices[root_index]
+
+    for face_bone in FACE_LEFT_EYE, FACE_RIGHT_EYE:
+        face_index = shared.bone_ids.index(face_bone)
+
+        face_matrices[face_index] = _gltf_multiply(root_matrix, _pose_to_gltf_matrix(pose_by_bone[face_bone]))
+
     upper_mouth_index = shared.bone_ids.index(FACE_UPPER_MOUTH)
 
-    upper_mouth_target = _gltf_multiply(
-        host_matrices[root_index],
-        _pose_to_gltf_matrix(pose_by_bone[FACE_UPPER_MOUTH])
-    )
+    upper_mouth_target = _gltf_multiply(root_matrix, _pose_to_gltf_matrix(pose_by_bone[FACE_UPPER_MOUTH]))
 
     upper_mouth_matrix = face_matrices[upper_mouth_index]
 

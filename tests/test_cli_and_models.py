@@ -605,8 +605,8 @@ class ModelDiscoveryTests(unittest.TestCase):
                 for matrix in corrected.joint_node_matrices
             ),
             (
-                (-1.0, 0.0, 0.0),
-                (1.0, 0.0, 0.0),
+                (0.0, 0.0, 0.0),
+                (0.0, 0.0, 0.0),
                 (0.0, 0.0, 1.0),
                 (0.0, 0.0, 0.0),
             ),
