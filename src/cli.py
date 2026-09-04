@@ -16,6 +16,7 @@ from src.database import (
     load_asset_names,
     search_asset_names
 )
+from src.operator_registry import read_operator_registry
 from src.depgraph import load_depgraph
 from src.extractor import extract_raw_archive
 from src.index import (
@@ -524,6 +525,45 @@ def command_operators(args: argparse.Namespace) -> int:
     if game_dir is None:
         raise ValueError("operators requires GAME_DIR in config.py")
 
+    if getattr(args, "registry", False):
+        if args.defaults or args.previews:
+            raise ValueError("--registry cannot be combined with --defaults or --previews")
+
+        if args.limit < 0:
+            raise ValueError("--limit cannot be negative")
+
+        operators = read_operator_registry(game_dir / "datapc64.forge")
+        selected = operators[:args.limit] if args.limit else operators
+        references = []
+
+        for operator in operators:
+            for part in (operator.head, operator.body):
+                for group in part.model_groups:
+                    references.extend(group)
+
+        for operator in selected:
+            print(f"{operator.name} [{operator.uid:016X}]")
+            print(
+                f"  Source: container={operator.container_offset} "
+                f"payload={operator.payload_offset}"
+            )
+            for label, part in (("Head", operator.head), ("Body", operator.body)):
+                print(
+                    f"  {label}: item={part.item_uid:016X} "
+                    f"appearance={part.appearance_uid:016X}"
+                )
+                for index, group in enumerate(part.model_groups):
+                    if group:
+                        print(
+                            f"    models[{index}]: " + ", ".join(f"{uid:016X}" for uid in group)
+                        )
+
+        print(f"Registry operators: {len(operators)}")
+        print(f"Displayed: {len(selected)}")
+        print(f"Model references: {len(references)}")
+        print(f"Unique referenced assets: {len(set(references))}")
+        return 0
+
     depgraph_paths = tuple(sorted(game_dir.glob("*.depgraphbin")))
 
     if not depgraph_paths:
@@ -727,6 +767,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     operators = commands.add_parser("operators", help="list operator model candidates")
     operators.add_argument("-d", "--database", default="output/r6-assets.sqlite", help="SQLite database path")
+    operators.add_argument("--registry", action="store_true", help="read default equipment directly from datapc64.forge")
     operators.add_argument("--defaults", action="store_true", help="list default-labeled model parents")
     operators.add_argument("--limit", type=int, default=0, help="maximum candidates to display, 0 displays all")
     operators.add_argument("--max-parents", type=int, default=20, help="ignore generic evidence referenced by more than this many parents")

@@ -6,6 +6,7 @@ A Python toolkit for extracting Rainbow Six Siege `.forge` archives and exportin
 
 - Scimitar archive scanning, Oodle Kraken decompression and resumable raw extraction
 - Persistent SQLite indexing and human-readable UID catalogs
+- Default operator equipment discovery from the inspected Forge registry layout
 - Cross-bundle geometry, material and texture resolution
 - BC1, BC3, BC4 and BC7 textures, including BC5 normal reconstruction
 - LOD0 meshes with UVs, normals, tangents and material islands
@@ -20,7 +21,7 @@ A Python toolkit for extracting Rainbow Six Siege `.forge` archives and exportin
 - Streamed textures and packed PBR channels are not reconstructed
 - Preview rendering reconstructs packed metalness/glossiness, detail normals and basic eye color. Layered masks, cavity and eye parallax remain metadata only
 - Skeleton hierarchy and animations are not supported
-- Human-readable names depend on imported catalogs
+- General asset names depend on imported catalogs, operator registry discovery resolves names separately
 
 ## Setup
 
@@ -65,6 +66,23 @@ py -3 -B main.py model <mesh.forge> --uid <modelUID> -o output/model
 Use `--all` with `scan`, `extract` or `index` to process every Forge archive under `GAME_DIR`. Run any command with `-h` for additional options.
 
 `search` reports asset locations, dependency parents and ready-to-run export commands when geometry is available.
+
+### Default operator registry
+
+Read default head/body equipment directly from `datapc64.forge`:
+
+```powershell
+py -3 -B main.py operators --registry
+```
+
+Use `--limit 3` for a shorter display. This command requires `GAME_DIR` and Oodle but no asset database or imported catalog. It prints equipment UIDs, appearance UIDs, model-reference groups and source offsets without writing files.
+
+Validated against the inspected installation: 78 operators, 241 model references and 238 unique referenced assets. Repeated references across groups are preserved.
+
+The reader supports the currently inspected registry layout and uses fixed layout offsets. Game updates may require adjustments. Model-group roles and four additional packages remain partly unresolved; registry discovery does not establish complete Blender appearance fidelity.
+
+`--registry` cannot be combined with `--defaults` or `--previews`.
+
 
 ### Operator review
 List default-labeled model parents for review:
