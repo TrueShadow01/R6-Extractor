@@ -293,7 +293,7 @@ class MainWindow(QMainWindow):
 
         if exit_status != QProcess.ExitStatus.NormalExit or exit_code != 0:
             self.finish_export(False, f"Exporter failed (exit {exit_code}), see log.")
-        elif self.export_expected_files.is_file():
+        elif not self.export_expected_files.is_file():
             self.finish_export(False, "Exporter finished without the expected glTF.")
         elif self.export_jobs:
             self.start_export_part()
