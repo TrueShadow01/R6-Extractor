@@ -18,8 +18,9 @@ A Python toolkit for extracting Rainbow Six Siege `.forge` archives and exportin
 
 - Model export requires a known UID and access to the relevant archives
 - Only LOD0 glTF is exported, GLB is unavailable
-- Streamed textures and packed PBR channels are not reconstructed
-- Preview rendering reconstructs packed metalness/glossiness, detail normals and basic eye color. Layered masks, cavity and eye parallax remain metadata only
+- Streamed texture reconstruction remains incomplete. Packed metalness/glossiness is applied by the Blender preview helper, not ordinary glTF import
+- Eye previews use recovered iris/sclera colors and glossiness with an approximate iris mask. Caveira's eye appearance and neutral gaze have been visually validated in Blender 4.5. Other operators remain unverified
+- Layered clothing tint masks, cavity, exact eye parallax and limbus shading remain unresolved
 - Skeleton hierarchy and animations are not supported
 - General asset names depend on imported catalogs, operator registry discovery resolves names separately
 
@@ -83,6 +84,28 @@ The reader supports the currently inspected registry layout and uses fixed layou
 
 `--registry` cannot be combined with `--defaults` or `--previews`.
 
+### Blender eye preview
+
+Export the head again after updating the eye material parser, then import it into a fresh Blender 4.5 scene. Ordinary glTF import does not apply the Siege preview shader.
+
+Run this in Blender's Python Console, adjusting the repository and model paths:
+
+```python
+import runpy
+from pathlib import Path
+
+siege = runpy.run_path(
+    r"<Repo-Path>\R6\blender_preview.py",
+    run_name="siege_material_tools",
+)
+siege["apply_siege_materials"](
+    Path(r"<Repo-Path>\R6\output\caveira-registry\head\000000156B734076.gltf")
+)
+```
+
+Apply the helper once to a fresh, single-model import. Head and body exports reuse material names, so combined-scene material matching is not yet reliable.
+
+Shared facial geometry uses operator-specific eye positions with bind orientations for a static neutral gaze. This does not reproduce runtime eye animation.
 
 ### Operator review
 List default-labeled model parents for review:

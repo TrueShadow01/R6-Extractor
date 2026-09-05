@@ -361,7 +361,13 @@ def resolve_static_face_bindings(bindings: Mapping[int, MeshBinding]) -> dict[in
     for face_bone in FACE_LEFT_EYE, FACE_RIGHT_EYE:
         face_index = shared.bone_ids.index(face_bone)
 
-        face_matrices[face_index] = _gltf_multiply(root_matrix, _pose_to_gltf_matrix(pose_by_bone[face_bone]))
+        target = _gltf_multiply(root_matrix, _pose_to_gltf_matrix(pose_by_bone[face_bone]))
+
+        # Static neutral gaze: retain the shader eye's bind orientation
+        # while placing its pivot at the operator-specific position
+        neutral = list(face_matrices[face_index])
+        neutral[12:15] = target[12:15]
+        face_matrices[face_index] = tuple(neutral)
 
     upper_mouth_index = shared.bone_ids.index(FACE_UPPER_MOUTH)
 

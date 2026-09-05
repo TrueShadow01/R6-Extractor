@@ -126,48 +126,89 @@ def apply_siege_materials(gltf_path: Path) -> None:
                     links.new(roughness.outputs["Value"], roughness_input)
 
         if extras.get("siegeShaderUid") == "000000557005948D":
+            if principled is None:
+                continue
+
+            base = principled.inputs["Base Color"]
+            if not base.is_linked or base.links[0].from_node.type != "TEX_IMAGE":
+                continue # Apply once to a fresh glTF import
+
+            texture = base.links[0].from_node
             uniforms = extras.get("siegeShaderUniforms", {})
-
-            sclera_values = uniforms.get(
-                "ScleraColorWhite",
-                (0.73, 0.73, 0.73, 1.0)
+            required = (
+                "ScleraColorWhite", "ScleraColorBlack",
+                "IrisColorWhite", "IrisColorBlack", "IrisUVRadius",
+                "IrisGlossiness", "ScleraGlossiness",
             )
+            if any(name not in uniforms for name in required):
+                raise ValueError("Re-export the head with eye property overrides")
 
-            if principled is not None:
-                base_input = principled.inputs.get("Base Color")
+            radius = float(uniforms["IrisUVRadius"][0])
+            if not 0.0 < radius < 0.5:
+                raise ValueError("Eye radius is still a placeholder, re-export the head")
 
-                if base_input is not None and base_input.is_linked:
-                    base_link = base_input.links[0]
-                    base_texture = base_link.from_node
-                    alpha_output = base_texture.outputs.get("Alpha")
+            # Eyelashes share this image, isolate the eye data color space
+            texture.image = texture.image.copy()
+            texture.image.colorspace_settings.name = "Non-Color"
+            links.remove(base.links[0])
 
-                    if base_texture.type == "TEX_IMAGE" and alpha_output is not None:
-                        links.remove(base_link)
+            def color(name):
+                return tuple(
+                    v / 12.92 if v <= 0.04045
+                    else ((v + 0.055) / 1.055) ** 2.4
+                    for v in uniforms[name][:3]
+                ) + (1.0,)
 
-                        eye_mix = nodes.new("ShaderNodeMixRGB")
-                        eye_mix.name = "Siege Eye Color"
-                        eye_mix.label = "Siege Eye Color"
-                        eye_mix.blend_type = "MIX"
-                        eye_mix.inputs[0].default_value = 1.0
-                        eye_mix.inputs[1].default_value = (
-                            0.0,
-                            0.0,
-                            0.0,
-                            1.0
-                        )
-                        eye_mix.inputs[2].default_value = (
-                            float(sclera_values[0]),
-                            float(sclera_values[1]),
-                            float(sclera_values[2]),
-                            1.0
-                        )
-                        eye_mix.location = (
-                            principled.location.x - 300,
-                            principled.location.y
-                        )
+            def mix(label, factor, dark, light):
+                node = nodes.new("ShaderNodeMixRGB")
+                node.label = label
+                node.inputs[1].default_value = dark
+                node.inputs[2].default_value = light
+                links.new(factor, node.inputs[0])
+                return node
 
-                        links.new(alpha_output, eye_mix.inputs[0])
-                        links.new(eye_mix.outputs["Color"], base_input)
+            channels = nodes.new("ShaderNodeSeparateColor")
+            links.new(texture.outputs["Color"], channels.inputs["Color"])
+
+            sclera = mix("Sclera tint", channels.outputs["Green"], color("ScleraColorBlack"), color("ScleraColorWhite"))
+            iris = mix("Iris tint", channels.outputs["Red"], color("IrisColorBlack"), color("IrisColorWhite"))
+            pupil = mix("Pupil / iris detail", texture.outputs["Alpha"], (0, 0, 0, 1), (1, 1, 1, 1),)
+            links.new(iris.outputs[0], pupil.inputs[2])
+
+            # Preview mapping for the current eye atlas's right half
+            uv = nodes.new("ShaderNodeTexCoord")
+            offset = nodes.new("ShaderNodeVectorMath")
+            offset.operation = "SUBTRACT"
+            offset.inputs[1].default_value = (0.75, 0.5, 0.0)
+            links.new(uv.outputs["UV"], offset.inputs[0])
+
+            scale = nodes.new("ShaderNodeVectorMath")
+            scale.operation = "MULTIPLY"
+            scale.inputs[1].default_value = (2.0, 1.0, 0.0)
+            links.new(offset.outputs["Vector"], scale.inputs[0])
+
+            distance = nodes.new("ShaderNodeVectorMath")
+            distance.operation = "LENGTH"
+            links.new(scale.outputs["Vector"], distance.inputs[0])
+
+            mask = nodes.new("ShaderNodeMapRange")
+            mask.clamp = True
+            mask.inputs["From Min"].default_value = radius - 0.01
+            mask.inputs["From Max"].default_value = radius
+            mask.inputs["To Min"].default_value = 1.0
+            mask.inputs["To Max"].default_value = 0.0
+            links.new(distance.outputs["Value"], mask.inputs["Value"])
+
+            combined = mix("Eye surface", mask.outputs["Result"], (0, 0, 0, 1), (1, 1, 1, 1),)
+            links.new(sclera.outputs[0], combined.inputs[1])
+            links.new(pupil.outputs[0], combined.inputs[2])
+            links.new(combined.outputs[0], base)
+
+            sclera_roughness = 1.0 - float(uniforms["ScleraGlossiness"][0])
+            iris_roughness = 1.0 - float(uniforms["IrisGlossiness"][0])
+            rough = mix("Eye roughness", mask.outputs["Result"], (sclera_roughness,) * 3 + (1.0,), (iris_roughness,) * 3 + (1.0,),)
+            links.new(rough.outputs[0], principled.inputs["Roughness"])
+            principled.inputs["Metallic"].default_value = 0.0
 
 def render_preview(gltf_path: Path, output_path: Path) -> None:
     bpy.ops.wm.read_factory_settings(use_empty=True)

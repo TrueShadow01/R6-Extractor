@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 
 import struct
+import math
 from typing import Collection, Iterable
 
 from src.metadata import (
@@ -498,6 +499,54 @@ def apply_material_uniform_overrides(material_blob: bytes, uniforms: Iterable[Sh
 
     return tuple(resolved)
 
+def apply_eye_property_overrides(material_blob, uniforms):
+    """Read the verified 12-property layout used by shader 557005948D"""
+
+    fields = (
+        (0x6507D3F2D1C4E883, 28, None),
+        (0x6507D3F230F7E9F3, 28, None),
+        (0x4F6D05D9, 13, "ScleraColorWhite"),
+        (0xABA880A5, 13, "ScleraColorBlack"),
+        (0x53851558, 13, "IrisColorWhite"),
+        (0xB7409024, 13, "IrisColorBlack"),
+        (0x5EB4415B, 10, "IrisGlossiness"),
+        (0x425C51DA, 10, "ScleraGlossiness"),
+        (0x2FB94CE9, 10, "DepthScale"),
+        (0x90F42B7A, 10, "IrisUVRadius"),
+        (0x1106D434, 10, "LimbusDarkScale"),
+        (0x36BA7687, 10, "LimbusPow"),
+    )
+    prefix = struct.pack("<IQHIH", 12, fields[0][0], 0, 28, 0)
+    start = material_blob.find(prefix)
+    if start < 0:
+        return tuple(uniforms)
+
+    cursor = start + 4
+    values = {}
+
+    for key, kind, name in fields:
+        size = {28: 8, 13: 16, 10: 4}[kind]
+
+        if cursor + 16 + size > len(material_blob):
+            raise ValueError("Truncated eye property table")
+
+        header = struct.unpack_from("<QHIH", material_blob, cursor)
+        if header != (key, 0, kind, 0):
+            raise ValueError("Unexpected eye property layout")
+
+        cursor += 16
+
+        if name is not None:
+            value = struct.unpack_from("<4f" if kind == 13 else "<f", material_blob, cursor)
+            if not all(math.isfinite(component) for component in value):
+                raise ValueError("Non-finite eye property")
+
+            values[name] = value
+
+        cursor += size
+
+    return tuple(replace(uniform, values=values.get(uniform.name, uniform.values)) for uniform in uniforms)
+
 def _material_selector_source(material_blob: bytes, spec_uid: int, bindings_by_spec: dict[int, str], bindings_by_index: dict[int, str]) -> tuple[str, str | None]:
     position = material_blob.find(struct.pack("<Q", spec_uid))
 
@@ -658,6 +707,9 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
             material_parameter = UNTEXTURED_COLOR_PARAMETERS.get(shader_uid)
 
         material_uniforms = apply_material_uniform_overrides(material_blob, default_uniforms, material_bindings, parameter_index=material_parameter)
+
+        if shader_uid == 0x000000557005948D:
+            material_uniforms = apply_eye_property_overrides(material_blob, material_uniforms)
 
         resolved_materials[material_uid] = MaterialTextureSet(
             diffuse_uids=roles.get(DIFFUSE_ROLE, ()),
