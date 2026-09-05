@@ -19,8 +19,9 @@ A Python toolkit for extracting Rainbow Six Siege `.forge` archives and exportin
 - Model export requires a known UID and access to the relevant archives
 - Only LOD0 glTF is exported, GLB is unavailable
 - Streamed texture reconstruction remains incomplete. Packed metalness/glossiness is applied by the Blender preview helper, not ordinary glTF import
-- Eye previews use recovered iris/sclera colors and glossiness with an approximate iris mask. Caveira's eye appearance and neutral gaze have been visually validated in Blender 4.5. Other operators remain unverified
-- Clothing previews apply recovered RGB-mask colors while preserving white and black mask regions. Caveira's body tint has been visually checked in Blender 4.5. Exact game compositing and other operators remain unverified
+- Eye and RGB-mask clothing previews have been visually checked on Caveira and Ace in Blender 4.5. Exact game shading and other operators remain unverified
+- Ace's headlamp lens uses a material-specific alpha-blending compatibility rule, visually confirmed in Blender. General glass decoding, physical refraction and lamp illumination remain unresolved
+- Exported material metadata preserves source material UIDs as `siegeMaterialUid` for tracing assignments and scoped compatibility rules
 - Detail-layer shading, cavity, exact eye parallax and limbus shading remain incomplete
 - Static attachment placement supports the inspected single-bone layout using embedded global poses. Caveira's accessory placement has been visually confirmed; animated parenting and other attachment layouts remain unverified
 - Skeleton hierarchy and animations are not supported

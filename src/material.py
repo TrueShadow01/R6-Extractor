@@ -82,6 +82,7 @@ class MaterialTextureSet:
     shader_uid: int | None = None
     shader_bindings: tuple[ShaderBinding, ...] = ()
     shader_uniforms: tuple[ShaderUniform, ...] = ()
+    material_uid: int | None = None
 
 @dataclass(frozen=True)
 class ShaderUniform:
@@ -769,6 +770,7 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
             shader_uid=shader_uid,
             shader_bindings=material_bindings,
             shader_uniforms=material_uniforms,
+            material_uid=material_uid,
         )
 
         if selectors:

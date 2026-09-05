@@ -123,6 +123,7 @@ class MaterialTextures:
     shader_textures: tuple[tuple[str, str], ...] = ()
     shader_uid: int | None = None
     shader_uniforms: tuple[tuple[str, tuple[float, ...]], ...] = ()
+    material_uid: int | None = None
 
 @dataclass
 class BinaryBuffer: 
@@ -724,7 +725,17 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
                 "scale": 1.0
             }
 
+        if slot_textures.material_uid == 0x00000001134CB4E0 and slot_textures.shader_uid == 0x000000003BD13B9E and slot_textures.diffuse == "0000000C9C9CCB4F.png":
+            # Ace headlamp lens: use its low, nonzero texture alpha.
+            # material-specific compatibility rule
+            material["alphaMode"] = "BLEND"
+            material.pop("alphaCutoff", None)
+            pbr["baseColorFactor"][3] = 1.0
+
         extras = {}
+
+        if slot_textures.material_uid is not None:
+            extras["siegeMaterialUid"] = f"{slot_textures.material_uid:016X}"
 
         if slot_textures.shader_uid is not None:
             extras["siegeShaderUid"] = f"{slot_textures.shader_uid:016X}"

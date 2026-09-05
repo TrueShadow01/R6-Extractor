@@ -713,6 +713,7 @@ def resolve_export_material_textures(texture_sets: Iterable[MaterialTextureSet],
             detail_normals=tuple(detail_normals),
             shader_textures=tuple(shader_textures),
             shader_uid=texture_set.shader_uid,
+            material_uid=texture_set.material_uid,
             shader_uniforms=tuple(
                 (uniform.name, uniform.values)
                 for uniform in texture_set.shader_uniforms
