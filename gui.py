@@ -56,6 +56,8 @@ class MainWindow(QMainWindow):
         self.load.clicked.connect(self.load_registry)
         self.export_button = QPushButton("Export selected operator")
         self.export_button.clicked.connect(self.export_selected)
+        self.install_button = QPushButton("Install Blender 4.5 add-on")
+        self.install_button.clicked.connect(self.install_blender_addon)
 
         toolbar = QHBoxLayout()
         toolbar.addWidget(QLabel("Game Folder"))
@@ -63,6 +65,7 @@ class MainWindow(QMainWindow):
         toolbar.addWidget(self.browse)
         toolbar.addWidget(self.load)
         toolbar.addWidget(self.export_button)
+        toolbar.addWidget(self.install_button)
         layout.addLayout(toolbar)
 
         self.search = QLineEdit()
@@ -122,6 +125,7 @@ class MainWindow(QMainWindow):
         self.browse.setEnabled(False)
         self.game_path.setEnabled(False)
         self.export_button.setEnabled(False)
+        self.install_button.setEnabled(False)
         self.statusBar().showMessage("Reading operator registry...")
         self.log.appendPlainText(f"Reading {archive}")
 
@@ -153,6 +157,7 @@ class MainWindow(QMainWindow):
         self.browse.setEnabled(True)
         self.game_path.setEnabled(True)
         self.export_button.setEnabled(True)
+        self.install_button.setEnabled(True)
 
         if self.close_requested:
             self.close()
@@ -258,7 +263,7 @@ class MainWindow(QMainWindow):
         self.start_export_part()
 
     def set_export_busy(self, busy):
-        for widget in (self.export_button, self.load, self.browse, self.game_path, self.operators, self.search):
+        for widget in (self.export_button, self.install_button, self.load, self.browse, self.game_path, self.operators, self.search):
             widget.setEnabled(not busy)
 
     def start_export_part(self):
@@ -322,6 +327,53 @@ class MainWindow(QMainWindow):
 
         if self.close_requested:
             self.close()
+
+    def install_blender_addon(self):
+        if self.worker is not None or self.export_process is not None:
+            return
+
+        blender = Path(r"C:\Program Files\Blender Foundation\Blender 4.5\blender.exe")
+        if not blender.is_file():
+            filename, _ = QFileDialog.getOpenFileName(self, "Choose Blender 4.5", "", "Blender executable (blender.exe)")
+            if not filename:
+                return
+            blender = Path(filename)
+
+        script = Path(__file__).resolve().parent / "install_blender_addon.py"
+        if not script.is_file():
+            self.report_error(f"Installer not found: {script}")
+            return
+
+        self.export_jobs = []
+        self.export_decoder = codecs.getincrementaldecoder("utf-8")("replace")
+        self.export_process = QProcess(self)
+        self.export_process.setWorkingDirectory(str(script.parent))
+        self.export_process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
+        self.export_process.readyReadStandardOutput.connect(self.read_export_output)
+        self.export_process.finished.connect(self.blender_install_finished)
+        self.export_process.errorOccurred.connect(self.export_process_error)
+
+        self.set_export_busy(True)
+        self.log.appendPlainText(f"Checking and installing into {blender}")
+        self.statusBar().showMessage("Installing Blender 4.5 add-on...")
+        self.export_process.start(
+            sys.executable,
+            ["-u", "-B", "-X", "utf8", str(script), str(blender)]
+        )
+
+    def blender_install_finished(self, exit_code, exit_status):
+        if self.export_process is None:
+            return
+
+        self.read_export_output()
+        tail = self.export_decoder.decode(b"", final=True)
+        if tail:
+            self.log.moveCursor(QTextCursor.MoveOperation.End)
+            self.log.insertPlainText(tail)
+
+        success = exit_status == QProcess.ExitStatus.NormalExit and exit_code == 0
+        message = "R6 add-on installed and enabled in Blender 4.5" if success else f"Blender installation failed (exit {exit_code}), see log"
+        self.finish_export(success, message)
 
     def closeEvent(self, event):
         if self.worker is not None or self.export_process is not None:

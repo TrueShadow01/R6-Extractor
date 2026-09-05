@@ -12,7 +12,7 @@ bl_info = {
     "name": "Rainbow Six Siege Operator Import",
     "author": "TrueShadow01",
     "version": (0, 1, 0),
-    "blender": (4, 5, 5),
+    "blender": (4, 5, 0),
     "location": "File > Import > Rainbow Six Siege Operator",
     "description": "Import exported head/body models with Siege Materials",
     "category": "Import-Export",
