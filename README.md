@@ -22,7 +22,7 @@ A Python toolkit for extracting Rainbow Six Siege `.forge` archives and exportin
 - Eye previews use recovered iris/sclera colors and glossiness with an approximate iris mask. Caveira's eye appearance and neutral gaze have been visually validated in Blender 4.5. Other operators remain unverified
 - Clothing previews apply recovered RGB-mask colors while preserving white and black mask regions. Caveira's body tint has been visually checked in Blender 4.5. Exact game compositing and other operators remain unverified
 - Detail-layer shading, cavity, exact eye parallax and limbus shading remain incomplete
-- Some auxiliary geometry still requires attachment reconstruction.
+Static attachment placement uses the embedded skeleton's global position and rotation. This supports the inspected single-bone layout and does not reconstruct animated parenting or general skeleton hierarchy.
 - Skeleton hierarchy and animations are not supported
 - General asset names depend on imported catalogs, operator registry discovery resolves names separately
 

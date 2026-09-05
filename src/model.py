@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import struct
+import math
 from collections import deque
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -317,6 +318,82 @@ def _default_joint_node_matrices(binding: MeshBinding) -> tuple[tuple[float, ...
         invert_gltf_matrix(siege_to_gltf_matrix(inverse_bind_matrix))
         for inverse_bind_matrix in binding.inverse_bind_matrices
     )
+
+def resolve_static_attachment_bindings(payload, bindings):
+    """Place single-bone attachments using their embedded global pose"""
+
+    resolved = dict(bindings)
+    skeleton_type = 0x299DF12C
+
+    for entry in scan_nested_entries(payload):
+        if entry.metadata.file_type != CURRENT_MESH:
+            continue
+
+        blob = payload[entry.data_offset:entry.end]
+        if len(blob) < 109 or struct.unpack_from("<I", blob, 8)[0] != 1:
+            continue
+
+        geometry_uid = struct.unpack_from("<Q", blob, 101)[0]
+        binding = bindings.get(geometry_uid)
+        if binding is None or len(binding.bone_ids) != 1:
+            continue
+        if binding.joint_node_matrices:
+            continue
+
+        skeleton_starts = []
+        for offset in range(len(blob) - 24):
+            length, container = struct.unpack_from("<HH", blob, offset)
+            data_start = offset + 20 + length
+            if container != 2 or length > 4096 or data_start + 4 > len(blob):
+                continue
+
+            if struct.unpack_from("<I", blob, offset + 8 + length)[0] == skeleton_type == struct.unpack_from("<I", blob, data_start)[0]:
+                skeleton_starts.append(data_start)
+
+        if not skeleton_starts:
+            continue
+        if len(skeleton_starts) != 1:
+            raise ValueError("Ambiguous attachment skeleton")
+
+        bone_id = binding.bone_ids[0]
+        signature = struct.pack("<II", 0x41899311, bone_id)
+        cursor = skeleton_starts[0] + 4
+        poses = []
+
+        while True:
+            offset = blob.find(signature, cursor)
+            if offset < 0:
+                break
+
+            cursor = offset + 1
+
+            if offset + 94 > len(blob):
+                continue
+            if blob[offset + 8] != 2 or blob[offset + 17] != 0:
+                continue
+
+            marker, zero, kind = struct.unpack_from("<III", blob, offset + 18)
+            if (marker & 0xFFFF0000) != 0xFBF80000 or zero or kind != 0x18471F43:
+                continue
+
+            values = struct.unpack_from("<16f", blob, offset + 30)
+            if not all(math.isfinite(v) for v in values):
+                raise ValueError("Non-finite attachment pose")
+            if values[3] != 0.0 or values[11] != 0.0:
+                raise ValueError("Unexpected attachment pose layout")
+
+            rotation = values[4:8]
+            if abs(sum(v * v for v in rotation) - 1.0) > 0.001:
+                raise ValueError("Invalid attachment quaternion")
+
+            poses.append(BoneTransform(bone_id, values[:3], rotation))
+
+        if len(poses) > 1:
+            raise ValueError("Ambiguous attachment bone pose")
+
+        if poses:
+            resolved[geometry_uid] = replace(binding, joint_node_matrices=(_pose_to_gltf_matrix(poses[0]),))
+    return resolved
 
 def resolve_static_face_bindings(bindings: Mapping[int, MeshBinding]) -> dict[int, MeshBinding]:
     """Apply the package's neutral pose to its shared facial geometry"""
@@ -661,7 +738,7 @@ def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: A
         else None
     )
     mesh_bindings = (
-        resolve_static_face_bindings(read_mesh_bindings(model_payload))
+        resolve_static_face_bindings(resolve_static_attachment_bindings(model_payload, read_mesh_bindings(model_payload)))
         if model_payload is not None
         else {}
     )
