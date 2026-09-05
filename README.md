@@ -88,24 +88,26 @@ The reader supports the currently inspected registry layout and uses fixed layou
 
 ### Blender material preview
 
-Re-export models after updating the material parser, then import them into a fresh Blender 4.5 scene. Ordinary glTF import does not apply the Siege eye and clothing preview shaders. Run the helper below separately for each imported model's glTF path.
+Re-export models after updating the exporter, then use `import_siege_model` in Blender 4.5 to import geometry and apply the Siege preview materials together. Do not manually import the same files first. Ordinary glTF import does not run this helper.
 
-Run this in Blender's Python Console, adjusting the repository and model paths:
+Run this in Blender's Python Console, adjusting the paths:
 
 ```python
 import runpy
-from pathlib import Path
 
 siege = runpy.run_path(
     r"<Repo-Path>\R6\blender_preview.py",
     run_name="siege_material_tools",
 )
-siege["apply_siege_materials"](
-    Path(r"<Repo-Path>\R6\output\caveira-registry\head\000000156B734076.gltf")
+siege["import_siege_model"](
+    r"<Repo-Path>\R6\output\caveira-registry\body\000000156B7351CE.gltf"
+)
+siege["import_siege_model"](
+    r"<Repo-Path>\R6\output\caveira-registry\head\000000156B734076.gltf"
 )
 ```
 
-Material names include their model UID, preventing collisions between different head/body exports. Apply the helper once per model after a fresh import. Repeated imports of the same model can still introduce Blender name suffixes and prevent exact-name matching.
+The combined importer applies materials only to the new import and recognizes Blender's numeric material-name suffixes. Known bone names are recovered from CRC32 identifiers. Unknown bones retain hexadecimal labels and original IDs are preserved in node metadata. Readable names do not establish skeleton parenting..
 
 Shared facial geometry uses operator-specific eye positions with bind orientations for a static neutral gaze. This does not reproduce runtime eye animation.
 

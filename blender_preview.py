@@ -139,7 +139,7 @@ def apply_clothing_preview(material, spec, document, gltf_path):
 
     links.new(output, base)
 
-def apply_siege_materials(gltf_path: Path) -> None:
+def apply_siege_materials(gltf_path: Path, *, materials=None) -> None:
     document = json.loads(gltf_path.read_text(encoding="utf-8"))
 
     extras_by_material = {
@@ -148,8 +148,17 @@ def apply_siege_materials(gltf_path: Path) -> None:
         if "name" in material
     }
 
-    for material in bpy.data.materials:
-        extras = extras_by_material.get(material.name, {})
+    targets = tuple(bpy.data.materials) if materials is None else tuple(materials)
+    for material in targets:
+        material_name = material.name
+        if material_name not in extras_by_material:
+            base_name, separator, suffix = material_name.rpartition(".")
+            if separator and suffix.isdigit() and base_name in extras_by_material:
+                material_name = base_name
+            else:
+                continue
+
+        extras = extras_by_material[material_name]
 
         if not material.use_nodes:
             continue
@@ -213,7 +222,7 @@ def apply_siege_materials(gltf_path: Path) -> None:
         if extras.get("siegeShaderUid") == "0000001397A32F38":
             spec = next(
                 item for item in document["materials"]
-                if item["name"] == material.name
+                if item["name"] == material_name
             )
             apply_clothing_preview(material, spec, document, gltf_path)
 
@@ -301,6 +310,28 @@ def apply_siege_materials(gltf_path: Path) -> None:
             rough = mix("Eye roughness", mask.outputs["Result"], (sclera_roughness,) * 3 + (1.0,), (iris_roughness,) * 3 + (1.0,),)
             links.new(rough.outputs[0], principled.inputs["Roughness"])
             principled.inputs["Metallic"].default_value = 0.0
+
+def import_siege_model(gltf_path):
+    """Import a prepared glTF and apply its Siege preview materials"""
+
+    gltf_path = Path(gltf_path).expanduser().resolve()
+    if not gltf_path.is_file():
+        raise FileNotFoundError(gltf_path)
+
+    before = {
+        material.as_pointer()
+        for material in bpy.data.materials
+    }
+
+    result = bpy.ops.import_scene.gltf(filepath=str(gltf_path))
+    if "FINISHED" not in result:
+        raise RuntimeError(f"glTF import did not finish: {gltf_path}")
+
+    imported = tuple(
+        material for material in bpy.data.materials
+        if material.as_pointer() not in before
+    )
+    apply_siege_materials(gltf_path, materials=imported)
 
 def render_preview(gltf_path: Path, output_path: Path) -> None:
     bpy.ops.wm.read_factory_settings(use_empty=True)

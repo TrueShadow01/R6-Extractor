@@ -7,9 +7,38 @@ from PIL import Image
 import json
 import math
 import struct
+import zlib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Protocol, Sequence
+
+_BONE_NAME_CANDIDATES = (
+    ("Head", "Hips", "Spine", "Spine1", "Spine2")
+    + tuple(
+        side + part
+        for side in ("Left", "Right")
+        for part in (
+            "Arm", "ForeArm", "Hand", "Shoulder",
+            "UpLeg", "Leg", "Foot", "ToeBase",
+        )
+    )
+    + tuple(
+        side + "Hand" + finger + str(segment)
+        for side in ("Left", "Right")
+        for finger in ("Index", "Middle", "Pinky", "Ring", "Thumb")
+        for segment in (1, 2, 3)
+    )
+    + (
+        "LeftInHandIndex", "LeftInHandMiddle",
+        "LeftInHandPinky", "LeftInHandRing",
+        "RightInHandPinky", "RightInHandRing",
+    )
+)
+
+BONE_NAMES = {
+    zlib.crc32(name.encode("ascii")): name
+    for name in _BONE_NAME_CANDIDATES
+}
 
 ARRAY_BUFFER = 34962
 ELEMENT_ARRAY_BUFFER = 34963
@@ -539,7 +568,8 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
 
                 nodes.append(
                     {
-                        "name": f"{prefix}_join_{bone_index:03d}_{bone_id:08X}",
+                        "name": f"{prefix}_join_{bone_index:03d}_{BONE_NAMES.get(bone_id, f'{bone_id:08X}')}",
+                        "extras": {'siegeBoneId': f"{bone_id:08X}"},
                         "matrix": list(joint_node_matrix)
                     }
                 )
