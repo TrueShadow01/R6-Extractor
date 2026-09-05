@@ -54,6 +54,91 @@ def mesh_bounds(objects: list[bpy.types.Object]) -> tuple[Vector, Vector]:
 
     return minimum, maximum
 
+def apply_clothing_preview(material, spec, document, gltf_path):
+    extras = spec.get("extras", {})
+    mask_name = extras.get("siegeMaskTexture")
+    if not mask_name:
+        return
+
+    uniforms = extras.get("siegeShaderUniforms", {})
+    names = ("MaskRed_Color", "MaskGreen_Color", "MaskBlue_Color")
+    if any(name not in uniforms for name in names):
+        raise ValueError("Re-export this model with clothing color properties")
+
+    nodes = material.node_tree.nodes
+    links = material.node_tree.links
+    if nodes.get("Siege Clothing Preview"):
+        return
+
+    principled = next(
+        (node for node in nodes if node.type == "BSDF_PRINCIPLED"),
+        None,
+    )
+    if principled is None:
+        return
+
+    texture_index = spec["pbrMetallicRoughness"]["baseColorTexture"]["index"]
+    image_index = document["textures"][texture_index]["source"]
+    diffuse_name = document["images"][image_index]["uri"]
+
+    def image_node(filename, color_space):
+        image = bpy.data.images.load(str(gltf_path.parent / filename), check_existing=True).copy()
+        image.colorspace_settings.name = color_space
+        node = nodes.new("ShaderNodeTexImage")
+        node.image = image
+        node.label = filename
+        return node
+
+    def math_node(operation, first, second):
+        node = nodes.new("ShaderNodeMath")
+        node.operation = operation
+        for index, value in enumerate((first, second)):
+            if isinstance(value, (int, float)):
+                node.inputs[index].default_value = value
+            else:
+                links.new(value, node.inputs[index])
+        return node.outputs[0]
+
+    diffuse = image_node(diffuse_name, "sRGB")
+    mask = image_node(mask_name, "Non-Color")
+    channels = nodes.new("ShaderNodeSeparateColor")
+    links.new(mask.outputs["Color"], channels.inputs["Color"])
+    rgb = [channels.outputs[name] for name in ("Red", "Green", "Blue")]
+    inverse = [math_node("SUBTRACT", 1.0, channel) for channel in rgb]
+
+    output = diffuse.outputs["Color"]
+
+    for index, name in enumerate(names):
+        # Exclusive channel weights leave both white and black untinted
+        weight = math_node("MULTIPLY", rgb[index], inverse[(index + 1) % 3])
+        weight = math_node("MULTIPLY", weight, inverse[(index + 2) % 3])
+
+        color = tuple(
+            v / 12.92 if v <= 0.04045
+            else ((v + 0.055) / 1.055) ** 2.4
+            for v in uniforms[name][:3]
+        ) + (1.0,)
+
+        tinted = nodes.new("ShaderNodeMixRGB")
+        tinted.blend_type = "MULTIPLY"
+        tinted.inputs[0].default_value = 1.0
+        tinted.inputs[2].default_value = color
+        links.new(diffuse.outputs["Color"], tinted.inputs[1])
+
+        blend = nodes.new("ShaderNodeMixRGB")
+        blend.label = name
+        links.new(weight, blend.inputs[0])
+        links.new(output, blend.inputs[1])
+        links.new(tinted.outputs[0], blend.inputs[2])
+        output = blend.outputs[0]
+
+    blend.name = "Siege Clothing Preview"
+    base = principled.inputs["Base Color"]
+    for link in list(base.links):
+        links.remove(link)
+
+    links.new(output, base)
+
 def apply_siege_materials(gltf_path: Path) -> None:
     document = json.loads(gltf_path.read_text(encoding="utf-8"))
 
@@ -124,6 +209,13 @@ def apply_siege_materials(gltf_path: Path) -> None:
                         links.remove(roughness_input.links[0])
 
                     links.new(roughness.outputs["Value"], roughness_input)
+
+        if extras.get("siegeShaderUid") == "0000001397A32F38":
+            spec = next(
+                item for item in document["materials"]
+                if item["name"] == material.name
+            )
+            apply_clothing_preview(material, spec, document, gltf_path)
 
         if extras.get("siegeShaderUid") == "000000557005948D":
             if principled is None:

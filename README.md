@@ -20,7 +20,9 @@ A Python toolkit for extracting Rainbow Six Siege `.forge` archives and exportin
 - Only LOD0 glTF is exported, GLB is unavailable
 - Streamed texture reconstruction remains incomplete. Packed metalness/glossiness is applied by the Blender preview helper, not ordinary glTF import
 - Eye previews use recovered iris/sclera colors and glossiness with an approximate iris mask. Caveira's eye appearance and neutral gaze have been visually validated in Blender 4.5. Other operators remain unverified
-- Layered clothing tint masks, cavity, exact eye parallax and limbus shading remain unresolved
+- Clothing previews apply recovered RGB-mask colors while preserving white and black mask regions. Caveira's body tint has been visually checked in Blender 4.5. Exact game compositing and other operators remain unverified
+- Detail-layer shading, cavity, exact eye parallax and limbus shading remain incomplete
+- Some auxiliary geometry still requires attachment reconstruction.
 - Skeleton hierarchy and animations are not supported
 - General asset names depend on imported catalogs, operator registry discovery resolves names separately
 
@@ -84,9 +86,9 @@ The reader supports the currently inspected registry layout and uses fixed layou
 
 `--registry` cannot be combined with `--defaults` or `--previews`.
 
-### Blender eye preview
+### Blender material preview
 
-Export the head again after updating the eye material parser, then import it into a fresh Blender 4.5 scene. Ordinary glTF import does not apply the Siege preview shader.
+Re-export models after updating the material parser, then import them into a fresh Blender 4.5 scene. Ordinary glTF import does not apply the Siege eye and clothing preview shaders. Run the helper below separately for each imported model's glTF path.
 
 Run this in Blender's Python Console, adjusting the repository and model paths:
 
@@ -103,7 +105,7 @@ siege["apply_siege_materials"](
 )
 ```
 
-Apply the helper once to a fresh, single-model import. Head and body exports reuse material names, so combined-scene material matching is not yet reliable.
+Material names include their model UID, preventing collisions between different head/body exports. Apply the helper once per model after a fresh import. Repeated imports of the same model can still introduce Blender name suffixes and prevent exact-name matching.
 
 Shared facial geometry uses operator-specific eye positions with bind orientations for a static neutral gaze. This does not reproduce runtime eye animation.
 

@@ -499,6 +499,51 @@ def apply_material_uniform_overrides(material_blob: bytes, uniforms: Iterable[Sh
 
     return tuple(resolved)
 
+def read_clothing_preview_colors(material_blob):
+    """Read colors from the verified 28-property clothing layout"""
+
+    prefix = struct.pack("<IQHIH", 28, 0xB89D11A6, 0, 13, 0)
+    start = material_blob.find(prefix)
+    if start < 0:
+        return ()
+
+    kinds = (13, 28, 10, 10, 10, 10, 10, 28, 10) * 3 + (10,)
+    color_keys = (0xB89D11A6, 0xDA050C32, 0x5A5F42A7)
+    names = ("MaskRed_Color", "MaskGreen_Color", "MaskBlue_Color")
+    cursor = start + 4
+    result = []
+
+    for index, expected_kind in enumerate(kinds):
+        size = {13: 16, 28: 8, 10: 4}[expected_kind]
+        if cursor + 16 + size > len(material_blob):
+            raise ValueError("Truncated clothing property table")
+
+        key, zero1, kind, zero2 = struct.unpack_from("<QHIH", material_blob, cursor)
+        if zero1 or zero2 or kind != expected_kind:
+            raise ValueError("Unexpected clothing property layout")
+
+        cursor += 16
+
+        if kind == 13:
+            if key != color_keys[len(result)]:
+                raise ValueError("Unexpected clothing color key")
+
+            values = struct.unpack_from("<4f", material_blob, cursor)
+            if not all(math.isfinite(v) and 0.0 <= v <= 1.0 for v in values):
+                raise ValueError("Invalid clothing color")
+
+            result.append(ShaderUniform(
+                owner_uid=SOLID_COSMETIC_SHADER,
+                index=index,
+                name=names[len(result)],
+                uniform_type=1,
+                values=values,
+            ))
+
+        cursor += size
+
+    return tuple(result)
+
 def apply_eye_property_overrides(material_blob, uniforms):
     """Read the verified 12-property layout used by shader 557005948D"""
 
@@ -707,6 +752,9 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
             material_parameter = UNTEXTURED_COLOR_PARAMETERS.get(shader_uid)
 
         material_uniforms = apply_material_uniform_overrides(material_blob, default_uniforms, material_bindings, parameter_index=material_parameter)
+
+        if shader_uid == SOLID_COSMETIC_SHADER:
+            material_uniforms += read_clothing_preview_colors(material_blob)
 
         if shader_uid == 0x000000557005948D:
             material_uniforms = apply_eye_property_overrides(material_blob, material_uniforms)

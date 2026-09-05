@@ -643,7 +643,7 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
         }
 
         material = {
-            "name": f"SiegeMaterial_{material_id}",
+            "name": f"{model_uid:016X}_SiegeMaterial_{material_id}",
             "pbrMetallicRoughness": pbr,
             "alphaMode": "OPAQUE"
         }
