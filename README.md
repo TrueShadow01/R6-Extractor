@@ -22,7 +22,7 @@ A Python toolkit for extracting Rainbow Six Siege `.forge` archives and exportin
 - Eye previews use recovered iris/sclera colors and glossiness with an approximate iris mask. Caveira's eye appearance and neutral gaze have been visually validated in Blender 4.5. Other operators remain unverified
 - Clothing previews apply recovered RGB-mask colors while preserving white and black mask regions. Caveira's body tint has been visually checked in Blender 4.5. Exact game compositing and other operators remain unverified
 - Detail-layer shading, cavity, exact eye parallax and limbus shading remain incomplete
-Static attachment placement uses the embedded skeleton's global position and rotation. This supports the inspected single-bone layout and does not reconstruct animated parenting or general skeleton hierarchy.
+- Static attachment placement supports the inspected single-bone layout using embedded global poses. Caveira's accessory placement has been visually confirmed; animated parenting and other attachment layouts remain unverified
 - Skeleton hierarchy and animations are not supported
 - General asset names depend on imported catalogs, operator registry discovery resolves names separately
 
@@ -170,14 +170,16 @@ Audio extraction is not connected to the main CLI yet.
 
 ## Roadmap
 
-1. Reconstruct layered, detail and eye shaders from preserved metadata
-2. Import bundled UID catalogs during setup
-3. Validate the remaining vertex layouts
-4. Reconstruct streamed textures and decode packed PBR channels
-5. Add GLB export
-6. Decode skeleton hierarchy and animations for reusable Blender rigs
-7. Add general bulk model export
-8. Build a desktop asset browser and Blender integration
+1. Validate additional registry-selected default operators in Blender, covering head/body assembly, materials and attachments
+2. Resolve remaining default-appearance model groups and auxiliary packages
+3. Add registry-driven default operator export with resumable batches and per-operator failure reports
+4. Integrate material reconstruction into the Blender import workflow, removing the separate preview-helper step
+5. Improve material fidelity: detail layers, cavity, eye parallax, limbus shading and packed PBR export
+6. Validate remaining vertex layouts and reconstruct streamed textures using affected real assets
+7. Add GLB export with embedded textures
+8. Decode skeleton hierarchy and animations for reusable Blender rigs
+9. Add optional bundled UID catalog import during setup
+10. Build a desktop asset browser
 
 ## Tests
 
