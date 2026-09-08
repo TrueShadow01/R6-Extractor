@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { applySiegeMaterials } from "./materials.js";
 
 const status = document.querySelector("#status");
 
@@ -86,6 +87,7 @@ try {
 
     for (const url of manifest.models) {
         const gltf = await loader.loadAsync(url);
+        applySiegeMaterials(gltf);
         model.add(gltf.scene);
     }
 
