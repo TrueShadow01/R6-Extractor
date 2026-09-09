@@ -6,7 +6,7 @@ Includes operator search, asset indexing, export, Blender 4.5 add-on installatio
 
 ![R6 Forge Extractor desktop UI](docs/images/desktop-ui.png)
 
-*Current alpha interface. The central 3D preview and material/texture inspector are not implemented yet.*
+*Published alpha interface shown. The source build now includes an interactive 3D preview. The material/texture inspector remains unfinished.*
 
 ## Standalone setup
 
@@ -63,11 +63,13 @@ Blender 4.5 is required by this alpha. The UI confirms that Blender launched, im
 
 ## Known limitations
 
-- Registry discovery was checked against an installation containing 78 operators. Game updates may require parser changes.
-- Caveira and Ace received visual checks. Other operators may have material or attachment issues.
-- Export supports LOD0 glTF. Complete skeleton hierarchy, animations and GLB export are unavailable.
-- Shaders approximate the game appearance. Streamed textures and several material effects remain incomplete.
-- Interactive 3D preview, material inspection, cancellation and batch export resume are not available yet.
+- Registry discovery was checked against an installation containing 78 operators. Game updates may require parser changes
+- Caveira and Ace received visual checks. Alibi's clothing/material colors and Solis's lens tint received targeted checks. Full operator fidelity remains unverified.
+- Export supports LOD0 glTF. Complete skeleton hierarchy, animations and GLB export are unavailable
+- Shaders approximate the game appearance. Streamed textures and several material effects remain incomplete
+- The source build includes an interactive cached preview with eye reconstruction, clothing tints and packed metalness/glossiness. Standalone preview packaging remains unverified
+- Visor transparency, environment reflections and several shader effects remain incomplete
+- Automatic preview hot reload, material inspection, cancellation and batch export resume are not available yet
 
 ## Running from source
 
@@ -97,9 +99,9 @@ Tests use synthetic data and do not require game assets or Oodle.
 
 ## Next steps
 
-1. Interactive 3D preview and material/texture inspection.
-2. Broader operator and shader validation.
-3. Cancellation and resumable batch exports.
+1. Environment reflections, remaining visor effects and broader material validation
+2. Preview hot reload and material/texture inspection
+3. Standalone preview packaging, cancellation and resumable batch exports
 
 ## License and third-party assets
 

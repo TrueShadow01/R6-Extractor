@@ -700,6 +700,7 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
             shader_uid = struct.unpack_from("<Q", payload, material_start + 4)[0]
 
         roles: dict[int, tuple[int, ...]] = {}
+        base_roles: set[int] = set()
         selectors = []
 
         for spec_uid in referenced_uids(material_blob, spec_entries.keys()):
@@ -733,9 +734,13 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
                 )
             )
 
-            # Keep the first selector as the existing base map choice
-            # Later selectors remain available for detail map research
-            roles.setdefault(texture_role, compile_uids)
+            # Nyx, the detail map got here first again lol - Isaac
+            # Explicit base selectors take priority over custom shader maps
+            if selector_source == "base" and texture_role not in base_roles:
+                roles[texture_role] = compile_uids
+                base_roles.add(texture_role)
+            else:
+                roles.setdefault(texture_role, compile_uids)
 
         material_bindings = tuple(bindings_by_shader.get(shader_uid, ()))
         binding_names = {
@@ -762,12 +767,23 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
         if shader_uid == 0x000000557005948D:
             material_uniforms = apply_eye_property_overrides(material_blob, material_uniforms)
 
+        solid_color = read_solid_material_color(material_blob, shader_uid, has_diffuse=bool(roles.get(DIFFUSE_ROLE)),)
+
+        # Aiden, no texture doesn't mean no material. Victor checked - Blake
+        # This shader stores its color directly after the shader UID
+        if shader_uid == 0x00000000523BA2BF and not roles.get(DIFFUSE_ROLE):
+            if material_start + 28 <= material_entry.end:
+                candidate = struct.unpack_from("<4f", payload, material_start + 12)
+                if all(math.isfinite(value) and 0.0 <= value <= 1.0 for value in candidate):
+                    solid_color = candidate
+
+
         resolved_materials[material_uid] = MaterialTextureSet(
             diffuse_uids=roles.get(DIFFUSE_ROLE, ()),
             normal_uids=roles.get(NORMAL_ROLE, ()),
             specular_uids=roles.get(SPECULAR_ROLE, ()),
             mask_uids=roles.get(MASK_ROLE, ()),
-            solid_color=read_solid_material_color(material_blob, shader_uid, has_diffuse=bool(roles.get(DIFFUSE_ROLE))),
+            solid_color=solid_color,
             selectors=tuple(selectors),
             shader_uid=shader_uid,
             shader_bindings=material_bindings,
@@ -797,7 +813,7 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
             if position + 16 <= len(header):
                 override_uid = struct.unpack_from("<Q", header, position + 8)[0]
 
-                if override_uid in textured_material_uids:
+                if override_uid in textured_material_uids or override_uid in resolved_materials and resolved_materials[override_uid].solid_color is not None:
                     material_overrides[base_uid] = override_uid
                     break
 
