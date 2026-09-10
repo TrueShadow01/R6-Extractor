@@ -4,11 +4,13 @@ import json
 import mimetypes
 import threading
 import uuid
+import sys
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import quote, unquote, urlsplit
 
-from PySide6.QtCore import QUrl
+from PySide6.QtCore import QUrl, QTimer
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel
 from PySide6.QtGui import QColor
 from PySide6.QtWebEngineWidgets import QWebEngineView
@@ -86,6 +88,17 @@ class PreviewWidget(QWidget):
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
 
+        self.observed_signature = self.viewer_signature()
+        self.loaded_signature = self.observed_signature
+        self.viewer_changed_at = time.monotonic()
+        self.reload_check_pending = False
+
+        self.reload_timer = QTimer(self)
+        self.reload_timer.setInterval(500)
+        self.reload_timer.timeout.connect(self.check_viewer_changes)
+        if not getattr(sys, "frozen", False):
+            self.reload_timer.start()
+
     def setText(self, text):
         self.label.setText(text)
         self.view.setHtml("<body style='background: #24282d'></body>")
@@ -113,6 +126,50 @@ class PreviewWidget(QWidget):
         self.label.setText(f"{document['operator_name']} - basic glTF material preview")
         port = self.server.server_address[1]
         self.view.load(QUrl(f"http://127.0.0.1:{port}/{self.token}/viewer/index.html"))
+
+    def viewer_signature(self):
+        return tuple(
+            (path.name, path.stat().st_mtime_ns, path.stat().st_size)
+            for path in sorted(self.viewer_root.iterdir())
+            if path.is_file() and path.suffix in {".js", ".html", ".css"}
+        )
+
+    def check_viewer_changes(self):
+        try:
+            signature = self.viewer_signature()
+        except OSError:
+            return # An editor my briefly replace a file during saving
+
+        if signature != self.observed_signature:
+            self.observed_signature = signature
+            self.viewer_changed_at = time.monotonic()
+            return
+
+        if signature == self.loaded_signature or time.monotonic() - self.viewer_changed_at < 1.0 or self.manifest is None or self.reload_check_pending:
+            return
+
+        self.reload_check_pending = True
+
+        def finished(reloaded):
+            self.reload_check_pending = False
+            if reloaded:
+                self.loaded_signature = signature
+
+        # Nyx saves three times. Blake only wants one reload - Aiden
+        self.view.page().runJavaScript(
+            """
+            (() => {
+                const button = document.querySelector("#reload");
+                if (!button || button.disabled || typeof button.onclick !== "function") {
+                    return false;
+                }
+
+                button.click();
+                return true;
+            })()
+            """,
+            finished
+        )
 
     def shutdown(self):
         self.server.shutdown()

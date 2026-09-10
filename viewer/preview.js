@@ -4,6 +4,8 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { applySiegeMaterials } from "./materials.js";
 import { applySiegeClothing } from "./clothing.js";
 import { applySiegeSurfaces } from "./surface.js";
+import { installStudioEnvironment } from "./environment.js";
+import { installPreviewReload } from "./reload.js";
 
 const status = document.querySelector("#status");
 
@@ -23,6 +25,8 @@ renderer.setClearColor(0x24282d);
 document.body.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
+const disposeEnvironment = installStudioEnvironment(renderer, scene);
+window.addEventListener("pagehide", disposeEnvironment, { once: true });
 const camera = new THREE.PerspectiveCamera(40, 1, 0.01, 1000);
 camera.position.set(2, 1.5, 3);
 
@@ -96,6 +100,7 @@ try {
     }
 
     frameModel();
+    installPreviewReload(camera, controls, manifest.models);
     status.textContent = `${manifest.name} · Left Click drag: orbit · Right Click drag: pan · Mouse Wheel: zoom`;
 } catch (error) {
     status.textContent = `Preview failed: ${error.message}`;

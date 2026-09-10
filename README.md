@@ -68,8 +68,8 @@ Blender 4.5 is required by this alpha. The UI confirms that Blender launched, im
 - Export supports LOD0 glTF. Complete skeleton hierarchy, animations and GLB export are unavailable
 - Shaders approximate the game appearance. Streamed textures and several material effects remain incomplete
 - The source build includes an interactive cached preview with eye reconstruction, clothing tints and packed metalness/glossiness. Standalone preview packaging remains unverified
-- Visor transparency, environment reflections and several shader effects remain incomplete
-- Automatic preview hot reload, material inspection, cancellation and batch export resume are not available yet
+- Visor transparency and several shader effects remain incomplete. Preview lighting approximates a studio, not the game's lighting
+- Material inspection, cancellation and batch export resume are not available yet
 
 ## Running from source
 
@@ -81,6 +81,16 @@ py -3 -B app.py
 ```
 
 For source execution, place Oodle beside `main.py` or use `R6_OODLE_DLL`.
+
+### Preview development
+
+Click **Load Preview** to prepare and view the selected operator. The preview includes studio environment reflections.
+
+**Reload Preview** reloads viewer code and cached model files while preserving the camera. Source builds also reload automatically after top-level JavaScript, HTML or CSS files in `viewer` stop changing for about one second.
+
+Viewer-only changes do not require another export. Geometry is reloaded from the cache. It does not stay resident across reloads. Python changes require restarting the app and extraction changes may require regenerating cached data.
+
+If a code error prevents automatic reload, fix it and click **Load Preview** again.
 
 The CLI also supports archive scanning, resumable raw extraction, catalogs and model discovery:
 
@@ -99,8 +109,8 @@ Tests use synthetic data and do not require game assets or Oodle.
 
 ## Next steps
 
-1. Environment reflections, remaining visor effects and broader material validation
-2. Preview hot reload and material/texture inspection
+1. Remaining visor effects and broader material validation
+2. Material/texture inspection and improved preview error recovery
 3. Standalone preview packaging, cancellation and resumable batch exports
 
 ## License and third-party assets
