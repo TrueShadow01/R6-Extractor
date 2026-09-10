@@ -69,7 +69,7 @@ Blender 4.5 is required by this alpha. The UI confirms that Blender launched, im
 - Shaders approximate the game appearance. Streamed textures and several material effects remain incomplete
 - The source build includes an interactive cached preview with eye reconstruction, clothing tints and packed metalness/glossiness. Standalone preview packaging remains unverified
 - Visor transparency and several shader effects remain incomplete. Preview lighting approximates a studio, not the game's lighting
-- Material inspection, cancellation and batch export resume are not available yet
+- Cancellation and batch export resume are not available yet
 
 ## Running from source
 
@@ -85,6 +85,10 @@ For source execution, place Oodle beside `main.py` or use `R6_OODLE_DLL`.
 ### Preview development
 
 Click **Load Preview** to prepare and view the selected operator. The preview includes studio environment reflections.
+
+Shift-click a surface to highlight its edges and open **Materials / Textures**. The tab shows material and shader UIDs, exported parameters, texture filenames, dimensions and thumbnails. Shift-click empty space to clear the selection.
+
+Selection follows mesh geometry rather than texture-alpha pixels, so overlapping transparent surfaces may select the front layer.
 
 **Reload Preview** reloads viewer code and cached model files while preserving the camera. Source builds also reload automatically after top-level JavaScript, HTML or CSS files in `viewer` stop changing for about one second.
 
@@ -110,7 +114,7 @@ Tests use synthetic data and do not require game assets or Oodle.
 ## Next steps
 
 1. Remaining visor effects and broader material validation
-2. Material/texture inspection and improved preview error recovery
+2. Improved preview error recovery and selection through transparent layers
 3. Standalone preview packaging, cancellation and resumable batch exports
 
 ## License and third-party assets

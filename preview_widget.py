@@ -10,12 +10,20 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import quote, unquote, urlsplit
 
-from PySide6.QtCore import QUrl, QTimer
+from PySide6.QtCore import QUrl, QTimer, QObject, Signal, Slot
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel
 from PySide6.QtGui import QColor
 from PySide6.QtWebEngineWidgets import QWebEngineView
+from PySide6.QtWebChannel import QWebChannel
 
 from app_runtime import resource_directory
+
+class MaterialBridge(QObject):
+    material_selected = Signal(str)
+
+    @Slot(str)
+    def showMaterial(self, text):
+        self.material_selected.emit(text)
 
 class PreviewWidget(QWidget):
     def __init__(self, parent=None):
@@ -29,6 +37,10 @@ class PreviewWidget(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         self.label = QLabel("Select an operator and click Load Preview.")
         self.view = QWebEngineView()
+        self.material_bridge = MaterialBridge(self)
+        self.web_channel = QWebChannel(self.view.page())
+        self.web_channel.registerObject("materialBridge", self.material_bridge)
+        self.view.page().setWebChannel(self.web_channel)
         self.view.page().setBackgroundColor(QColor("#24282d"))
         self.view.setStyleSheet("background-color: #24282d;")
         self.view.setHtml("<html><body style='margin: 0; background: #24282d;'></body></html>")

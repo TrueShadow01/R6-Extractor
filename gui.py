@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 
 from src.operator_registry import read_operator_registry
 from preview_widget import PreviewWidget
+from material_inspector import MaterialInspector
 from app_runtime import (
     worker_arguments,
     worker_executable,
@@ -129,7 +130,15 @@ class MainWindow(QMainWindow):
 
         inspector = QTabWidget()
         inspector.addTab(self.details, "Details")
-        inspector.addTab(QLabel("Materials and textures will appear after the model preparation."), "Materials / Textures")
+        self.material_details = MaterialInspector(self.preview)
+        inspector.addTab(self.material_details, "Materials / Textures")
+
+        def show_material(text):
+            self.material_details.setPlainText(text)
+            inspector.setCurrentWidget(self.material_details)
+
+        self.preview.material_bridge.material_selected.connect(show_material)
+        self.preview.view.loadStarted.connect(self.material_details.clear)
 
         panels = QSplitter(Qt.Orientation.Horizontal)
         panels.addWidget(left)

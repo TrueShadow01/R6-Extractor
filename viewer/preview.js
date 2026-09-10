@@ -6,6 +6,7 @@ import { applySiegeClothing } from "./clothing.js";
 import { applySiegeSurfaces } from "./surface.js";
 import { installStudioEnvironment } from "./environment.js";
 import { installPreviewReload } from "./reload.js";
+import { installMaterialInspector } from "./inspector.js";
 
 const status = document.querySelector("#status");
 
@@ -101,6 +102,7 @@ try {
 
     frameModel();
     installPreviewReload(camera, controls, manifest.models);
+    installMaterialInspector(renderer, camera, model);
     status.textContent = `${manifest.name} · Left Click drag: orbit · Right Click drag: pan · Mouse Wheel: zoom`;
 } catch (error) {
     status.textContent = `Preview failed: ${error.message}`;
