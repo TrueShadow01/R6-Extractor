@@ -6,7 +6,7 @@ Includes operator search, asset indexing, export, Blender 4.5 add-on installatio
 
 ![R6 Forge Extractor desktop UI](docs/images/desktop-ui.png)
 
-*Published alpha interface shown. The source build now includes an interactive 3D preview. The material/texture inspector remains unfinished.*
+*Published alpha interface shown. The source build now includes an interactive 3D preview with material selection and texture inspection.*
 
 ## Standalone setup
 
