@@ -79,7 +79,7 @@ export function installMaterialInspector(renderer, camera, model) {
                 color: 0xffa340,
                 transparent: true,
                 opacity: 0.9,
-                depthTest: true,
+                depthTest: false,
                 depthWrite: false,
             })
         );
@@ -93,6 +93,8 @@ export function installMaterialInspector(renderer, camera, model) {
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
     let pressed = null;
+    let capturedLayers = [];
+    let captureId = 0;
 
     const canvas = renderer.domElement;
 
@@ -122,7 +124,9 @@ export function installMaterialInspector(renderer, camera, model) {
         camera.updateWorldMatrix(true, false);
         raycaster.setFromCamera(pointer, camera);
 
-        // Blake wants the UID, not another screenshot of white glass - Victor
+        const candidates = [];
+        const seen = new Set();
+
         for (const hit of raycaster.intersectObject(model, true)) {
             if (!hit.object.isMesh) {
                 continue;
@@ -135,43 +139,78 @@ export function installMaterialInspector(renderer, camera, model) {
                 }
             }
 
-
             if (!visible) {
                 continue;
             }
 
-            const material = Array.isArray(hit.object.material) ? hit.object.material[hit.face?.materialIndex ?? 0] : hit.object.material;
+            const materialIndex = hit.face?.materialIndex ?? 0;
+            const material = Array.isArray(hit.object.material) ? hit.object.material[materialIndex] : hit.object.material
 
-            if (!material || !material.visible || (material.transparent && material.opacity === 0)) {
+            if (!material || !material.visible) {
                 continue;
             }
 
-            showSelectionOutline(hit.object, hit.face?.materialIndex ?? 0);
-            const extras = material.userData;
-            output.textContent = [
-                `Mesh: ${hit.object.name || "(unnamed)"}`,
-                `Material: ${material.name || "(unnamed)"}`,
-                `UID: ${extras.siegeMaterialUid ?? "unknown"}`,
-                `Shader: ${extras.siegeShaderUid ?? "unknown"}`,
-                "",
-                `Base texture: ${material.map ? "present" : "none"}`,
-                `Normal texture: ${material.normalMap ? "present" : "none"}`,
-                `Packed: ${extras.siegePackedMaterialTexture ?? "none"}`,
-                `Mask: ${extras.siegeMaskTexture ?? "none"}`,
-                `Opacity: ${material.opacity}`,
-                `Transparent: ${material.transparent}`,
-                `Alpha cutoff: ${material.alphaTest}`,
-                "",
-                "Source uniforms:",
-                JSON.stringify(extras.siegeShaderUniforms ?? {}, null, 2),
-                "",
-                "Source shader textures:",
-                JSON.stringify(extras.siegeShaderTextures ?? {}, null, 2)
-            ].join("\n");
+            const key = `${hit.object.uuid}:${materialIndex}`;
+            if (seen.has(key)) {
+                continue;
+            }
+
+            seen.add(key);
+            candidates.push({ hit, material, materialIndex, key });
+        }
+
+        capturedLayers = candidates;
+        captureId += 1;
+
+        if (!candidates.length) {
+            clearSelectionOutline();
+            output.textContent = JSON.stringify({
+                captureId,
+                layers: [],
+                selected: -1,
+                text: "No mesh hit."
+            });
             return;
         }
 
-        clearSelectionOutline();
-        output.textContent = "No visible mesh hit.";
+        selectLayer(0, captureId);
+
     });
+
+    function selectLayer(index, id) {
+        if (id !== captureId || !Number.isInteger(index) || index < 0 || index >= capturedLayers.length) {
+            return;
+        }
+
+        const { hit, material, materialIndex } = capturedLayers[index];
+        showSelectionOutline(hit.object, materialIndex);
+        const extras = material.userData;
+
+        const text = [
+            `Layer: ${index + 1} / ${capturedLayers.length}`,
+            `Mesh: ${hit.object.name || "(unnamed)"}`,
+            `Material: ${material.name || "(unnamed)"}`,
+            `UID: ${extras.siegeMaterialUid ?? "unknown"}`,
+            `Shader: ${extras.siegeShaderUid ?? "unknown"}`,
+            `Opacity: ${material.opacity}`,
+            `Transparent: ${material.transparent}`,
+            `Alpha Cutoff: ${material.alphaTest}`,
+            "",
+            "Source Uniforms: ",
+            JSON.stringify(extras.siegeShaderUniforms ?? {}, null, 2),
+            "",
+            "Source Shader Textures: ",
+            JSON.stringify(extras.siegeShaderTextures ?? {}, null, 2)
+        ].join("\n");
+
+        output.textContent = JSON.stringify({
+            captureId,
+            selected: index,
+            layers: capturedLayers.map(({ material }, layer) => `${layer + 1}: ${material.userData.siegeMaterialUid ?? material.name}` + (material.opacity === 0 ? " [zero opacity]" : "")),
+            text
+        });
+    }
+
+    // Blake can choose a layer without playing visor roulette - Isaac
+    window.selectInspectorLayer = selectLayer;
 }

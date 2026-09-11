@@ -6,7 +6,7 @@ from urllib.parse import unquote
 
 from PySide6.QtCore import QSize
 from PySide6.QtGui import QIcon, QImageReader, QPixmap
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QPlainTextEdit, QListWidget, QListWidgetItem
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QPlainTextEdit, QListWidget, QListWidgetItem, QComboBox
 
 class MaterialInspector(QWidget):
     def __init__(self, preview, parent=None):
@@ -16,6 +16,11 @@ class MaterialInspector(QWidget):
         self.documents = []
 
         self.details = QPlainTextEdit()
+        self.capture_id = None
+        self.layer_choices = QComboBox()
+        self.layer_choices.setPlaceholderText("Shift-click to capture layers")
+        self.layer_choices.setEnabled(False)
+        self.layer_choices.currentIndexChanged.connect(self.choose_layer)
         self.details.setReadOnly(True)
         self.details.setPlaceholderText("Load a preview then Shift-click a surface.")
 
@@ -27,15 +32,45 @@ class MaterialInspector(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.details, 2)
+        layout.addWidget(self.layer_choices)
         layout.addWidget(self.textures, 3)
 
+    def choose_layer(self, index):
+        if index < 0 or self.capture_id is None:
+            return
+
+        arguments = json.dumps([index, self.capture_id])
+        self.preview.view.page().runJavaScript(f"window.selectInspectorLayer?.(...{arguments});")
+
     def clear(self):
+        self.capture_id = None
+        self.layer_choices.blockSignals(True)
+        self.layer_choices.clear()
+        self.layer_choices.setEnabled(False)
+        self.layer_choices.blockSignals(False)
         self.details.clear()
         self.textures.clear()
         self.cached_root = None
         self.documents = []
 
     def setPlainText(self, text):
+        try:
+            report = json.loads(text)
+        except (ValueError, TypeError):
+            report = None
+
+        if isinstance(report, dict) and isinstance(report.get("layers"), list):
+            self.layer_choices.blockSignals(True)
+            try:
+                self.layer_choices.clear()
+                self.layer_choices.addItems(report["layers"])
+                self.layer_choices.setCurrentIndex(report["selected"])
+                self.layer_choices.setEnabled(bool(report["layers"]))
+                self.capture_id = report["captureId"]
+            finally:
+                self.layer_choices.blockSignals(False)
+            text = report["text"]
+
         self.details.setPlainText(text)
         self.textures.clear()
 

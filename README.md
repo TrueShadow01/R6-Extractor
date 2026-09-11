@@ -86,9 +86,9 @@ For source execution, place Oodle beside `main.py` or use `R6_OODLE_DLL`.
 
 Click **Load Preview** to prepare and view the selected operator. The preview includes studio environment reflections.
 
-Shift-click a surface to highlight its edges and open **Materials / Textures**. The tab shows material and shader UIDs, exported parameters, texture filenames, dimensions and thumbnails. Shift-click empty space to clear the selection.
+Shift-click a surface to capture the layers beneath the cursor and open **Materials / Textures**. Choose a layer from the dropdown to update its outline, material, shader UIDs, exported parameters, texture filenames, dimensions and thumbnails. Shift-click elsewhere to capture a new list or empty space to clear it.
 
-Selection follows mesh geometry rather than texture-alpha pixels, so overlapping transparent surfaces may select the front layer.
+Selection follows mesh geometry rather than texture-alpha pixels. The layer dropdown includes intersected zero-opacity overlays. Selected edges remain visible through other surfaces. Selection does not change material opacity.
 
 **Reload Preview** reloads viewer code and cached model files while preserving the camera. Source builds also reload automatically after top-level JavaScript, HTML or CSS files in `viewer` stop changing for about one second.
 
@@ -114,7 +114,7 @@ Tests use synthetic data and do not require game assets or Oodle.
 ## Next steps
 
 1. Remaining visor effects and broader material validation
-2. Improved preview error recovery and selection through transparent layers
+2. Improved preview error recovery and material debugging tools
 3. Standalone preview packaging, cancellation and resumable batch exports
 
 ## License and third-party assets
