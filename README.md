@@ -8,6 +8,10 @@ Includes operator search, asset indexing, export, Blender 4.5 add-on installatio
 
 *Published alpha interface shown. The source build now includes an interactive 3D preview with material selection and texture inspection.*
 
+[![Latest Release](https://img.shields.io/github/v/release/TrueShadow01/R6-Extractor?include_prereleases)](https://github.com/TrueShadow01/R6-Extractor/releases)
+[![Downloads](https://img.shields.io/github/downloads/TrueShadow01/R6-Extractor/total)](https://github.com/TrueShadow01/R6-Extractor/releases)
+[![License](https://img.shields.io/github/license/TrueShadow01/R6-Extractor)](LICENSE)
+
 ## Standalone setup
 
 Requires 64-bit Windows, a local Siege installation, a compatible Oodle runtime ([such as this one](https://drive.google.com/file/d/1Q2Bhz1jmjBFRBzsN0eS1UDMsqgDCpdXl/view?usp=sharing)) and Blender 4.5. Python is not required for the standalone build.
