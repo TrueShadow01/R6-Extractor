@@ -64,7 +64,7 @@ Blender 4.5 is required by this alpha. The UI confirms that Blender launched, im
 ## Known limitations
 
 - Registry discovery was checked against an installation containing 78 operators. Game updates may require parser changes
-- Caveira and Ace received visual checks. Alibi's clothing/material colors and Solis's lens tint received targeted checks. Full operator fidelity remains unverified.
+- Caveira and Ace received visual checks. Alibi's clothing/material colors and Solis's source-selected gold lens received targeted checks. Full operator fidelity remains unverified.
 - Export supports LOD0 glTF. Complete skeleton hierarchy, animations and GLB export are unavailable
 - Shaders approximate the game appearance. Streamed textures and several material effects remain incomplete
 - The source build includes an interactive cached preview with eye reconstruction, clothing tints and packed metalness/glossiness. Standalone preview packaging remains unverified

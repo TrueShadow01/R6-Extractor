@@ -721,15 +721,6 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
             material["doubleSided"] = True
             material.pop("alphaCutoff", None)
 
-        if slot_textures.material_uid == 0x00000009D00DE3AE and slot_textures.shader_uid == 0x0000001397A32F38 and slot_textures.diffuse is None:
-            # Blake, Victor found the blue. Grey can clock out now hehe - Nyx
-            # Scoped lens approximation using its exported clothing tint
-            uniforms = dict(slot_textures.shader_uniforms)
-            lens_color = uniforms.get("MaskRed_Color")
-
-            if lens_color is not None and len(lens_color) == 4:
-                pbr["baseColorFactor"] = list(siege_color_to_gltf(lens_color))
-
         if slot_textures.normal:
             material["normalTexture"] = {
                 "index": add_texture(slot_textures.normal),

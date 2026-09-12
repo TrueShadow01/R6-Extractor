@@ -771,7 +771,10 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
 
         # Aiden, no texture doesn't mean no material. Victor checked - Blake
         # This shader stores its color directly after the shader UID
-        if shader_uid == 0x00000000523BA2BF and not roles.get(DIFFUSE_ROLE):
+        if (shader_uid == 0x00000000523BA2BF or (material_uid, shader_uid) in {
+            (0x0000005B35F8027F, 0x000000003BD13B9E),
+            (0x0000005978CB7154, 0x0000000F2BB85C7E)
+        }) and not roles.get(DIFFUSE_ROLE):
             if material_start + 28 <= material_entry.end:
                 candidate = struct.unpack_from("<4f", payload, material_start + 12)
                 if all(math.isfinite(value) and 0.0 <= value <= 1.0 for value in candidate):
