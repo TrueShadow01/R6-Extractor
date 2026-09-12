@@ -40,6 +40,13 @@ export async function applySiegeSurfaces(gltf, modelUrl) {
         material.metalness = 1;
         material.roughness = 1;
 
+        const metalnessExponent = [
+            "000000003BD13B9E",
+            "000000003CAE6B71",
+            "0000001397A32F38"
+        ].includes(material.userData.siegeShaderUid) ? 2.2 : 1.0;
+        material.userData.siegeMetalnessExponent = metalnessExponent;
+
         const previousCompile = material.onBeforeCompile;
         const previousKey = material.customProgramCacheKey();
 
@@ -57,12 +64,12 @@ export async function applySiegeSurfaces(gltf, modelUrl) {
             shader.fragmentShader = shader.fragmentShader.replace(
                 "#include <metalnessmap_fragment>",
                 `
-                 float metalnessFactor = texture2D(metalnessMap, vMetalnessMapUv).r;
+                 float metalnessFactor = pow(clamp(texture2D(metalnessMap, vMetalnessMapUv).r, 0.0, 1.0), ${metalnessExponent.toFixed(1)});
                 `
             );
         };
 
-        material.customProgramCacheKey = () => `${previousKey}|siege-packed-v1`;
+        material.customProgramCacheKey = () => `${previousKey}|siege-packed-v2|${metalnessExponent}`;
         material.needsUpdate = true;
     }
 }

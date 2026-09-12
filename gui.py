@@ -27,6 +27,23 @@ from app_runtime import (
     external_program_environment
 )
 
+class LogOutput(QPlainTextEdit):
+    def appendPlainText(self, text):
+        # Isaac, separate messages. Not every chunk is a new line - Nyx
+        cursor = self.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+
+        if not cursor.atBlockStart():
+            cursor.insertText("\n")
+
+        cursor.insertText(text)
+
+        if not cursor.atBlockStart():
+            cursor.insertText("\n")
+
+        self.setTextCursor(cursor)
+        self.ensureCursorVisible()
+
 class RegistryLoader(QThread):
     loaded = Signal(object)
     failed = Signal(object)
@@ -147,7 +164,7 @@ class MainWindow(QMainWindow):
         panels.setSizes([230, 650, 340])
         layout.addWidget(panels, 1)
 
-        self.log = QPlainTextEdit()
+        self.log = LogOutput()
         self.log.setReadOnly(True)
         self.log.setMaximumHeight(140)
         self.log.document().setMaximumBlockCount(5000)

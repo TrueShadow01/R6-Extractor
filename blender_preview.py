@@ -213,7 +213,23 @@ def apply_siege_materials(gltf_path: Path, *, materials=None) -> None:
                     if metallic_input.is_linked:
                         links.remove(metallic_input.links[0])
 
-                    links.new(separate.outputs["Red"], metallic_input)
+                    metalness_output = separate.outputs["Red"]
+                    if extras.get("siegeShaderUid") in {
+                        "000000003BD13B9E",
+                        "000000003CAE6B71",
+                        "0000001397A32F38"
+                    }:
+                        # Nyx, the shader said 2.2. Victor brought receipts - Blake
+                        decode = nodes.new("ShaderNodeMath")
+                        decode.name = "Siege Metalness Decode"
+                        decode.label = "Packed R ^ 2.2"
+                        decode.operation = "POWER"
+                        decode.inputs[1].default_value = 2.2
+                        decode.location = (principled.location.x - 120, principled.location.y - 450)
+                        links.new(metalness_output, decode.inputs[0])
+                        metalness_output = decode.outputs["Value"]
+
+                    links.new(metalness_output, metallic_input)
 
                 if roughness_input is not None:
                     if roughness_input.is_linked:

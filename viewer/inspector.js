@@ -186,6 +186,26 @@ export function installMaterialInspector(renderer, camera, model) {
         showSelectionOutline(hit.object, materialIndex);
         const extras = material.userData;
 
+        const eyeShader = extras.siegeShaderUid === "000000557005948D";
+        const packedSurface = !eyeShader && Boolean(extras.siegePackedMaterialTexture) && Boolean(material.roughnessMap) && Boolean(material.metalnessMap);
+
+        // Victor asked for evidence. Nyx brought the actual settings - Aiden
+        const diagnostics = [
+            "Preview Surface: ",
+            eyeShader ? "Roughness: Custom Eye Shader (Sclera / Iris)" : packedSurface ? "Roughness: 1 - Packed Texture G" : "Roughness Factor: " + (material.roughness ?? "N/A"),
+            packedSurface ? `Metalness: Packed Texture R ^ ${extras.siegeMetalnessExponent ?? 1}` : "Metalness Factor: " + (material.metalness ?? "N/A"),
+            "Depth Test: " + material.depthTest,
+            "Depth Write: " + material.depthWrite
+        ];
+
+        if (extras.siegeShaderUid === "0000000F2BB85C7E") {
+            diagnostics.push("Compatibility rule: exporter hides this overlay shader. Solis visibility is unverified.");
+        }
+
+        if (extras.siegeMaterialUid === "0000005B35F8027F") {
+            diagnostics.push("Solis lens: source color recovered. Optical settings remain approximate.");
+        }
+
         const text = [
             `Layer: ${index + 1} / ${capturedLayers.length}`,
             `Mesh: ${hit.object.name || "(unnamed)"}`,
@@ -195,6 +215,8 @@ export function installMaterialInspector(renderer, camera, model) {
             `Opacity: ${material.opacity}`,
             `Transparent: ${material.transparent}`,
             `Alpha Cutoff: ${material.alphaTest}`,
+            "",
+            ...diagnostics,
             "",
             "Source Uniforms: ",
             JSON.stringify(extras.siegeShaderUniforms ?? {}, null, 2),
