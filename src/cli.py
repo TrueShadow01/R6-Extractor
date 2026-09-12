@@ -698,6 +698,16 @@ def command_model(args: argparse.Namespace) -> int:
 
     children = load_depgraph(depgraph)
 
+    if args.database and uid not in children:
+        model_record = load_asset_index(args.database, {uid}).primary(uid)
+        if model_record is not None:
+            model_depgraph = model_record.archive.with_suffix(".depgraphbin")
+            if model_depgraph.is_file() and model_depgraph.resolve() != depgraph.resolve():
+                model_children = load_depgraph(model_depgraph)
+                if uid in model_children:
+                    print(f"Using model dependency graph: {model_depgraph.name}", flush=True)
+                    children = model_children
+
     if args.database:
         index = _load_database_model_index(args.database, uid, children)
     else:

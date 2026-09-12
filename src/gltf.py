@@ -58,6 +58,8 @@ OPAQUE_SHADER_UIDS = {
     0x0000000841DC11F9, # tinted headgear
     0x0000001397A32F38, # solid cosmetic mask
     0x000000557005948D, # eye shader
+    0x0000000099E2C926, # cutout uses vertex alpha, not diffuse alpha
+    0x0000000099E2C947, # diffuse alpha selects detail effects
 }
 
 ALPHA_MASK_SHADER_UIDS = {

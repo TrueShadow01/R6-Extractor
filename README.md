@@ -70,7 +70,7 @@ Blender 4.5 is required by this alpha. The UI confirms that Blender launched, im
 - Registry discovery was checked against an installation containing 78 operators. Game updates may require parser changes
 - Caveira and Ace received visual checks. Alibi's clothing/material colors and Solis's source-selected gold lens received targeted checks. Full operator fidelity remains unverified.
 - Export supports LOD0 glTF. Complete skeleton hierarchy, animations and GLB export are unavailable
-- Shaders approximate the game appearance. Streamed textures and several material effects remain incomplete
+- Shaders approximate the game appearance. Hair uses a basic fallback. The game's separate hair highlights are not reconstructed. Streamed textures and several material effects remain incomplete
 - The source build includes an interactive cached preview with eye reconstruction, clothing tints and packed metalness/glossiness. Standalone preview packaging remains unverified
 - Visor transparency and several shader effects remain incomplete. Preview lighting approximates a studio, not the game's lighting
 - Invalid UV components are replaced with zero and reported in the log. Affected faces may have approximate texture placement
@@ -118,7 +118,7 @@ Tests use synthetic data and do not require game assets or Oodle.
 
 ## Next steps
 
-1. Remaining visor effects and broader material validation
+1. Reverse-engineer hair shading, complete remaining visor effects and validate materials across more operators
 2. Improved preview error recovery and material debugging tools
 3. Standalone preview packaging, cancellation and resumable batch exports
 

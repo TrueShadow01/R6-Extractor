@@ -178,7 +178,7 @@ def apply_siege_materials(gltf_path: Path, *, materials=None) -> None:
 
         # node crackheads were on it again lol - Isaac
         # incredible crackheads, true - shadow
-        if principled is not None and packed_filename is not None:
+        if principled is not None and packed_filename is not None and extras.get("siegeShaderUid") != "000000003051C028":
             packed_path = gltf_path.parent / packed_filename
 
             if packed_path.is_file():

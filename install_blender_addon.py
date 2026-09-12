@@ -25,7 +25,7 @@ def install(blender):
     if not match or tuple(map(int, match.groups()[:2])) != (4, 5):
         raise RuntimeError("Select Blender 4.5, other versions are not supported.")
 
-    print(f"Detected Belnder {'.'.join(match.groups())}", flush=True)
+    print(f"Detected Blender {'.'.join(match.groups())}", flush=True)
 
     project = Path(__file__).resolve().parent
     sources = {
