@@ -237,6 +237,36 @@ def apply_siege_materials(gltf_path: Path, *, materials=None) -> None:
 
                     links.new(roughness.outputs["Value"], roughness_input)
 
+        if extras.get("siegeShaderUid") in {
+            "000000003BD13B9E",
+            "000000003CAE6B71",
+            "0000001397A32F38"
+        }:
+            # Victor: blue controls dielectric reflection, not base color
+            separate.label = "R: Metalness G: Glossiness B: Reflectance"
+
+            reflectance = nodes.new("ShaderNodeMath")
+            reflectance.name = "Siege Reflectance Decode"
+            reflectance.label = "Packed B ^ 2.2"
+            reflectance.operation = "POWER"
+            reflectance.inputs[1].default_value = 2.2
+            reflectance.location = (principled.location.x - 350, principled.location.y - 850)
+            links.new(separate.outputs["Blue"], reflectance.inputs[0])
+
+            level = nodes.new("ShaderNodeMath")
+            level.name = "Siege Specular Level"
+            level.operation = "MULTIPLY"
+            level.inputs[1].default_value = 0.5
+            level.location = (principled.location.x - 120, principled.location.y - 850)
+            links.new(reflectance.outputs["Value"], level.inputs[0])
+
+            for socket_name in ("IOR", "Specular IOR Level"):
+                for link in tuple(principled.inputs[socket_name].links):
+                    links.remove(link)
+
+            principled.inputs["IOR"].default_value = 1.5
+            links.new(level.outputs["Value"], principled.inputs["Specular IOR Level"])
+
         if extras.get("siegeShaderUid") == "0000001397A32F38":
             spec = next(
                 item for item in document["materials"]

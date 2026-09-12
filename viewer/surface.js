@@ -67,9 +67,20 @@ export async function applySiegeSurfaces(gltf, modelUrl) {
                  float metalnessFactor = pow(clamp(texture2D(metalnessMap, vMetalnessMapUv).r, 0.0, 1.0), ${metalnessExponent.toFixed(1)});
                 `
             );
+
+            if (metalnessExponent === 2.2) {
+                shader.fragmentShader = shader.fragmentShader.replace(
+                    "#include <lights_physical_fragment>",
+                    `
+                    #include <lights_physical_fragment>
+                    float siegeReflectance = pow(clamp(texture2D(metalnessMap, vMetalnessMapUv).b, 0.0, 1.0), 2.2);
+                    material.specularColor = mix(vec3(0.04 * siegeReflectance), diffuseColor.rgb, metalnessFactor);
+                    `
+                );
+            }
         };
 
-        material.customProgramCacheKey = () => `${previousKey}|siege-packed-v2|${metalnessExponent}`;
+        material.customProgramCacheKey = () => `${previousKey}|siege-packed-v3|${metalnessExponent}`;
         material.needsUpdate = true;
     }
 }
