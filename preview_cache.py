@@ -14,7 +14,7 @@ from app_runtime import (
 )
 from src.operator_registry import read_operator_registry
 
-CACHE_VERSION = 5
+CACHE_VERSION = 8
 
 def model_files_exist(model):
     """Check the glTF and its external buffers/images"""
@@ -111,12 +111,22 @@ def prepare_preview(game, operator_uid):
                 "-o", str(destination)
             ]
         )
-        subprocess.run(
+        with subprocess.Popen(
             [worker_executable(), *arguments],
             cwd=str(project),
-            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
             creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-        )
+        ) as process:
+            for line in process.stdout:
+                print(line, end="", flush=True)
+
+            return_code = process.wait()
+            if return_code:
+                raise subprocess.CalledProcessError(return_code, process.args)
 
         model = destination / f"{uid:016X}.gltf"
         if not model_files_exist(model):

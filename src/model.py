@@ -583,6 +583,19 @@ def decode_mesh_parts(records: Iterable[AssetRecord], bindings: Mapping[int, Mes
         if len(uvs) != len(vertices):
             raise ValueError(f"Geometry {record.uid:016X} has {len(vertices)} vertices but {len(uvs)} UV coordinates")
 
+        invalid_uvs = sum(not all(math.isfinite(component) for component in uv) for uv in uvs)
+        if invalid_uvs:
+            # Nyx: keep the mesh. Make the missing UV data visible in the log
+            uvs = [
+                tuple(component if math.isfinite(component) else 0.0 for component in uv)
+                for uv in uvs
+            ]
+            print(
+                f"WARNING: Geometry {record.uid:016X}: replaced non-finite UV components with 0 in {invalid_uvs} vertices. "
+                "Texture Placement on affected faces is approximate.",
+                flush=True
+            )
+
         if len(normals) != len(vertices):
             raise ValueError(f"Geometry {record.uid:016X} has {len(vertices)} vertices but {len(normals)} normals")
 
