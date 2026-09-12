@@ -7,6 +7,7 @@ from PyInstaller.utils.hooks import copy_metadata
 project = Path(SPECPATH)
 
 datas = [
+    (str(project / "viewer"), "viewer"),
     (str(project / "main.py"), "."),
     (str(project / "install_blender_addon.py"), "."),
     (str(project / "open_operator_blender.py"), "."),

@@ -6,7 +6,7 @@ Includes operator search, asset indexing, export, Blender 4.5 add-on installatio
 
 ![R6 Forge Extractor desktop UI](docs/images/desktop-ui.png)
 
-*Published alpha interface shown. The source build now includes an interactive 3D preview with material selection and texture inspection.*
+*Desktop interface showing Blitz in the interactive 3D preview.*
 
 [![Latest Release](https://img.shields.io/github/v/release/TrueShadow01/R6-Extractor?include_prereleases)](https://github.com/TrueShadow01/R6-Extractor/releases)
 [![Downloads](https://img.shields.io/github/downloads/TrueShadow01/R6-Extractor/total)](https://github.com/TrueShadow01/R6-Extractor/releases)
