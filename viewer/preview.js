@@ -7,6 +7,7 @@ import { applySiegeSurfaces } from "./surface.js";
 import { installStudioEnvironment } from "./environment.js";
 import { installPreviewReload } from "./reload.js";
 import { installMaterialInspector } from "./inspector.js";
+import { applyExperimentalHair } from "./hair.js";
 
 const status = document.querySelector("#status");
 
@@ -97,6 +98,7 @@ try {
         applySiegeMaterials(gltf);
         await applySiegeClothing(gltf, url);
         await applySiegeSurfaces(gltf, url);
+        await applyExperimentalHair(gltf, url);
         model.add(gltf.scene);
     }
 

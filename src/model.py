@@ -410,7 +410,7 @@ def resolve_static_face_bindings(bindings: Mapping[int, MeshBinding]) -> dict[in
         (
             binding
             for binding in bindings.values()
-            if len(binding.bone_ids) == len(SHARED_FACE_BONES) and set(binding.bone_ids) == SHARED_FACE_BONES
+            if SHARED_FACE_BONES.issubset(binding.bone_ids)
         ),
         None
     )
@@ -422,7 +422,7 @@ def resolve_static_face_bindings(bindings: Mapping[int, MeshBinding]) -> dict[in
         (
             binding
             for binding in bindings.values()
-            if REQUIRED_HOST_BONES.issubset(binding.bone_ids) and SHARED_FACE_BONES.issubset(transform.bone_id for transform in binding.pose_transforms)
+            if (REQUIRED_HOST_BONES.issubset(binding.bone_ids) if len(shared.bone_ids) == len(SHARED_FACE_BONES) else HOST_HEAD_ROOT in binding.bone_ids) and SHARED_FACE_BONES.issubset(transform.bone_id for transform in binding.pose_transforms)
         ),
         None
     )
@@ -451,6 +451,11 @@ def resolve_static_face_bindings(bindings: Mapping[int, MeshBinding]) -> dict[in
         neutral = list(face_matrices[face_index])
         neutral[12:15] = target[12:15]
         face_matrices[face_index] = tuple(neutral)
+
+    if len(shared.bone_ids) != len(SHARED_FACE_BONES):
+        # Newer face rigs have extra mouth joints, only move the eyes here - Isaac
+        resolved[shared.geometry_uid] = replace(shared, joint_node_matrices=tuple(face_matrices))
+        return resolved
 
     upper_mouth_index = shared.bone_ids.index(FACE_UPPER_MOUTH)
 

@@ -9,7 +9,7 @@ export async function applySiegeClothing(gltf, modelUrl) {
         }
 
         for (const material of (Array.isArray(object.material) ? object.material : [object.material])) {
-            if (material.userData.siegeShaderUid == "0000001397A32F38" && material.userData.siegeMaskTexture) {
+            if (material.userData.siegeShaderUid == "0000001397A32F38" && (material.userData.siegeMaskTexture || material.userData.siegeShaderUniforms?.ClothingMaskMode?.[0] === 0)) {
                 materials.add(material);
             }
         }
@@ -33,13 +33,20 @@ export async function applySiegeClothing(gltf, modelUrl) {
 
         const colors = names.map(name => new THREE.Color().setRGB(...values[name].slice(0, 3)).convertSRGBToLinear());
 
-        const maskUrl = new URL(extras.siegeMaskTexture, baseUrl);
-        const mask = await loader.loadAsync(maskUrl.href);
-        mask.flipY = false;
-        mask.colorSpace = THREE.NoColorSpace;
-        mask.wrapS = THREE.RepeatWrapping;
-        mask.wrapT = THREE.RepeatWrapping;
-        mask.needsUpdate = true;
+        const alphaLayers = values.ClothingMaskMode?.[0] === 0;
+        let mask = null;
+
+        if (alphaLayers) {
+            colors.forEach(color => color.multiplyScalar(2));
+        } else {
+            const maskUrl = new URL(extras.siegeMaskTexture, baseUrl);
+            mask = await loader.loadAsync(maskUrl.href)
+            mask.flipY = false;
+            mask.colorSpace = THREE.NoColorSpace;
+            mask.wrapS = THREE.RepeatWrapping;
+            mask.wrapT = THREE.RepeatWrapping;
+            mask.needsUpdate = true;
+        }
 
         material.color.setRGB(1, 1, 1)
 
@@ -73,13 +80,21 @@ export async function applySiegeClothing(gltf, modelUrl) {
                 `
                  #include <map_fragment>
 
-                vec3 siegeMask = texture2D(siegeClothMask, vMapUv).rgb;
-                vec3 siegeInverse = vec3(1.0) - siegeMask;
-                vec3 siegeWeights = vec3(
-                    siegeMask.r * siegeInverse.g * siegeInverse.b,
-                    siegeMask.g * siegeInverse.b * siegeInverse.r,
-                    siegeMask.b * siegeInverse.r * siegeInverse.g
-                );
+                ${alphaLayers ? `
+                    // This alpha chooses fabric layers, not transparency - Nyx
+                    float siegeAlpha = texture2D(map, vMapUv).a;
+                    float siegeRed = step(0.75, siegeAlpha);
+                    float siegeGreen = float(siegeAlpha > 0.25) * (1.0 - siegeRed);
+                    vec3 siegeWeights = vec3(siegeRed, siegeGreen, 0.0);
+                    ` : `
+                    vec3 siegeMask = texture2D(siegeClothMask, vMapUv).rgb;
+                    vec3 siegeInverse = vec3(1.0) - siegeMask;
+                    vec3 siegeWeights = vec3(
+                        siegeMask.r * siegeInverse.g * siegeInverse.b,
+                        siegeMask.g * siegeInverse.b * siegeInverse.r,
+                        siegeMask.b * siegeInverse.r * siegeInverse.g
+                    );
+                `}
 
                 vec3 siegeOriginal = diffuseColor.rgb;
                 vec3 siegeTinted = mix(
@@ -101,7 +116,7 @@ export async function applySiegeClothing(gltf, modelUrl) {
             );
         };
 
-        material.customProgramCacheKey = () => "siege-clothing-v1";
+        material.customProgramCacheKey = () => `siege-clothing-v2-${alphaLayers ? "alpha" : "rgb"}`;
         material.needsUpdate = true;
     }
 }

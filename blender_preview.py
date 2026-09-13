@@ -57,7 +57,8 @@ def mesh_bounds(objects: list[bpy.types.Object]) -> tuple[Vector, Vector]:
 def apply_clothing_preview(material, spec, document, gltf_path):
     extras = spec.get("extras", {})
     mask_name = extras.get("siegeMaskTexture")
-    if not mask_name:
+    alpha_layers = extras.get("siegeShaderUniforms", {}).get("ClothingMaskNode") == [0.0]
+    if not mask_name and not alpha_layers:
         return
 
     uniforms = extras.get("siegeShaderUniforms", {})
@@ -100,24 +101,35 @@ def apply_clothing_preview(material, spec, document, gltf_path):
         return node.outputs[0]
 
     diffuse = image_node(diffuse_name, "sRGB")
-    mask = image_node(mask_name, "Non-Color")
-    channels = nodes.new("ShaderNodeSeparateColor")
-    links.new(mask.outputs["Color"], channels.inputs["Color"])
-    rgb = [channels.outputs[name] for name in ("Red", "Green", "Blue")]
-    inverse = [math_node("SUBTRACT", 1.0, channel) for channel in rgb]
+    if alpha_layers:
+        alpha = diffuse.outputs["Alpha"]
+        red = math_node("SUBTRACT", 1.0, math_node("LESS_THAN", alpha, 0.75))
+        green = math_node("MULTIPLY", math_node("GREATER_THAN", alpha, 0.25), math_node("SUBTRACT", 1.0, red))
+        weights = (red, green, 0.0)
+    else:
+        mask = image_node(mask_name, "Non-Color")
+        channels = nodes.new("ShaderNodeSeparateColor")
+        links.new(mask.outputs["Color"], channels.inputs["Color"])
+        rgb = [channels.outputs[name] for name in ("Red", "Green", "Blue")]
+        inverse = [math_node("SUBTRACT", 1.0, channel) for channel in rgb]
+        weights = [
+            math_node("MULTIPLY", math_node("MULTIPLY", rgb[index], inverse[(index + 1) % 3]), inverse[(index + 2) % 3])
+            for index in range(3)
+        ]
 
     output = diffuse.outputs["Color"]
 
     for index, name in enumerate(names):
-        # Exclusive channel weights leave both white and black untinted
-        weight = math_node("MULTIPLY", rgb[index], inverse[(index + 1) % 3])
-        weight = math_node("MULTIPLY", weight, inverse[(index + 2) % 3])
+        weight = weights[index]
 
         color = tuple(
             v / 12.92 if v <= 0.04045
             else ((v + 0.055) / 1.055) ** 2.4
             for v in uniforms[name][:3]
         ) + (1.0,)
+
+        if alpha_layers:
+            color = tuple(value * 2.0 for value in color[3:]) + (1.0,)
 
         tinted = nodes.new("ShaderNodeMixRGB")
         tinted.blend_type = "MULTIPLY"
@@ -127,7 +139,10 @@ def apply_clothing_preview(material, spec, document, gltf_path):
 
         blend = nodes.new("ShaderNodeMixRGB")
         blend.label = name
-        links.new(weight, blend.inputs[0])
+        if isinstance(weight, (int, float)):
+            blend.inputs[0].default_value = weight
+        else:
+            links.new(weight, blend.inputs[0])
         links.new(output, blend.inputs[1])
         links.new(tinted.outputs[0], blend.inputs[2])
         output = blend.outputs[0]
@@ -173,6 +188,9 @@ def apply_siege_materials(gltf_path: Path, *, materials=None) -> None:
             ),
             None
         )
+
+        if apply_experimental_hair(material, principled, extras, gltf_path):
+            continue
 
         packed_filename = extras.get("siegePackedMaterialTexture")
 
@@ -551,6 +569,125 @@ def main() -> None:
 
     if failures:
         raise RuntimeError(f"{len(failures)} previews failed")
+
+def apply_experimental_hair(material, principled, extras, gltf_path):
+    """Approximate two hair lobes. The source field mapping is experimental"""
+    import math
+
+    if extras.get("siegeShaderUid") != "000000003051C028" or principled is None:
+        return False
+
+    values = extras.get("siegeShaderUniforms", {}).get("ExperimentalHairSourceV1")
+    if not isinstance(values, (list, tuple)) or len(values) != 8 or any(not isinstance(v, (int, float)) or not math.isfinite(v) for v in values) or not -3.0 <= values[0] <= 3.0 or any(not 0.0 <= v <= 1.0 for v in values[1:]):
+        return False
+
+    nodes, links = material.node_tree.nodes, material.node_tree.links
+    if nodes.get("Siege Experimental Hair"):
+        return True
+
+    def node(kind):
+        result = nodes.new(kind)
+        result.label = "Experimental Hair"
+        return result
+
+    def connect(value, socket):
+        if hasattr(value, "is_output"):
+            links.new(value, socket)
+        else:
+            if socket.type == "RGBA" and isinstance(value, (int, float)):
+                value = (value, value, value, 1.0)
+            socket.default_value = value
+
+    def source(socket):
+        return socket.links[0].from_socket if socket.is_linked else socket.default_value
+
+    def multiply_color(color, factor):
+        mix = node("ShaderNodeMixRGB")
+        mix.blend_type = "MULTIPLY"
+        mix.inputs[0].default_value = 1.0
+        connect(color, mix.inputs[1])
+        connect(factor, mix.inputs[2])
+        return mix.outputs[0]
+
+    geometry = node("ShaderNodeNewGeometry")
+    tangent = node("ShaderNodeTangent")
+    tangent.direction_type = "UV_MAP"
+    normal = source(principled.inputs["Normal"]) if principled.inputs["Normal"].is_linked else geometry.outputs["Normal"]
+
+    bitangent = node("ShaderNodeVectorMath")
+    bitangent.operation = "CROSS_PRODUCT"
+    connect(normal, bitangent.inputs[0])
+    connect(tangent.outputs[0], bitangent.inputs[1])
+
+    shift = node("ShaderNodeVectorMath")
+    shift.operation = "SCALE"
+    connect(normal, shift.inputs[0])
+    shift.inputs["Scale"].default_value = values[0]
+
+    shifted = node("ShaderNodeVectorMath")
+    shifted.operation = "ADD"
+    links.new(bitangent.outputs[0], shifted.inputs[0])
+    links.new(shift.outputs[0], shifted.inputs[1])
+
+    direction = node("ShaderNodeVectorMath")
+    direction.operation = "NORMALIZE"
+    links.new(shifted.outputs[0], direction.inputs[0])
+
+    mask = 1.0
+    packed_path = gltf_path.parent / extras.get("siegePackedMaterialTexture", "")
+    if packed_path.is_file():
+        texture = node("ShaderNodeTexImage")
+        texture.image = bpy.data.images.load(str(packed_path), check_existing=True).copy()
+        texture.image.colorspace_settings.name = "Non-Color"
+        channels = node("ShaderNodeSeparateColor")
+        links.new(texture.outputs["Color"], channels.inputs["Color"])
+        mask = channels.outputs["Red"]
+
+    base = source(principled.inputs["Base Color"])
+    tint = node("ShaderNodeMixRGB")
+    tint.inputs[0].default_value = values[5]
+    connect(base, tint.inputs[1])
+    tint.inputs[2].default_value = (1.0, 1.0, 1.0, 1.0)
+
+    diffuse = node("ShaderNodeBsdfDiffuse")
+    connect(multiply_color(base, (values[6],) * 3 + (1.0,)), diffuse.inputs["Color"])
+    connect(normal, diffuse.inputs["Normal"])
+    accumulated = diffuse.outputs[0]
+
+    glosses = (
+        max(0.0, min(1.0, 1.035 - 1.15 * (1.0 - values[1]))),
+        values[3]
+    )
+    for gloss, strength, color in zip(glosses, (values[2], values[4]), (base, tint.outputs[0])):
+        highlight = node("ShaderNodeBsdfAnisotropic")
+        highlight.distribution = "GGX"
+        highlight.inputs["Roughness"].default_value = (
+            2.0 / (2.0 ** (19.0 * gloss) + 2.0)
+        ) ** 0.25
+
+        # Two lobes, still not a confession from the serializer - Aiden
+        highlight.inputs["Anisotropy"].default_value = 0.8
+        weighted = multiply_color(color, (0.125 * strength,) * 3 + (1.0,))
+        connect(multiply_color(weighted, mask), highlight.inputs["Color"])
+        connect(normal, highlight.inputs["Normal"])
+        connect(direction.outputs[0], highlight.inputs["Tangent"])
+
+        addition = node("ShaderNodeAddShader")
+        links.new(accumulated, addition.inputs[0])
+        links.new(highlight.outputs[0], addition.inputs[1])
+        accumulated = addition.outputs[0]
+
+    transparent = node("ShaderNodeBsdfTransparent")
+    output = node("ShaderNodeMixShader")
+    output.name = "Siege Experimental Hair"
+    connect(source(principled.inputs["Alpha"]), output.inputs[0])
+    links.new(transparent.outputs[0], output.inputs[1])
+    links.new(accumulated, output.inputs[2])
+
+    for link in list(principled.outputs["BSDF"].links):
+        links.new(output.outputs[0], link.to_socket)
+
+    return True
 
 if __name__ == "__main__":
     main()
