@@ -401,7 +401,57 @@ def resolve_static_attachment_bindings(payload, bindings):
             resolved[geometry_uid] = replace(binding, joint_node_matrices=(_pose_to_gltf_matrix(poses[0]),))
     return resolved
 
-def resolve_static_face_bindings(bindings: Mapping[int, MeshBinding]) -> dict[int, MeshBinding]:
+def resolve_attachment_frames(bindings: Mapping[int, MeshBinding]) -> dict[int, MeshBinding]:
+    """Align attachment axis conventions using matching source bind bones"""
+
+    resolved = dict(bindings)
+    tolerance = 1e-4
+    identity = tuple(1.0 if index % 5 == 0 else 0.0 for index in range(16))
+
+    def agrees(left, right):
+        return all(abs(a - b) <= tolerance for a, b in zip(left, right))
+
+    for binding in bindings.values():
+        if binding.joint_node_matrices or HOST_HEAD_ROOT not in binding.bone_ids:
+            continue
+
+        matrices = _default_joint_node_matrices(binding)
+        own = dict(zip(binding.bone_ids, matrices))
+        corrections = []
+
+        for host in bindings.values():
+            if len(host.bone_ids) <= len(binding.bone_ids):
+                continue
+
+            host_matrices = dict(zip(host.bone_ids, _default_joint_node_matrices(host)))
+            common = own.keys() & host_matrices.keys()
+            if HOST_HEAD_ROOT not in common or len(common) < 3:
+                continue
+
+            delta = _gltf_multiply(host_matrices[HOST_HEAD_ROOT], invert_gltf_matrix(own[HOST_HEAD_ROOT]))
+            if not all(agrees(delta, _gltf_multiply(host_matrices[bone_id], invert_gltf_matrix(own[bone_id]))) for bone_id in common):
+                continue
+
+            # fix axis conventions, not intentional attachment offsets - Aiden
+            basis = tuple(float(round(value)) for value in delta)
+            if not agrees(delta, basis):
+                continue
+            if basis[12:15] != (0.0, 0.0, 0.0) or basis[15] != 1.0:
+                continue
+            if any(basis[index] != 0.0 for index in (3, 7, 11)):
+                continue
+            if any(sum(abs(basis[column * 4 + row]) for column in range(3)) != 1.0 for row in range(3)) or any(sum(abs(basis[column * 4 + row]) for row in range(3)) != 1.0 for column in range(3)):
+                continue
+
+            if not agrees(delta, identity):
+                corrections.append(delta)
+
+        if corrections and all(agrees(corrections[0], delta) for delta in corrections[1:]):
+            resolved[binding.geometry_uid] = replace(binding, joint_node_matrices=tuple(_gltf_multiply(corrections[0], matrix) for matrix in matrices))
+
+    return resolved
+
+def resolve_static_face_bindings(bindings: Mapping[int, MeshBinding], payload: bytes | None = None) -> dict[int, MeshBinding]:
     """Apply the package's neutral pose to its shared facial geometry"""
 
     resolved = dict(bindings)
@@ -427,6 +477,41 @@ def resolve_static_face_bindings(bindings: Mapping[int, MeshBinding]) -> dict[in
         None
     )
 
+    package_root = None
+
+    if host is None and payload is not None and len(shared.bone_ids) > len(SHARED_FACE_BONES):
+        # Some newer Heads keep their neutral face pose at package level - Isaac
+        signature = struct.pack("<II", POSE_GROUP_TAG, 0xFFB49035)
+        groups = set()
+        cursor = 0
+
+        while True:
+            offset = payload.find(signature, cursor)
+            if offset < 0:
+                break
+
+            cursor = offset + len(signature)
+            transforms = _read_pose_transforms(payload, offset)
+            if transforms and transforms[0].bone_id == 0x40CDE165 and sum(t.bone_id == 0x40CDE165 for t in transforms) == 1 and SHARED_FACE_BONES.issubset(t.bone_id for t in transforms):
+                groups.add(transforms)
+
+        if len(groups) == 1:
+            transforms = next(iter(groups))
+            pose_bones = {t.bone_id for t in transforms}
+            candidates = [
+                binding for binding in bindings.values()
+                if HOST_HEAD_ROOT in binding.bone_ids
+            ]
+            scores = [
+                len(pose_bones.intersection(binding.bone_ids))
+                for binding in candidates
+            ]
+
+            if scores and max(scores) > 0 and scores.count(max(scores)) == 1:
+                host = replace(candidates[scores.index(max(scores))], pose_transforms=transforms)
+
+                package_root = transforms[0]
+
     if host is None:
         return resolved
 
@@ -440,6 +525,9 @@ def resolve_static_face_bindings(bindings: Mapping[int, MeshBinding]) -> dict[in
 
     root_index = host.bone_ids.index(HOST_HEAD_ROOT)
     root_matrix = host_matrices[root_index]
+
+    if package_root is not None:
+        root_matrix = _gltf_multiply(root_matrix, _pose_to_gltf_matrix(package_root))
 
     for face_bone in FACE_LEFT_EYE, FACE_RIGHT_EYE:
         face_index = shared.bone_ids.index(face_bone)
@@ -763,7 +851,7 @@ def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: A
         else None
     )
     mesh_bindings = (
-        resolve_static_face_bindings(resolve_static_attachment_bindings(model_payload, read_mesh_bindings(model_payload)))
+        resolve_static_face_bindings(resolve_attachment_frames(resolve_static_attachment_bindings(model_payload, read_mesh_bindings(model_payload))), model_payload)
         if model_payload is not None
         else {}
     )

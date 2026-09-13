@@ -547,7 +547,7 @@ def read_clothing_preview_colors(material_blob):
                 raise ValueError("Unexpected clothing mask mode key")
 
             values = struct.unpack_from("<f", material_blob, cursor)
-            if values[0] not in (0.0, 1.0):
+            if not math.isfinite(values[0]):
                 raise ValueError("Invalid clothing mask mode")
 
             result.append(
