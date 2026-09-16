@@ -15,6 +15,7 @@ from typing import Iterable, Mapping
 
 from PIL import Image
 
+from src.tint import bake_tinted_material
 from src.gltf import (
     MaterialTextures,
     invert_gltf_matrix,
@@ -910,6 +911,11 @@ def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: A
 
             export_parts = tuple(rebased_parts)
             material_textures = tuple(resolved_materials)
+
+    material_textures = tuple(
+        bake_tinted_material(slot, output_directory)
+        for slot in material_textures
+    )
 
     part_count = len(parts)
     vertex_count = sum(len(part.vertices) for part in parts)

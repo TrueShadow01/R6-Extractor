@@ -9,6 +9,7 @@ import struct
 import math
 from typing import Collection, Iterable
 
+from src.tint import read_tint_parameters
 from src.metadata import (
     FileMetadata,
     InvalidFileMetadata,
@@ -777,6 +778,18 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
             material_parameter = UNTEXTURED_COLOR_PARAMETERS.get(shader_uid)
 
         material_uniforms = apply_material_uniform_overrides(material_blob, default_uniforms, material_bindings, parameter_index=material_parameter)
+
+        if shader_uid == TINTED_HEADGEAR_SHADER:
+            material_uniforms += tuple(
+                ShaderUniform(
+                    owner_uid=material_uid,
+                    index=index,
+                    name=name,
+                    uniform_type=1,
+                    values=values
+                )
+                for index, (name, values) in enumerate(read_tint_parameters(material_blob))
+            )
 
         if shader_uid == SOLID_COSMETIC_SHADER:
             material_uniforms += read_clothing_preview_colors(material_blob)
