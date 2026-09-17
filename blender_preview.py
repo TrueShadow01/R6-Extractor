@@ -57,7 +57,7 @@ def mesh_bounds(objects: list[bpy.types.Object]) -> tuple[Vector, Vector]:
 def apply_clothing_preview(material, spec, document, gltf_path):
     extras = spec.get("extras", {})
     mask_name = extras.get("siegeMaskTexture")
-    alpha_layers = extras.get("siegeShaderUniforms", {}).get("ClothingMaskNode") == [0.0]
+    alpha_layers = extras.get("siegeShaderUniforms", {}).get("ClothingMaskMode") == [0.0]
     if not mask_name and not alpha_layers:
         return
 
@@ -100,7 +100,11 @@ def apply_clothing_preview(material, spec, document, gltf_path):
                 links.new(value, node.inputs[index])
         return node.outputs[0]
 
-    diffuse = image_node(diffuse_name, "sRGB")
+    def add3(values):
+        return math_node("ADD", math_node("ADD", values[0], values[1]), values[2])
+
+    diffuse = image_node(diffuse_name, "Non-Color")
+
     if alpha_layers:
         alpha = diffuse.outputs["Alpha"]
         red = math_node("SUBTRACT", 1.0, math_node("LESS_THAN", alpha, 0.75))
@@ -110,49 +114,45 @@ def apply_clothing_preview(material, spec, document, gltf_path):
         mask = image_node(mask_name, "Non-Color")
         channels = nodes.new("ShaderNodeSeparateColor")
         links.new(mask.outputs["Color"], channels.inputs["Color"])
-        rgb = [channels.outputs[name] for name in ("Red", "Green", "Blue")]
-        inverse = [math_node("SUBTRACT", 1.0, channel) for channel in rgb]
-        weights = [
-            math_node("MULTIPLY", math_node("MULTIPLY", rgb[index], inverse[(index + 1) % 3]), inverse[(index + 2) % 3])
-            for index in range(3)
+        rgb = [
+            channels.outputs[name]
+            for name in ("Red", "Green", "Blue")
         ]
+        divisor = math_node("MAXIMUM", add3(rgb), 1.0)
+        weights = tuple(math_node("DIVIDE", value, divisor) for value in rgb)
 
-    output = diffuse.outputs["Color"]
+    squared = [
+        math_node("MULTIPLY", value, value)
+        for value in weights
+    ]
+    strength = math_node("MINIMUM", math_node("SQRT", add3(squared), 0.0), 1.0)
+    factor = nodes.new("ShaderNodeCombineXYZ")
 
-    for index, name in enumerate(names):
-        weight = weights[index]
+    # Shader parameters use 0.5 as neutral - Nyx
+    for channel in range(3):
+        weighted = add3([
+            math_node("MULTIPLY", weights[index], uniforms[name][channel])
+            for index, name in enumerate(names)
+        ])
+        gain = math_node("ADD", 1.0, math_node("MULTIPLY", math_node("MULTIPLY", strength, 2.0), math_node("SUBTRACT", weighted, 0.5)))
+        links.new(gain, factor.inputs[channel])
 
-        color = tuple(
-            v / 12.92 if v <= 0.04045
-            else ((v + 0.055) / 1.055) ** 2.4
-            for v in uniforms[name][:3]
-        ) + (1.0,)
-
-        if alpha_layers:
-            color = tuple(value * 2.0 for value in color[3:]) + (1.0,)
-
-        tinted = nodes.new("ShaderNodeMixRGB")
-        tinted.blend_type = "MULTIPLY"
-        tinted.inputs[0].default_value = 1.0
-        tinted.inputs[2].default_value = color
-        links.new(diffuse.outputs["Color"], tinted.inputs[1])
-
-        blend = nodes.new("ShaderNodeMixRGB")
-        blend.label = name
-        if isinstance(weight, (int, float)):
-            blend.inputs[0].default_value = weight
-        else:
-            links.new(weight, blend.inputs[0])
-        links.new(output, blend.inputs[1])
-        links.new(tinted.outputs[0], blend.inputs[2])
-        output = blend.outputs[0]
-
+    blend = nodes.new("ShaderNodeMixRGB")
     blend.name = "Siege Clothing Preview"
+    blend.blend_type = "MULTIPLY"
+    blend.use_clamp = True
+    blend.inputs[0].default_value = 1.0
+    links.new(diffuse.outputs["Color"], blend.inputs[1])
+    links.new(factor.outputs["Vector"], blend.inputs[2])
+
+    gamma = nodes.new("ShaderNodeGamma")
+    gamma.inputs["Gamma"].default_value = 2.2
+    links.new(blend.outputs[0], gamma.inputs["Color"])
+
     base = principled.inputs["Base Color"]
     for link in list(base.links):
         links.remove(link)
-
-    links.new(output, base)
+    links.new(gamma.outputs["Color"], base)
 
 def apply_siege_materials(gltf_path: Path, *, materials=None) -> None:
     document = json.loads(gltf_path.read_text(encoding="utf-8"))

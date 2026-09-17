@@ -31,14 +31,12 @@ export async function applySiegeClothing(gltf, modelUrl) {
             throw new Error(`Missing clothing data: ${material.name}`);
         }
 
-        const colors = names.map(name => new THREE.Color().setRGB(...values[name].slice(0, 3)).convertSRGBToLinear());
+        const colors = names.map(name => new THREE.Vector3(...values[name].slice(0, 3)));
 
         const alphaLayers = values.ClothingMaskMode?.[0] === 0;
         let mask = null;
 
-        if (alphaLayers) {
-            colors.forEach(color => color.multiplyScalar(2));
-        } else {
+        if (!alphaLayers) {
             const maskUrl = new URL(extras.siegeMaskTexture, baseUrl);
             mask = await loader.loadAsync(maskUrl.href)
             mask.flipY = false;
@@ -48,6 +46,9 @@ export async function applySiegeClothing(gltf, modelUrl) {
             mask.needsUpdate = true;
         }
 
+        material.map = material.map.clone();
+        material.map.colorSpace = THREE.NoColorSpace;
+        material.map.needsUpdate = true;
         material.color.setRGB(1, 1, 1)
 
         material.onBeforeCompile = shader => {
@@ -88,35 +89,22 @@ export async function applySiegeClothing(gltf, modelUrl) {
                     vec3 siegeWeights = vec3(siegeRed, siegeGreen, 0.0);
                     ` : `
                     vec3 siegeMask = texture2D(siegeClothMask, vMapUv).rgb;
-                    vec3 siegeInverse = vec3(1.0) - siegeMask;
-                    vec3 siegeWeights = vec3(
-                        siegeMask.r * siegeInverse.g * siegeInverse.b,
-                        siegeMask.g * siegeInverse.b * siegeInverse.r,
-                        siegeMask.b * siegeInverse.r * siegeInverse.g
-                    );
+                    vec3 siegeWeights = siegeMask / max(siegeMask.r + siegeMask.g + siegeMask.b, 1.0);
                 `}
 
-                vec3 siegeOriginal = diffuseColor.rgb;
-                vec3 siegeTinted = mix(
-                    siegeOriginal,
-                    siegeOriginal * siegeClothRed,
-                    siegeWeights.r
-                );
-                siegeTinted = mix(
-                    siegeTinted,
-                    siegeOriginal * siegeClothGreen,
-                    siegeWeights.g
-                );
-                diffuseColor.rgb = mix(
-                    siegeTinted,
-                    siegeOriginal * siegeClothBlue,
-                    siegeWeights.b
-                );
+                float siegeStrength = clamp(length(siegeWeights), 0.0, 1.0);
+                vec3 siegeColor =
+                    siegeWeights.r * siegeClothRed +
+                    siegeWeights.g * siegeClothGreen +
+                    siegeWeights.b * siegeClothBlue;
+
+                vec3 siegeGain = vec3(1.0) + 2.0 * siegeStrength * (siegeColor - vec3(0.5));
+                diffuseColor.rgb = pow(clamp(diffuseColor.rgb * siegeGain, 0.0, 1.0), vec3(2.2));
                 `
             );
         };
 
-        material.customProgramCacheKey = () => `siege-clothing-v2-${alphaLayers ? "alpha" : "rgb"}`;
+        material.customProgramCacheKey = () => `siege-clothing-v3-${alphaLayers ? "alpha" : "rgb"}`;
         material.needsUpdate = true;
     }
 }
