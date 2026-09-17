@@ -450,6 +450,28 @@ def resolve_attachment_frames(bindings: Mapping[int, MeshBinding]) -> dict[int, 
         if corrections and all(agrees(corrections[0], delta) for delta in corrections[1:]):
             resolved[binding.geometry_uid] = replace(binding, joint_node_matrices=tuple(_gltf_multiply(corrections[0], matrix) for matrix in matrices))
 
+    # Tachanka's head and helmet share bones but use different frames
+    # Derive the correction from those bones, not a guessed offset - Issac
+    head = resolved.get(0x9D00E00C7)
+    helmet = resolved.get(0x9D00E00BB)
+
+    if head is not None and helmet is not None and not head.joint_node_matrices:
+        head_matrices = _default_joint_node_matrices(head)
+        helmet_matrices = _default_joint_node_matrices(helmet)
+
+        head_by_bone = dict(zip(head.bone_ids, head_matrices))
+        helmet_by_bone = dict(zip(helmet.bone_ids, helmet_matrices))
+        common = head_by_bone.keys() & helmet_by_bone.keys()
+
+        if HOST_HEAD_ROOT in common and len(common) == 16:
+            correction = _gltf_multiply(helmet_by_bone[HOST_HEAD_ROOT], invert_gltf_matrix(head_by_bone[HOST_HEAD_ROOT]))
+
+            if all(agrees(correction, _gltf_multiply(helmet_by_bone[bone_id], invert_gltf_matrix(head_by_bone[bone_id]))) for bone_id in common):
+                resolved[head.geometry_uid] = replace(
+                    head,
+                    joint_node_matrices=tuple(_gltf_multiply(correction, matrix) for matrix in head_matrices)
+                )
+
     return resolved
 
 def resolve_static_face_bindings(bindings: Mapping[int, MeshBinding], payload: bytes | None = None) -> dict[int, MeshBinding]:
@@ -856,6 +878,35 @@ def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: A
         if model_payload is not None
         else {}
     )
+
+    if model_uid == 0x156B734234:
+        body_record = index.primary(0x156B73543D)
+        if body_record is None:
+            raise ValueError("Tachanka head alignment requires body model 156B73543D")
+
+        body_bindings = read_mesh_bindings(load_asset_payload(body_record))
+        body = body_bindings.get(0x9D00E0074)
+        helmet = mesh_bindings.get(0x9D00E00BB)
+        if body is None or helmet is None:
+            raise ValueError("Tachanka attachment bindings have changed")
+
+        body_by_bone = dict(zip(body.bone_ids, _default_joint_node_matrices(body)))
+        helmet_by_bone = dict(zip(helmet.bone_ids, _default_joint_node_matrices(helmet)))
+        common = body_by_bone.keys() & helmet_by_bone.keys()
+
+        if HOST_HEAD_ROOT not in common or len(common) < 3:
+            raise ValueError("Insufficient shared bones for Tachanka head alignment")
+
+        correction = _gltf_multiply(body_by_bone[HOST_HEAD_ROOT], invert_gltf_matrix(helmet_by_bone[HOST_HEAD_ROOT]))
+
+        if any(max(abs(a - b) for a, b in zip(correction, _gltf_multiply(body_by_bone[bone_id], invert_gltf_matrix(helmet_by_bone[bone_id])))) > 1e-4 for bone_id in common):
+            raise ValueError("Tachanka body and helmet attachment frames disagree")
+
+        # Keep the assembled face, eyes and helmet together - Aiden
+        mesh_bindings = {
+            uid: replace(binding, joint_node_matrices=tuple(_gltf_multiply(correction, matrix) for matrix in _default_joint_node_matrices(binding)))
+            for uid, binding in  mesh_bindings.items()
+        }
 
     parts = decode_mesh_parts(geometry_records, mesh_bindings)
     texture_uids = resolve_texture_uids(model_uid, children, index)

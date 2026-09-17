@@ -662,6 +662,9 @@ def command_models(args: argparse.Namespace) -> int:
 def _load_database_model_index(database: str | Path, uid: int, children: dict[int, list[int]]):
     dependency_uids = set(resolve_dependency_uids(uid, children))
 
+    if uid == 0x156B734234:
+        dependency_uids.add(0x156B73543D)
+
     index = load_asset_index(database, dependency_uids)
 
     direct_texture_uids = set(resolve_direct_texture_uids(uid, index))
