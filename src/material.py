@@ -1,7 +1,5 @@
 """Resolve Siege material slots to compiled texture assets"""
 
-# remember to correct offsets after major game updates since the offsets get changed when ubisoft releases a major update (I think) - Blake
-
 from __future__ import annotations
 from dataclasses import dataclass, replace
 
@@ -619,6 +617,14 @@ def _material_selector_source(material_blob: bytes, spec_uid: int, bindings_by_s
     if position < 0:
         return "unknown", None
 
+    parameter_start = material_blob.find(struct.pack("<III", UNIFORM_MARKER, 0, 0xF2CE7E39))
+    if parameter_start >= 0:
+        for offset, name in ((32, "TintCustom0"), (100, "TintCustom1")):
+            if position == parameter_start + offset:
+                marker = struct.unpack_from("<I", material_blob, position - 12)[0]
+                if marker == CURRENT_TEXTURE_SELECTOR:
+                    return "shader", name
+
     if position >= 12:
         marker = struct.unpack_from("<I", material_blob, position - 12)[0]
 
@@ -751,6 +757,10 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
                     shader_binding=selector_binding
                 )
             )
+
+            # Custom tint maps must not replace the base albedo - Blake
+            if selector_binding in ("TintCustom0", "TintCustom1"):
+                continue
 
             # Nyx, the detail map got here first again lol - Isaac
             # Explicit base selectors take priority over custom shader maps

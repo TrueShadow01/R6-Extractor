@@ -7,6 +7,8 @@ from pathlib import Path
 
 from PIL import Image, ImageMath
 
+from src.tint_pattern import bake_pattern_material
+
 SHADER = 0x841DC11F9
 PREFIX = struct.pack("<III", 0xFBF80000, 0, 0xF2CE7E39)
 
@@ -120,6 +122,10 @@ def bake_tinted_material(slot, output_directory):
     if len(selectors) != 8 or any(name not in uniforms for name in names):
         print(f"WARNING: Tint bake skipped for {slot.material_uid:016X}: Missing source parameters", flush=True)
         return slot
+
+    patterned = bake_pattern_material(slot, output_directory, uniforms)
+    if patterned is not None:
+        return patterned
 
     first_is_default = selectors[0] == 0 and selectors[1] == 7 and selectors[2] == 0 and selectors[3] == 0
     second_uid = int(selectors[6]) | (int(selectors[7]) << 32)
