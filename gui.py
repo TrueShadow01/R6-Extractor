@@ -9,7 +9,7 @@ import json
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QThread, Signal, QProcess, QSettings
-from PySide6.QtGui import QTextCursor
+from PySide6.QtGui import QTextCursor, QIcon
 from PySide6.QtWidgets import (
     QApplication, QFileDialog, QLabel, QLineEdit, QListWidget,
     QListWidgetItem, QMainWindow, QPlainTextEdit, QPushButton,
@@ -708,8 +708,13 @@ class MainWindow(QMainWindow):
         super().closeEvent(event)
 
 def main():
+    if sys.platform == "win32":
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("TrueShadow01.R6ForgeExtractor")
+
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
+    app.setWindowIcon(QIcon(str(resource_directory() / "docs" / "images" / "app.ico")))
     window = MainWindow()
     window.show()
     return app.exec()

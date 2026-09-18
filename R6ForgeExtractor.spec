@@ -16,6 +16,7 @@ datas = [
         str(project / "blender_addon" / "io_scene_r6" / "__init__.py"),
         "blender_addon/io_scene_r6",
     ),
+    (str(project / "docs" / "images" / "app.ico"), "docs/images"),
 ]
 
 for distribution in (
@@ -49,6 +50,7 @@ gui_exe = EXE(
     [],
     exclude_binaries=True,
     name="R6ForgeExtractor",
+    icon=str(project / "docs" / "images" / "app.ico"),
     console=False,
     debug=False,
     strip=False,
@@ -62,6 +64,7 @@ worker_exe = EXE(
     [],
     exclude_binaries=True,
     name="R6Worker",
+    icon=str(project / "docs" / "images" / "app.ico"),
     console=True,
     debug=False,
     strip=False,
