@@ -389,7 +389,7 @@ def import_siege_model(gltf_path):
         for material in bpy.data.materials
     }
 
-    result = bpy.ops.import_scene.gltf(filepath=str(gltf_path))
+    result = bpy.ops.import_scene.gltf(filepath=str(gltf_path), disable_bone_shape=True, bone_heuristic="TEMPERANCE")
     if "FINISHED" not in result:
         raise RuntimeError(f"glTF import did not finish: {gltf_path}")
 
@@ -402,7 +402,7 @@ def import_siege_model(gltf_path):
 def render_preview(gltf_path: Path, output_path: Path) -> None:
     bpy.ops.wm.read_factory_settings(use_empty=True)
 
-    bpy.ops.import_scene.gltf(filepath=str(gltf_path))
+    bpy.ops.import_scene.gltf(filepath=str(gltf_path), disable_bone_shape=True, bone_heuristic="TEMPERANCE")
 
     apply_siege_materials(gltf_path)
 

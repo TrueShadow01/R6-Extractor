@@ -306,7 +306,7 @@ def siege_to_gltf_vector(value: tuple[float, float, float]) -> tuple[float, floa
 
     return x, z, -y
 
-def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: str | Path, *, diffuse: str | None = None, normal: str | None = None, specular: str | None = None, material_textures: Sequence[MaterialTextures] | None = None) -> Path:
+def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: str | Path, *, diffuse: str | None = None, normal: str | None = None, specular: str | None = None, material_textures: Sequence[MaterialTextures] | None = None, skeletons=None) -> Path:
     """Write a multi-part glTF using external PNG textures"""
 
     output_directory = Path(output_directory).resolve()
@@ -585,7 +585,10 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
                 {
                     "name": f"{prefix}_skin",
                     "joints": joint_nodes,
-                    "inverseBindMatrices": inverse_bind_accessor
+                    "inverseBindMatrices": inverse_bind_accessor,
+                    "extras": {
+                        "siegeGeometryUid": f"{part.uid:016X}"
+                    }
                 }
             )
 
@@ -809,6 +812,10 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
         ]
         document["images"] = images
         document["textures"] = textures
+
+    from src.skeleton import apply_skeleton_hierachy
+
+    apply_skeleton_hierachy(document, skeletons)
 
     binary_path.write_bytes(binary.data)
 

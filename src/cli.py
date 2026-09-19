@@ -661,6 +661,7 @@ def command_models(args: argparse.Namespace) -> int:
 
 def _load_database_model_index(database: str | Path, uid: int, children: dict[int, list[int]]):
     dependency_uids = set(resolve_dependency_uids(uid, children))
+    dependency_uids.update((0x5EC7E82135, 0x5E768B9E1A))
 
     if uid == 0x156B734234:
         dependency_uids.add(0x156B73543D)

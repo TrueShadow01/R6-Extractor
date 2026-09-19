@@ -15,6 +15,7 @@ from typing import Iterable, Mapping
 
 from PIL import Image
 
+from src.skeleton import resolve_model_skeletons
 from src.tint import bake_tinted_material
 from src.gltf import (
     MaterialTextures,
@@ -979,7 +980,8 @@ def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: A
         diffuse=diffuse,
         normal=normal,
         specular=specular,
-        material_textures=material_textures or None
+        material_textures=material_textures or None,
+        skeletons=resolve_model_skeletons(model_payload, index) if model_payload is not None else {}
     )
 
     return ModelExportResult(

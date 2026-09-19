@@ -1,7 +1,5 @@
 """Basic Desktop UI for browsing default operator registry entries"""
 
-# Tell Blake to do some reverse engineering of the shaders, some are still fucked, need some for 3d prev. -Victor
-
 import sys
 import codecs
 import re
@@ -13,7 +11,8 @@ from PySide6.QtGui import QTextCursor, QIcon
 from PySide6.QtWidgets import (
     QApplication, QFileDialog, QLabel, QLineEdit, QListWidget,
     QListWidgetItem, QMainWindow, QPlainTextEdit, QPushButton,
-    QHBoxLayout, QVBoxLayout, QSplitter, QTabWidget, QWidget
+    QHBoxLayout, QVBoxLayout, QSplitter, QTabWidget, QWidget,
+    QCheckBox
 )
 
 from src.operator_registry import read_operator_registry
@@ -126,6 +125,10 @@ class MainWindow(QMainWindow):
         blender_row.addWidget(self.blender_edit, 1)
         blender_row.addWidget(self.blender_browse)
         layout.addLayout(blender_row)
+
+        self.ik_checkbox = QCheckBox("Create experimental IK controls")
+        self.ik_checkbox.setToolTip("Applies when opening in Blender. Save as .blend to retain controls.")
+        layout.addWidget(self.ik_checkbox)
 
         self.search = QLineEdit()
         self.search.setPlaceholderText("Search operators...")
@@ -365,7 +368,7 @@ class MainWindow(QMainWindow):
             self.export_button, self.install_button, self.open_button,
             self.index_button, self.load, self.browse, self.game_path,
             self.operators, self.search, self.preview_button,
-            self.blender_edit, self.blender_browse
+            self.blender_edit, self.blender_browse, self.ik_checkbox
         ):
             widget.setEnabled(not busy)
 
@@ -536,6 +539,7 @@ class MainWindow(QMainWindow):
         self.blender_path = blender
         self.blender_launch_script = script
         self.blender_launch_models = models
+        self.blender_launch_ik = self.ik_checkbox.isChecked()
         self.blender_version_output = bytearray()
 
         self.export_process = QProcess(self)
@@ -569,6 +573,7 @@ class MainWindow(QMainWindow):
             "--addons", "io_scene_r6",
             "--python", str(self.blender_launch_script),
             "--",
+            *(["--experimental-ik"] if self.blender_launch_ik else []),
             *[str(path) for path in self.blender_launch_models],
         ]
         with external_program_environment():
