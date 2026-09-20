@@ -6,6 +6,15 @@ from pathlib import Path
 
 import bpy
 
+def warning(title, message):
+    print(title + ": " + message, flush=True)
+
+    if not bpy.app.background:
+        def draw(self, context):
+            self.layout.label(text=message)
+
+        bpy.context.window_manager.popup_menu(draw, titlle=title, icon="ERROR")
+
 def main():
     if bpy.app.version[:2] != (4, 5):
         raise RuntimeError("Blender 4.5 is required")
@@ -27,21 +36,23 @@ def main():
         import_siege_model(model)
 
     if args.experimental_ik:
+        objects = list(bpy.context.scene.objects)
+
         try:
             sys.path.insert(0, str(Path(__file__).resolve().parent))
-            from blender_ik import create_operator_ik
+            from blender_ik import create_operator_ik, connect_operator_head
 
             arm = create_operator_ik(list(bpy.context.scene.objects))
         except Exception as error:
-            message = str(error)
-            print("R6 IK unavailable: " +  message, flush=True)
-
-            if not bpy.app.background:
-                def draw(self, context):
-                    self.layout.label(text="Operator imported without IK controls")
-                    self.layout.label(text=message)
-                bpy.context.window_manager.popup_menu(draw, title="R6 experimental IK unavailable", icon="ERROR")
+            warning("Operator imported without IK", str(error))
         else:
+            try:
+                head_name = connect_operator_head(arm, objects)
+            except Exception as error:
+                warning("IK ready, head remains separate", str(error))
+            else:
+                print("R6 head connected. Pose this body bone: "  + head_name, flush=True)
+
             for obj in bpy.context.selected_objects:
                 obj.select_set(False)
             arm.select_set(True)
