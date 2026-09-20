@@ -43,7 +43,8 @@ Oodle is not bundled. See [RAD's official Oodle page](https://www.radgametools.c
 2. Click **Load operators**, then search for and select an operator.
 3. Click **Export selected operator** and choose a destination.
 4. Close Blender and click **Install Blender 4.5 add-on** once or again after updating the importer.
-5. Click **Open in Blender** while selecting the exported operator.
+5. Optionally enable **Create experimental IK controls**, then click **Open in Blender** while selecting the exported operator.
+6. Save the imported scene as `.blend` if you want to retain its Blender materials and controls.
 
 Exports use:
 
@@ -65,14 +66,38 @@ To import an existing export manually, use **File → Import → Rainbow Six Sie
 
 Blender 4.5 is required by this alpha. The UI confirms that Blender launched, import errors appear in Blender's system console.
 
+### Experimental IK controls
+
+Enable **Create experimental IK controls** in the app before clicking **Open in Blender**. The option is off by default.
+
+On supported rigs, use the controls in Blender's Object Mode:
+
+- Move hand and foot cubes with **G**
+- Rotate foot cubes with **R**
+- Move knee spheres to steer knee bending
+- Move or rotate the larger `R6_HeadControl_…` sphere with **G** or **R**. Use small head translations. The neck does not bend automatically toward the control
+
+Supported head rigs also receive shorter bone displays. Head connection or control creation can fail independently of body IK. Read any Blender warning before posing.
+
+Save the scene as `.blend` to preserve controls and constraints. The manual **File → Import → Rainbow Six Siege Operator** add-on workflow imports models and materials but does not automatically create these controls.
+
+After updating the extractor's skeleton code, regenerate older exports before testing rig compatibility.
+
+### Using the controls
+- Select the generated IK cubes, knee spheres or head-control sphere in **Object Mode**
+- Use **G** to move controls and **R** to rotate the foot or head controls
+- These controls are separate Blender objects, so they are operated in **Object Mode**, not Pose Mode. The armature’s bones remain accessible in Pose Mode
+
 ## Known limitations
 
-- Registry discovery was checked against an installation containing 78 operators. Game updates may require parser changes
-- Caveira and Ace received visual checks. Alibi's clothing/material colors and Solis's source-selected gold lens received targeted checks. Full operator fidelity remains unverified.
-- Export supports LOD0 glTF. Complete skeleton hierarchy, animations and GLB export are unavailable
-- Shaders approximate the game appearance. Hair uses a basic fallback. The game's separate hair highlights are not reconstructed. Streamed textures and several material effects remain incomplete
-- The source build includes an interactive cached preview with eye reconstruction, clothing tints and packed metalness/glossiness. Standalone preview packaging remains unverified
-- Visor transparency and several shader effects remain incomplete. Preview lighting approximates a studio, not the game's lighting
+- This is an alpha. Compatibility and visual fidelity have not been verified across every operator
+- Registry discovery was checked against an installation containing 78 operators. Game updates may require parser changes and rebuilding the asset index
+- Export supports LOD0 glTF. Skeleton hierarchy reconstruction is supported where source relationships can be resolved. Complete rig compatibility is not guaranteed. Animation extraction and GLB export are unavailable
+- Experimental IK support varies by operator. Some newer operators support body IK but cannot create head connections or controls. The app retains working body controls and reports the head limitation
+- Bandit and Valkyrie received targeted rig checks. These checks do not establish support for every operator
+- The visible head control provides direct position and rotation control. It does not provide automatic neck IK or a complete facial animation rig.
+- Blender controls and constraints are created through the app's **Open in Blender** workflow. They are not stored in the exported glTF. Save the Blender scene as `.blend` to retain them
+- Shaders and preview lighting approximate the game appearance. Hair, visor effects and other material features may differ from the game. Operator-specific texture or material issues may remain
 - Invalid UV components are replaced with zero and reported in the log. Affected faces may have approximate texture placement
 - Cancellation and batch export resume are not available yet
 
@@ -118,9 +143,11 @@ Tests use synthetic data and do not require game assets or Oodle.
 
 ## Next steps
 
-1. Reverse-engineer hair shading, complete remaining visor effects and validate materials across more operators
-2. Improved preview error recovery and material debugging tools
-3. Standalone preview packaging, cancellation and resumable batch exports
+1. Broaden experimental body and head rig compatibility, including newer operators
+2. Improve neck controls, deformation and remaining material effects
+3. Verify packaged builds, Blender imports and saved `.blend` scenes
+4. Before 1.0, audit every operator available in the supported game version: extraction, materials and textures, head/body placement, skeleton hierarchy, skin deformation, IK controls and Blender save/reopen behavior. Resolve failures or document an explicit support boundary before release
+5. Add cancellation and resumable batch exports
 
 ## License and third-party assets
 
