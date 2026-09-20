@@ -346,3 +346,119 @@ def connect_operator_head(body, objects):
 
     body["r6_head_connected"] = True
     return by_id["07C159A2"]
+
+def create_head_control(body, head_name, objects):
+    """Add an object-mode head control and shorten head display bones"""
+    head = body.pose.bones.get(head_name)
+    if bpy.context.mode != "OBJECT" or head is None or head.parent is None:
+        raise RuntimeError("A connected Head bone with a parent is required")
+    if head.constraints:
+        raise RuntimeError("Head already has constraints")
+
+    heads = [
+        obj for obj in objects
+        if obj.type == "ARMATURE" and obj != body
+    ]
+    if any(arm.data.users != 1 or any(bone.use_connect for bone in arm.data.bones) for arm in heads):
+        raise RuntimeError("Head display cleanup requires unshared, disconnected bones")
+
+    selected = list(bpy.context.selected_objects)
+    active = bpy.context.view_layer.objects.active
+    saved = [
+        (
+            arm,
+            {bone.name: bone.length for bone in arm.data.bones},
+            arm.data.display_type,
+            arm.show_in_front,
+            arm.hide_get()
+        )
+        for arm in heads
+    ]
+
+    bpy.context.view_layer.update()
+    old_pose = head.matrix.copy()
+    control = None
+    rotation = None
+    editing = None
+
+    try:
+        control = bpy.data.objects.new("R6_HeadControl_" + body.name, None)
+        bpy.context.collection.objects.link(control)
+        control.empty_display_type = "SPHERE"
+        control.empty_display_size = 0.12
+        control.show_in_front = True
+        control.lock_scale = (True, True, True)
+        control.matrix_world = body.matrix_world @ old_pose
+
+        follow = control.constraints.new("CHILD_OF")
+        follow.name = "Follow upper body"
+        follow.target = body
+        follow.subtarget = head.parent.name
+        follow.inverse_matrix = (body.matrix_world @ head.parent.matrix).inverted()
+        follow.set_inverse_pending = False
+        bpy.context.view_layer.update()
+
+        rotation = head.constraints.new("COPY_TRANSFORMS")
+        rotation.name = "R6 head control"
+        rotation.target = control
+        rotation.owner_space = rotation.target_space = "WORLD"
+        rotation.mix_mode = "REPLACE"
+        bpy.context.view_layer.update()
+
+        error = max(
+            abs(head.matrix[r][c] - old_pose[r][c])
+            for r in range(4)
+            for c in range(4)
+        )
+        if error > 0.0001:
+            raise RuntimeError("Head control changed the starting pose")
+
+        for obj in selected:
+            obj.select_set(False)
+
+        for arm in heads:
+            editing = arm
+            arm.hide_set(False)
+            arm.select_set(True)
+            bpy.context.view_layer.objects.active = arm
+
+            bpy.ops.object.mode_set(mode="EDIT")
+            for bone in arm.data.edit_bones:
+                bone.length = min(bone.length, 0.025)
+            bpy.ops.object.mode_set(mode="OBJECT")
+
+            arm.select_set(False)
+            arm.data.display_type = "STICK"
+            arm.show_in_front = False
+    except Exception:
+        if editing is not None and editing.mode != "OBJECT":
+            bpy.ops.object.mode_set(mode="OBJECT")
+
+        if rotation is not None:
+            body.pose.bones[head_name].constraints.remove(rotation)
+        if control is not None:
+            bpy.data.objects.remove(control, do_unlink=True)
+
+        for arm, lengths, display, front, hidden in saved:
+            arm.hide_set(False)
+            arm.select_set(True)
+            bpy.context.view_layer.objects.active = arm
+
+            bpy.ops.object.mode_set(mode="EDIT")
+            for bone in arm.data.edit_bones:
+                bone.length = lengths[bone.name]
+            bpy.ops.object.mode_set(mode="OBJECT")
+
+            arm.select_set(False)
+            arm.data.display_type = display
+            arm.show_in_front = front
+
+        raise
+    finally:
+        for arm, length, display, front, hidden in saved:
+            arm.hide_set(hidden)
+        for obj in selected:
+            obj.select_set(True)
+        bpy.context.view_layer.objects.active = active
+        bpy.context.view_layer.update()
+    return control

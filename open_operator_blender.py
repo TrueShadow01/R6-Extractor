@@ -13,7 +13,7 @@ def warning(title, message):
         def draw(self, context):
             self.layout.label(text=message)
 
-        bpy.context.window_manager.popup_menu(draw, titlle=title, icon="ERROR")
+        bpy.context.window_manager.popup_menu(draw, title=title, icon="ERROR")
 
 def main():
     if bpy.app.version[:2] != (4, 5):
@@ -40,7 +40,7 @@ def main():
 
         try:
             sys.path.insert(0, str(Path(__file__).resolve().parent))
-            from blender_ik import create_operator_ik, connect_operator_head
+            from blender_ik import create_operator_ik, connect_operator_head, create_head_control
 
             arm = create_operator_ik(list(bpy.context.scene.objects))
         except Exception as error:
@@ -51,7 +51,12 @@ def main():
             except Exception as error:
                 warning("IK ready, head remains separate", str(error))
             else:
-                print("R6 head connected. Pose this body bone: "  + head_name, flush=True)
+                try:
+                    control = create_head_control(arm, head_name, objects)
+                except Exception as error:
+                    warning("Head connected, visible control unavailable", str(error))
+                else:
+                    print("R6 head control ready: "  + control.name + ". Use G and R in Object Mode", flush=True)
 
             for obj in bpy.context.selected_objects:
                 obj.select_set(False)
