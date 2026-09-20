@@ -41,13 +41,13 @@ def main():
                     self.layout.label(text="Operator imported without IK controls")
                     self.layout.label(text=message)
                 bpy.context.window_manager.popup_menu(draw, title="R6 experimental IK unavailable", icon="ERROR")
-            else:
-                for obj in bpy.context.selected_objects:
-                    obj.select_set(False)
-                arm.select_set(True)
-                bpy.context.view_layer.objects.active = arm
+        else:
+            for obj in bpy.context.selected_objects:
+                obj.select_set(False)
+            arm.select_set(True)
+            bpy.context.view_layer.objects.active = arm
 
-                print("R6 experimental IK ready. Save as .blend to retain controls.", flush=True)
+            print("R6 experimental IK ready. Save as .blend to retain controls.", flush=True)
 
     print(f"R6 import complete: {len(args.models)} models.", flush=True)
 
