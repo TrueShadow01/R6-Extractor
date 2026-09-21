@@ -9,12 +9,20 @@ project = Path(SPECPATH)
 datas = [
     (str(project / "viewer"), "viewer"),
     (str(project / "main.py"), "."),
-    (str(project / "install_blender_addon.py"), "."),
-    (str(project / "open_operator_blender.py"), "."),
+    (str(project / "blender" / "install_addon.py"), "blender"),
+    (str(project / "blender" / "open_operator.py"), "blender"),
     (str(project / "blender_preview.py"), "."),
     (str(project / "blender_ik.py"), "."),
     (
         str(project / "blender_addon" / "io_scene_r6" / "__init__.py"),
+        "blender_addon/io_scene_r6",
+    ),
+    (
+        str(project / "blender_addon" / "io_scene_r6" / "blender_preview.py"),
+        "blender_addon/io_scene_r6",
+    ),
+    (
+        str(project / "blender_addon" / "io_scene_r6" / "blender_ik.py"),
         "blender_addon/io_scene_r6",
     ),
     (str(project / "docs" / "images" / "app.ico"), "docs/images"),

@@ -39,8 +39,7 @@ def main():
         objects = list(bpy.context.scene.objects)
 
         try:
-            sys.path.insert(0, str(Path(__file__).resolve().parent))
-            from blender_ik import create_operator_ik, connect_operator_head, create_head_control
+            from io_scene_r6.blender_ik import create_operator_ik, connect_operator_head, create_head_control
 
             arm = create_operator_ik(list(bpy.context.scene.objects))
         except Exception as error:

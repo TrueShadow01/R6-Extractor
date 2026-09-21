@@ -57,7 +57,8 @@ def mesh_bounds(objects: list[bpy.types.Object]) -> tuple[Vector, Vector]:
 def apply_clothing_preview(material, spec, document, gltf_path):
     extras = spec.get("extras", {})
     mask_name = extras.get("siegeMaskTexture")
-    if not mask_name:
+    alpha_layers = extras.get("siegeShaderUniforms", {}).get("ClothingMaskMode") == [0.0]
+    if not mask_name and not alpha_layers:
         return
 
     uniforms = extras.get("siegeShaderUniforms", {})
@@ -99,45 +100,59 @@ def apply_clothing_preview(material, spec, document, gltf_path):
                 links.new(value, node.inputs[index])
         return node.outputs[0]
 
-    diffuse = image_node(diffuse_name, "sRGB")
-    mask = image_node(mask_name, "Non-Color")
-    channels = nodes.new("ShaderNodeSeparateColor")
-    links.new(mask.outputs["Color"], channels.inputs["Color"])
-    rgb = [channels.outputs[name] for name in ("Red", "Green", "Blue")]
-    inverse = [math_node("SUBTRACT", 1.0, channel) for channel in rgb]
+    def add3(values):
+        return math_node("ADD", math_node("ADD", values[0], values[1]), values[2])
 
-    output = diffuse.outputs["Color"]
+    diffuse = image_node(diffuse_name, "Non-Color")
 
-    for index, name in enumerate(names):
-        # Exclusive channel weights leave both white and black untinted
-        weight = math_node("MULTIPLY", rgb[index], inverse[(index + 1) % 3])
-        weight = math_node("MULTIPLY", weight, inverse[(index + 2) % 3])
+    if alpha_layers:
+        alpha = diffuse.outputs["Alpha"]
+        red = math_node("SUBTRACT", 1.0, math_node("LESS_THAN", alpha, 0.75))
+        green = math_node("MULTIPLY", math_node("GREATER_THAN", alpha, 0.25), math_node("SUBTRACT", 1.0, red))
+        weights = (red, green, 0.0)
+    else:
+        mask = image_node(mask_name, "Non-Color")
+        channels = nodes.new("ShaderNodeSeparateColor")
+        links.new(mask.outputs["Color"], channels.inputs["Color"])
+        rgb = [
+            channels.outputs[name]
+            for name in ("Red", "Green", "Blue")
+        ]
+        divisor = math_node("MAXIMUM", add3(rgb), 1.0)
+        weights = tuple(math_node("DIVIDE", value, divisor) for value in rgb)
 
-        color = tuple(
-            v / 12.92 if v <= 0.04045
-            else ((v + 0.055) / 1.055) ** 2.4
-            for v in uniforms[name][:3]
-        ) + (1.0,)
+    squared = [
+        math_node("MULTIPLY", value, value)
+        for value in weights
+    ]
+    strength = math_node("MINIMUM", math_node("SQRT", add3(squared), 0.0), 1.0)
+    factor = nodes.new("ShaderNodeCombineXYZ")
 
-        tinted = nodes.new("ShaderNodeMixRGB")
-        tinted.blend_type = "MULTIPLY"
-        tinted.inputs[0].default_value = 1.0
-        tinted.inputs[2].default_value = color
-        links.new(diffuse.outputs["Color"], tinted.inputs[1])
+    # Shader parameters use 0.5 as neutral - Nyx
+    for channel in range(3):
+        weighted = add3([
+            math_node("MULTIPLY", weights[index], uniforms[name][channel])
+            for index, name in enumerate(names)
+        ])
+        gain = math_node("ADD", 1.0, math_node("MULTIPLY", math_node("MULTIPLY", strength, 2.0), math_node("SUBTRACT", weighted, 0.5)))
+        links.new(gain, factor.inputs[channel])
 
-        blend = nodes.new("ShaderNodeMixRGB")
-        blend.label = name
-        links.new(weight, blend.inputs[0])
-        links.new(output, blend.inputs[1])
-        links.new(tinted.outputs[0], blend.inputs[2])
-        output = blend.outputs[0]
-
+    blend = nodes.new("ShaderNodeMixRGB")
     blend.name = "Siege Clothing Preview"
+    blend.blend_type = "MULTIPLY"
+    blend.use_clamp = True
+    blend.inputs[0].default_value = 1.0
+    links.new(diffuse.outputs["Color"], blend.inputs[1])
+    links.new(factor.outputs["Vector"], blend.inputs[2])
+
+    gamma = nodes.new("ShaderNodeGamma")
+    gamma.inputs["Gamma"].default_value = 2.2
+    links.new(blend.outputs[0], gamma.inputs["Color"])
+
     base = principled.inputs["Base Color"]
     for link in list(base.links):
         links.remove(link)
-
-    links.new(output, base)
+    links.new(gamma.outputs["Color"], base)
 
 def apply_siege_materials(gltf_path: Path, *, materials=None) -> None:
     document = json.loads(gltf_path.read_text(encoding="utf-8"))
@@ -174,9 +189,14 @@ def apply_siege_materials(gltf_path: Path, *, materials=None) -> None:
             None
         )
 
+        if apply_experimental_hair(material, principled, extras, gltf_path):
+            continue
+
         packed_filename = extras.get("siegePackedMaterialTexture")
 
-        if principled is not None and packed_filename is not None:
+        # node crackheads were on it again lol - Isaac
+        # incredible crackheads, true - shadow
+        if principled is not None and packed_filename is not None and extras.get("siegeShaderUid") != "000000003051C028":
             packed_path = gltf_path.parent / packed_filename
 
             if packed_path.is_file():
@@ -211,13 +231,59 @@ def apply_siege_materials(gltf_path: Path, *, materials=None) -> None:
                     if metallic_input.is_linked:
                         links.remove(metallic_input.links[0])
 
-                    links.new(separate.outputs["Red"], metallic_input)
+                    metalness_output = separate.outputs["Red"]
+                    if extras.get("siegeShaderUid") in {
+                        "000000003BD13B9E",
+                        "000000003CAE6B71",
+                        "0000001397A32F38"
+                    }:
+                        # Nyx, the shader said 2.2. Victor brought receipts - Blake
+                        decode = nodes.new("ShaderNodeMath")
+                        decode.name = "Siege Metalness Decode"
+                        decode.label = "Packed R ^ 2.2"
+                        decode.operation = "POWER"
+                        decode.inputs[1].default_value = 2.2
+                        decode.location = (principled.location.x - 120, principled.location.y - 450)
+                        links.new(metalness_output, decode.inputs[0])
+                        metalness_output = decode.outputs["Value"]
+
+                    links.new(metalness_output, metallic_input)
 
                 if roughness_input is not None:
                     if roughness_input.is_linked:
                         links.remove(roughness_input.links[0])
 
                     links.new(roughness.outputs["Value"], roughness_input)
+
+                if extras.get("siegeShaderUid") in {
+                    "000000003BD13B9E",
+                    "000000003CAE6B71",
+                    "0000001397A32F38"
+                }:
+                    # Victor: blue controls dielectric reflection, not base color
+                    separate.label = "R: Metalness G: Glossiness B: Reflectance"
+
+                    reflectance = nodes.new("ShaderNodeMath")
+                    reflectance.name = "Siege Reflectance Decode"
+                    reflectance.label = "Packed B ^ 2.2"
+                    reflectance.operation = "POWER"
+                    reflectance.inputs[1].default_value = 2.2
+                    reflectance.location = (principled.location.x - 350, principled.location.y - 850)
+                    links.new(separate.outputs["Blue"], reflectance.inputs[0])
+
+                    level = nodes.new("ShaderNodeMath")
+                    level.name = "Siege Specular Level"
+                    level.operation = "MULTIPLY"
+                    level.inputs[1].default_value = 0.5
+                    level.location = (principled.location.x - 120, principled.location.y - 850)
+                    links.new(reflectance.outputs["Value"], level.inputs[0])
+
+                    for socket_name in ("IOR", "Specular IOR Level"):
+                        for link in tuple(principled.inputs[socket_name].links):
+                            links.remove(link)
+
+                    principled.inputs["IOR"].default_value = 1.5
+                    links.new(level.outputs["Value"], principled.inputs["Specular IOR Level"])
 
         if extras.get("siegeShaderUid") == "0000001397A32F38":
             spec = next(
@@ -323,7 +389,7 @@ def import_siege_model(gltf_path):
         for material in bpy.data.materials
     }
 
-    result = bpy.ops.import_scene.gltf(filepath=str(gltf_path))
+    result = bpy.ops.import_scene.gltf(filepath=str(gltf_path), disable_bone_shape=True, bone_heuristic="TEMPERANCE")
     if "FINISHED" not in result:
         raise RuntimeError(f"glTF import did not finish: {gltf_path}")
 
@@ -336,7 +402,7 @@ def import_siege_model(gltf_path):
 def render_preview(gltf_path: Path, output_path: Path) -> None:
     bpy.ops.wm.read_factory_settings(use_empty=True)
 
-    bpy.ops.import_scene.gltf(filepath=str(gltf_path))
+    bpy.ops.import_scene.gltf(filepath=str(gltf_path), disable_bone_shape=True, bone_heuristic="TEMPERANCE")
 
     apply_siege_materials(gltf_path)
 
@@ -503,6 +569,125 @@ def main() -> None:
 
     if failures:
         raise RuntimeError(f"{len(failures)} previews failed")
+
+def apply_experimental_hair(material, principled, extras, gltf_path):
+    """Approximate two hair lobes. The source field mapping is experimental"""
+    import math
+
+    if extras.get("siegeShaderUid") != "000000003051C028" or principled is None:
+        return False
+
+    values = extras.get("siegeShaderUniforms", {}).get("ExperimentalHairSourceV1")
+    if not isinstance(values, (list, tuple)) or len(values) != 8 or any(not isinstance(v, (int, float)) or not math.isfinite(v) for v in values) or not -3.0 <= values[0] <= 3.0 or any(not 0.0 <= v <= 1.0 for v in values[1:]):
+        return False
+
+    nodes, links = material.node_tree.nodes, material.node_tree.links
+    if nodes.get("Siege Experimental Hair"):
+        return True
+
+    def node(kind):
+        result = nodes.new(kind)
+        result.label = "Experimental Hair"
+        return result
+
+    def connect(value, socket):
+        if hasattr(value, "is_output"):
+            links.new(value, socket)
+        else:
+            if socket.type == "RGBA" and isinstance(value, (int, float)):
+                value = (value, value, value, 1.0)
+            socket.default_value = value
+
+    def source(socket):
+        return socket.links[0].from_socket if socket.is_linked else socket.default_value
+
+    def multiply_color(color, factor):
+        mix = node("ShaderNodeMixRGB")
+        mix.blend_type = "MULTIPLY"
+        mix.inputs[0].default_value = 1.0
+        connect(color, mix.inputs[1])
+        connect(factor, mix.inputs[2])
+        return mix.outputs[0]
+
+    geometry = node("ShaderNodeNewGeometry")
+    tangent = node("ShaderNodeTangent")
+    tangent.direction_type = "UV_MAP"
+    normal = source(principled.inputs["Normal"]) if principled.inputs["Normal"].is_linked else geometry.outputs["Normal"]
+
+    bitangent = node("ShaderNodeVectorMath")
+    bitangent.operation = "CROSS_PRODUCT"
+    connect(normal, bitangent.inputs[0])
+    connect(tangent.outputs[0], bitangent.inputs[1])
+
+    shift = node("ShaderNodeVectorMath")
+    shift.operation = "SCALE"
+    connect(normal, shift.inputs[0])
+    shift.inputs["Scale"].default_value = values[0]
+
+    shifted = node("ShaderNodeVectorMath")
+    shifted.operation = "ADD"
+    links.new(bitangent.outputs[0], shifted.inputs[0])
+    links.new(shift.outputs[0], shifted.inputs[1])
+
+    direction = node("ShaderNodeVectorMath")
+    direction.operation = "NORMALIZE"
+    links.new(shifted.outputs[0], direction.inputs[0])
+
+    mask = 1.0
+    packed_path = gltf_path.parent / extras.get("siegePackedMaterialTexture", "")
+    if packed_path.is_file():
+        texture = node("ShaderNodeTexImage")
+        texture.image = bpy.data.images.load(str(packed_path), check_existing=True).copy()
+        texture.image.colorspace_settings.name = "Non-Color"
+        channels = node("ShaderNodeSeparateColor")
+        links.new(texture.outputs["Color"], channels.inputs["Color"])
+        mask = channels.outputs["Red"]
+
+    base = source(principled.inputs["Base Color"])
+    tint = node("ShaderNodeMixRGB")
+    tint.inputs[0].default_value = values[5]
+    connect(base, tint.inputs[1])
+    tint.inputs[2].default_value = (1.0, 1.0, 1.0, 1.0)
+
+    diffuse = node("ShaderNodeBsdfDiffuse")
+    connect(multiply_color(base, (values[6],) * 3 + (1.0,)), diffuse.inputs["Color"])
+    connect(normal, diffuse.inputs["Normal"])
+    accumulated = diffuse.outputs[0]
+
+    glosses = (
+        max(0.0, min(1.0, 1.035 - 1.15 * (1.0 - values[1]))),
+        values[3]
+    )
+    for gloss, strength, color in zip(glosses, (values[2], values[4]), (base, tint.outputs[0])):
+        highlight = node("ShaderNodeBsdfAnisotropic")
+        highlight.distribution = "GGX"
+        highlight.inputs["Roughness"].default_value = (
+            2.0 / (2.0 ** (19.0 * gloss) + 2.0)
+        ) ** 0.25
+
+        # Two lobes, still not a confession from the serializer - Aiden
+        highlight.inputs["Anisotropy"].default_value = 0.8
+        weighted = multiply_color(color, (0.125 * strength,) * 3 + (1.0,))
+        connect(multiply_color(weighted, mask), highlight.inputs["Color"])
+        connect(normal, highlight.inputs["Normal"])
+        connect(direction.outputs[0], highlight.inputs["Tangent"])
+
+        addition = node("ShaderNodeAddShader")
+        links.new(accumulated, addition.inputs[0])
+        links.new(highlight.outputs[0], addition.inputs[1])
+        accumulated = addition.outputs[0]
+
+    transparent = node("ShaderNodeBsdfTransparent")
+    output = node("ShaderNodeMixShader")
+    output.name = "Siege Experimental Hair"
+    connect(source(principled.inputs["Alpha"]), output.inputs[0])
+    links.new(transparent.outputs[0], output.inputs[1])
+    links.new(accumulated, output.inputs[2])
+
+    for link in list(principled.outputs["BSDF"].links):
+        links.new(output.outputs[0], link.to_socket)
+
+    return True
 
 if __name__ == "__main__":
     main()

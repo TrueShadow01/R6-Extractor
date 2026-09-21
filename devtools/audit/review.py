@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from app_runtime import application_directory
-from material_audit import save_json
+from devtools.audit.runner import save_json
 
 STATUSES = ("Not reviewed", "Looks correct", "Issues found")
 
@@ -32,7 +32,7 @@ class ReviewWindow(QWidget):
         report = read_json(folder / "audit.json")
         captures = read_json(folder / "thumbnails.json")
         if captures["run_id"] != report["run_id"]:
-            raise RuntimeError("Thumbnails belong to another audit. Run audit_gallery.py first")
+            raise RuntimeError("Thumbnails belong to another audit. Run py -B devtools.audit.gallery.py first")
 
         self.records = list(report["operators"].values())
         self.captures = captures["results"]

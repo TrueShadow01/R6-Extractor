@@ -11,8 +11,8 @@ from PySide6.QtGui import QImage
 from PySide6.QtWidgets import QApplication
 
 from app_runtime import application_directory, resource_directory
-from material_audit import save_json
-from preview_widget import PreviewWidget
+from devtools.audit.runner import save_json
+from desktop.preview_widget import PreviewWidget
 
 VIEWS = ("front", "back", "head")
 CAPTURE_VERSION = 1

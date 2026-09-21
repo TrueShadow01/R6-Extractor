@@ -36,7 +36,7 @@ def model_files_exist(model):
     return True
 
 def prepare_preview(game, operator_uid, *, operator=None):
-    if operator is None and operator.uid != operator_uid:
+    if operator is not None and operator.uid != operator_uid:
         raise ValueError("Operator record does not match the requested UID")
 
     game = Path(game).resolve()

@@ -22,7 +22,7 @@ def main():
             return cli_main()
 
         if worker == "install":
-            from install_blender_addon import install
+            from blender.install_addon import install
 
             if len(arguments) != 1:
                 raise ValueError("The install worker requires a Blender path")
@@ -30,7 +30,7 @@ def main():
             return 0
 
         if worker == "preview":
-            from preview_cache import prepare_preview
+            from desktop.preview_cache import prepare_preview
 
             if len(arguments) != 2:
                 raise ValueError("Preview worker requires a game folder and operator UID")
@@ -38,13 +38,13 @@ def main():
             return 0
 
         if worker == "audit":
-            from material_audit import main as audit_main
+            from devtools.audit.runner import main as audit_main
 
             return audit_main(arguments)
 
         raise ValueError(f"Unknown worker: {worker}")
 
-    from gui import main as gui_main
+    from desktop.gui import main as gui_main
 
     return gui_main()
 

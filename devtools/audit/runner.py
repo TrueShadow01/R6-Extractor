@@ -11,7 +11,7 @@ from urllib.parse import unquote
 
 from PIL import Image
 from app_runtime import application_directory
-from preview_cache import CACHE_VERSION, prepare_preview
+from desktop.preview_cache import CACHE_VERSION, prepare_preview
 from src.operator_registry import read_operator_registry
 
 AUDIT_VERSION = 1

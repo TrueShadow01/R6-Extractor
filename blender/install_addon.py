@@ -5,7 +5,7 @@ import sys
 import tempfile
 from pathlib import Path
 from zipfile import ZipFile, ZIP_DEFLATED
-from app_runtime import run_external
+from app_runtime import resource_directory, run_external
 
 def install(blender):
     blender = Path(blender).resolve()
@@ -27,10 +27,11 @@ def install(blender):
 
     print(f"Detected Blender {'.'.join(match.groups())}", flush=True)
 
-    project = Path(__file__).resolve().parent
+    addon = resource_directory() / "blender_addon" / "io_scene_r6"
     sources = {
-        "io_scene_r6/__init__.py": project / "blender_addon" / "io_scene_r6" / "__init__.py",
-        "io_scene_r6/blender_preview.py": project / "blender_preview.py",
+        "io_scene_r6/__init__.py": addon / "__init__.py",
+        "io_scene_r6/blender_preview.py": addon / "blender_preview.py",
+        "io_scene_r6/blender_ik.py": addon / "blender_ik.py"
     }
     for source in sources.values():
         if not source.is_file():

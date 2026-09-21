@@ -16,8 +16,8 @@ from PySide6.QtWidgets import (
 )
 
 from src.operator_registry import read_operator_registry
-from preview_widget import PreviewWidget
-from material_inspector import MaterialInspector
+from desktop.preview_widget import PreviewWidget
+from desktop.material_inspector import MaterialInspector
 from app_runtime import (
     worker_arguments,
     worker_executable,
@@ -452,7 +452,7 @@ class MainWindow(QMainWindow):
             return
         self.blender_path = blender
 
-        script = resource_directory() / "install_blender_addon.py"
+        script = resource_directory() / "blender" / "install_addon.py"
         if not script.is_file():
             self.report_error(f"Installer not found: {script}")
             return
@@ -531,7 +531,7 @@ class MainWindow(QMainWindow):
         if blender is None:
             return
 
-        script = resource_directory() / "open_operator_blender.py"
+        script = resource_directory() / "blender" / "open_operator.py"
         if not script.is_file():
             self.report_error(f"Launch script not found: {script}")
             return
