@@ -37,6 +37,11 @@ def main():
             prepare_preview(arguments[0], int(arguments[1], 16))
             return 0
 
+        if worker == "audit":
+            from material_audit import main as audit_main
+
+            return audit_main(arguments)
+
         raise ValueError(f"Unknown worker: {worker}")
 
     from gui import main as gui_main

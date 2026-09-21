@@ -35,7 +35,10 @@ def model_files_exist(model):
 
     return True
 
-def prepare_preview(game, operator_uid):
+def prepare_preview(game, operator_uid, *, operator=None):
+    if operator is None and operator.uid != operator_uid:
+        raise ValueError("Operator record does not match the requested UID")
+
     game = Path(game).resolve()
     project = application_directory()
     database = project / "output" / "r6-assets.sqlite"
@@ -48,7 +51,7 @@ def prepare_preview(game, operator_uid):
             raise FileNotFoundError(path)
 
     # include archive state because textures may come from other bundles
-    sources = sorted(game.glob("*.forge")) + [depgraph, database]
+    sources = sorted(game.glob("*.forge")) + sorted(game.glob("*.depgraphbin")) + [database]
     signature = [
         (str(path), path.stat().st_size, path.stat().st_mtime_ns)
         for path in sources
@@ -76,13 +79,14 @@ def prepare_preview(game, operator_uid):
         except (OSError, ValueError, KeyError, TypeError):
             pass
 
-    operator = next(
-        (
-            entry for entry in read_operator_registry(registry)
-            if entry.uid == operator_uid
-        ),
-        None,
-    )
+    if operator is None:
+        operator = next(
+            (
+                entry for entry in read_operator_registry(registry)
+                if entry.uid == operator_uid
+            ),
+            None,
+        )
     if operator is None:
         raise ValueError(f"Operator not found: {operator_uid:016X}")
 

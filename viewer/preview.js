@@ -85,6 +85,71 @@ renderer.setAnimationLoop(() => {
     renderer.render(scene, camera);
 });
 
+window.r6Audit = { ready: false, error: null };
+
+window.r6Audit.capture = function(view) {
+    if (!window.r6Audit.ready) {
+        throw new Error("Preview is not ready");
+    }
+    if (!["front", "back", "head"].includes(view)) {
+        throw new Error("Unknown view");
+    }
+    if (renderer.getContext().isContextLost()) {
+        throw new Error("WebGL context lost");
+    }
+
+    model.updateWorldMatrix(true, true);
+    const bounds = new THREE.Box3().setFromObject(model);
+    if (bounds.isEmpty()) {
+        throw new Error("Empty model bounds");
+    }
+
+    const size = bounds.getSize(new THREE.Vector3());
+
+    // Approximate head framing. Full Preview remains the visual reference
+    if (view === "head") {
+        const center = bounds.getCenter(new THREE.Vector3());
+        const height = size.y * 0.28;
+        bounds.min.set(
+            center.x - height * 0.6,
+            bounds.max.y - height,
+            center.z - height * 0.5
+        );
+        bounds.max.x = center.x + height * 0.6;
+        bounds.max.z = center.z + height * 0.5;
+    }
+
+    const sphere = bounds.getBoundingSphere(new THREE.Sphere());
+    const shot = new THREE.PerspectiveCamera(40, 640 / 800, 0.001, 1000);
+    const angle = Math.atan(Math.tan(THREE.MathUtils.degToRad(20)) * shot.aspect);
+    const distance = Math.max(sphere.radius, 0.01) / Math.sin(angle) * 1.08;
+
+    shot.position.copy(sphere.center).add(new THREE.Vector3(0, 0, view === "back" ? distance : -distance));
+    shot.lookAt(sphere.center);
+    shot.far = distance + sphere.radius * 100;
+    shot.updateProjectionMatrix();
+
+    const oldSize = renderer.getSize(new THREE.Vector2());
+    const oldRatio = renderer.getPixelRatio();
+
+    try {
+        renderer.setPixelRatio(1);
+        renderer.setSize(640, 800, false);
+        renderer.render(scene, shot);
+
+        if (renderer.getContext().isContextLost()) {
+            throw new Error("WebGL context lost");
+        }
+
+        return renderer.domElement.toDataURL("image/png");
+    }
+    finally {
+        renderer.setPixelRatio(oldRatio);
+        renderer.setSize(oldSize.x, oldSize.y, false);
+        renderer.render(scene, camera);
+    }
+};
+
 try {
     const response = await fetch("../manifest.json", { cache: "no-store" });
     if (!response.ok) {
@@ -102,11 +167,13 @@ try {
         model.add(gltf.scene);
     }
 
+    window.r6Audit.ready = true;
     frameModel();
     installPreviewReload(camera, controls, manifest.models);
     installMaterialInspector(renderer, camera, model);
     status.textContent = `${manifest.name} · Left Click drag: orbit · Right Click drag: pan · Mouse Wheel: zoom`;
 } catch (error) {
+    window.r6Audit.error = String(error);
     status.textContent = `Preview failed: ${error.message}`;
     console.error(error);
 }
