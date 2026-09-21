@@ -11,8 +11,6 @@ datas = [
     (str(project / "main.py"), "."),
     (str(project / "blender" / "install_addon.py"), "blender"),
     (str(project / "blender" / "open_operator.py"), "blender"),
-    (str(project / "blender_preview.py"), "."),
-    (str(project / "blender_ik.py"), "."),
     (
         str(project / "blender_addon" / "io_scene_r6" / "__init__.py"),
         "blender_addon/io_scene_r6",
