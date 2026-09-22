@@ -14,7 +14,7 @@ from app_runtime import (
 )
 from src.operator_registry import read_operator_registry
 
-CACHE_VERSION = 26
+CACHE_VERSION = 27
 
 def model_files_exist(model):
     """Check the glTF and its external buffers/images"""
