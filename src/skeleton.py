@@ -7,11 +7,11 @@ def read_skeleton_parents(payload):
     for offset in range(len(payload) - 24):
         length, kind = struct.unpack_from("<HH", payload, offset)
         start = offset + 20 + length
-        if kind == 2 and length <= 4096 and start + 12 <= len(payload) and struct.unpack_from("<I", payload, offset + 8 + length)[0] == 0x299DF12C and struct.unpack_from("<I", payload, start)[0] == 0x299DF12C:
+        if kind == 2 and length <= 4096 and start + 12 <= len(payload) and struct.unpack_from("<I", payload, offset + 8 + length)[0] == 0xC34A348F and struct.unpack_from("<I", payload, start)[0] == 0xC34A348F:
             starts.append(start)
 
     results = []
-    marker = struct.pack("<I", 0x41899311)
+    marker = struct.pack("<I", 0xF6ECC8A9)
 
     for index, start in enumerate(starts):
         count = struct.unpack_from("<I", payload, start + 8)[0]
