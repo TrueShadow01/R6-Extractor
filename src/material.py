@@ -20,7 +20,7 @@ CURRENT_TEXTURE_MAP = 0xC64B1659
 CURRENT_TEXTURE_SELECTOR = 0xBE79171E
 CURRENT_MESH = 0x4E7F1BB4
 CURRENT_SHADER_DEFINES = 0x0D2C5AB0
-CURRENT_SHADER_UNIFORMS = 0xD1E7D4EE
+CURRENT_SHADER_UNIFORMS = 0x243BFED9
 
 RECOGNIZED_TYPES = {
     CURRENT_MATERIAL,
@@ -567,8 +567,8 @@ def apply_eye_property_overrides(material_blob, uniforms):
     """Read the verified 12-property layout used by shader 557005948D"""
 
     fields = (
-        (0x6507D3F2D1C4E883, 28, None),
-        (0x6507D3F230F7E9F3, 28, None),
+        (0x0AF2C694D1C4E883, 28, None),
+        (0x0AF2C69430F7E9F3, 28, None),
         (0x4F6D05D9, 13, "ScleraColorWhite"),
         (0xABA880A5, 13, "ScleraColorBlack"),
         (0x53851558, 13, "IrisColorWhite"),
