@@ -58,7 +58,7 @@ class RegistryLoader(QThread):
             self.failed.emit(f"{type(error).__name__}: {error}")
 
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, *, developer_mode=False):
         super().__init__()
         self.settings = QSettings("R6ForgeExtractor", "Desktop")
         self.worker = None
@@ -174,6 +174,11 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.log)
 
         self.statusBar().showMessage("Choose the game folder and load operators.")
+
+        self.audit_actions = None
+        if developer_mode:
+            from devtools.audit.actions import AuditActions
+            self.audit_actions = AuditActions(self)
 
     def choose_blender(self):
         filename, _ = QFileDialog.getOpenFileName(self, "Choose Blender 4.5", self.blender_edit.text().strip(), "Blender executable (blender.exe)")
@@ -704,6 +709,8 @@ class MainWindow(QMainWindow):
         self.finish_export(True, "Preview data ready, loading the viewer.")
 
     def closeEvent(self, event):
+        if self.audit_actions is not None and self.audit_actions.process is not None:
+            self.audit_actions.request_stop()
         if self.worker is not None or self.export_process is not None:
             self.close_requested = True
             self.statusBar().showMessage("Closing after the current operation finishes...")
@@ -713,6 +720,12 @@ class MainWindow(QMainWindow):
         super().closeEvent(event)
 
 def main():
+    developer_mode = "--dev" in sys.argv[1:]
+    sys.argv = [
+        sys.argv[0],
+        *(argument for argument in sys.argv[1:] if argument != "--dev")
+    ]
+
     if sys.platform == "win32":
         import ctypes
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("TrueShadow01.R6ForgeExtractor")
@@ -720,7 +733,7 @@ def main():
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     app.setWindowIcon(QIcon(str(resource_directory() / "docs" / "images" / "app.ico")))
-    window = MainWindow()
+    window = MainWindow(developer_mode=developer_mode)
     window.show()
     return app.exec()
 
