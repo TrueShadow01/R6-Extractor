@@ -27,6 +27,9 @@ class AuditActions:
         self.all.triggered.connect(lambda checked=False: self.start(True))
         self.stop.triggered.connect(self.request_stop)
 
+        from devtools.audit.gallery_actions import GalleryActions
+        self.gallery_actions = GalleryActions(self, menu)
+
     def start(self, all_operators):
         w = self.window
         if self.process is not None or w.worker is not None or w.export_process is not None:

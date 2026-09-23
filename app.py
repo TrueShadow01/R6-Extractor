@@ -42,6 +42,11 @@ def main():
 
             return audit_main(arguments)
 
+        if worker == "audit-gallery":
+            from devtools.audit.gallery import main as gallery_main
+
+            return gallery_main(arguments)
+
         raise ValueError(f"Unknown worker: {worker}")
 
     from desktop.gui import main as gui_main

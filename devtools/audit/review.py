@@ -32,7 +32,7 @@ class ReviewWindow(QWidget):
         report = read_json(folder / "audit.json")
         captures = read_json(folder / "thumbnails.json")
         if captures["run_id"] != report["run_id"]:
-            raise RuntimeError("Thumbnails belong to another audit. Run py -B devtools.audit.gallery.py first")
+            raise RuntimeError("Thumbnails belong to another audit. Generate the audit gallery first")
 
         self.records = list(report["operators"].values())
         self.captures = captures["results"]

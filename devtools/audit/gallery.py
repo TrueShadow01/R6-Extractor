@@ -31,6 +31,7 @@ class GalleryCapture(PreviewWidget):
         self.waiting_for_load = False
         self.busy = False
         self.generation = 0
+        self.completed = False
 
         self.resize(700, 900)
         self.setWindowTitle("R6 audit thumbnails - close to stop")
@@ -95,6 +96,7 @@ class GalleryCapture(PreviewWidget):
                 self.waiting_for_load = False
                 self.busy = False
         self.write_gallery()
+        self.completed = True
         print("Gallery ready:", self.folder / "gallery.html", flush=True)
         QTimer.singleShot(0, self.close)
 
@@ -299,18 +301,25 @@ class GalleryCapture(PreviewWidget):
             }
         )
 
-def main():
-    app = QApplication(sys.argv)
+def main(arguments=None):
+    arguments = list(sys.argv[1:] if arguments is None else arguments)
+    if len(arguments) > 1:
+        raise ValueError("Gallery accepts at most 1 audit report path")
+
     path = (
-        Path(sys.argv[1]).resolve()
-        if len(sys.argv) > 1
-        else application_directory() / "output" / "material-audit" / "audit.json"
+        Path(arguments[0]).resolve()
+        if arguments else application_directory() / "output" / "material-audit" / "audit.json"
     )
 
+    app = QApplication([sys.argv[0]])
     window = GalleryCapture(path)
     app.aboutToQuit.connect(window.shutdown)
     window.show()
-    return app.exec()
+    app.exec()
+
+    if not window.completed:
+        return 2
+    return 1 if any(result.get("error") for result in window.results.values()) else 0
 
 if __name__ == "__main__":
     raise SystemExit(main())
