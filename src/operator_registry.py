@@ -10,6 +10,8 @@ from pathlib import Path
 from src.metadata import InvalidFileMetadata, parse_file_metadata
 from src.parser import iter_container_offsets, map_archive, read_container
 
+# Эйден, Блейк, загляните в «Ubisoft Forge Offset», чтобы придумать, как автоматизировать процесс обнаружения
+
 REGISTRY_UID = 0x0000005B9ACA7913
 REGISTRY_TYPE = 0x480ECC85
 ROSTER_COUNT_OFFSET = 5932 # Relative to the registry data, not the archive

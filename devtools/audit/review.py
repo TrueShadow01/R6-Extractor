@@ -12,7 +12,8 @@ from PySide6.QtWidgets import (
     QApplication, QComboBox, QHBoxLayout,
     QLabel, QListWidget, QMessageBox,
     QPushButton, QTextBrowser, QTextEdit,
-    QVBoxLayout, QWidget
+    QVBoxLayout, QWidget, QLabel,
+    QLineEdit
 )
 
 from app_runtime import application_directory
@@ -76,8 +77,23 @@ class ReviewWindow(QWidget):
         ):
             right.addWidget(widget)
 
+        self.search = QLineEdit()
+        self.search.setPlaceholderText("Search operators...")
+
+        self.filter_status = QComboBox()
+        self.filter_status.addItems(["All", *STATUSES, "Needs recheck"])
+
+        self.filter_summary = QLabel()
+        self.filter_summary.setWordWrap(True)
+
+        left = QVBoxLayout()
+        left.addWidget(self.search)
+        left.addWidget(self.filter_status)
+        left.addWidget(self.filter_summary)
+        left.addWidget(self.operators)
+
         layout = QHBoxLayout(self)
-        layout.addWidget(self.operators)
+        layout.addLayout(left)
         layout.addLayout(right, 1)
 
         for record in self.records:
@@ -91,6 +107,10 @@ class ReviewWindow(QWidget):
         if self.records:
             self.operators.setCurrentRow(0)
 
+        self.search.textChanged.connect(self.apply_filters)
+        self.filter_status.currentTextChanged.connect(self.apply_filters)
+        self.apply_filters()
+
     def fingerprint(self, record):
         identity = {
             "cache_key": record.get("cache_key"),
@@ -102,15 +122,44 @@ class ReviewWindow(QWidget):
         }
         return hashlib.sha256(json.dumps(identity, sort_keys=True).encode("utf-8")).hexdigest()
 
-    def label(self, record):
+    def review_status(self, record):
         review = self.reviews["operators"].get(record["uid"])
-        status = "Not reviewed"
+        if not review:
+            return "Not reviewed"
+        if review.get("fingerprint") != self.fingerprint(record):
+            return "Needs recheck"
+        return review["status"]
 
-        if review:
-            status = review["status"]
-            if review.get("fingerprint") != self.fingerprint(record):
-                status = "Needs recheck"
-        return record["name"] + " - " + status
+    def label(self, record):
+        return record["name"] + " - " + self.review_status(record)
+
+    def apply_filters(self, *args):
+        query = self.search.text().strip().casefold()
+        status = self.filter_status.currentText()
+        matches = 0
+        current_visible = True
+
+        self.operators.blockSignals(True)
+        try:
+            for row, record in enumerate(self.records):
+                visible = (
+                    query in record["name"].casefold()
+                    and (
+                        status == "All"
+                        or self.review_status(record) == status
+                    )
+                )
+                self.operators.item(row).setHidden(not visible)
+                matches += int(visible)
+                if row == self.current:
+                    current_visible = visible
+        finally:
+            self.operators.blockSignals(False)
+
+        text = f"{matches} of {len(self.records)} operators match."
+        if self.current is not None and not current_visible:
+            text += " Current review remains open outside the filter."
+        self.filter_summary.setText(text)
 
     def changed(self, *args):
         if not self.loading and self.current is not None:
@@ -165,6 +214,7 @@ class ReviewWindow(QWidget):
             )) + "</p>"
         )
         self.message.setText("Click a thumbnail to open it. Save after reviewing.")
+        self.apply_filters()
 
     def open_image(self, url):
         from PySide6.QtGui import QDesktopServices
@@ -201,6 +251,7 @@ class ReviewWindow(QWidget):
         self.dirty = False
         self.operators.item(self.current).setText(self.label(record))
         self.message.setText("Saved to " + str(self.review_path))
+        self.apply_filters()
         return True
 
     def closeEvent(self, event):
