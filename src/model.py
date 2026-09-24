@@ -327,6 +327,64 @@ def _default_joint_node_matrices(binding: MeshBinding) -> tuple[tuple[float, ...
         for inverse_bind_matrix in binding.inverse_bind_matrices
     )
 
+def resolve_holster_binding(payload, bindings):
+    """Place the shared holster using its package-owned skeleton pose"""
+    # Полная хрень
+
+    from src.skeleton import read_skeleton_parents
+
+    geometry_uid = 0x7B8293A4C
+    bone_id = 0x8E904DC4
+    binding = bindings.get(geometry_uid)
+    if binding is None or binding.joint_node_matrices:
+        return bindings
+    if binding.bone_ids != (bone_id,):
+        raise ValueError("Unexpected shared holster binding")
+
+    graphs = read_skeleton_parents(payload)
+    if not any(bone_id in graph for graph in graphs):
+        raise ValueError("Shared holster has no package-owned skeleton")
+
+    signature = struct.pack("<II", 0xF6ECC8A9, bone_id)
+    cursor = 0
+    matrices = []
+
+    while True:
+        offset = payload.find(signature, cursor)
+        if offset < 0:
+            break
+        cursor = offset + 1
+
+        if offset + 94 > len(payload):
+            continue
+        if payload[offset + 8] != 2 or payload[offset + 17] != 0:
+            continue
+
+        marker, zero, kind = struct.unpack_from("<III", payload, offset + 18)
+        if (marker & 0xFFFF0000) != 0xFBF80000 or zero or kind != 0x23F349BE:
+            continue
+
+        values = struct.unpack_from("<16f", payload, offset + 30)
+        if not all(math.isfinite(value) for value in values):
+            raise ValueError("Non-finite holster pose")
+        if values[3] != 0.0 or values[11] != 0.0:
+            raise ValueError("Unsupported holster pose layout")
+
+        rotation = values[4:8]
+        if abs(sum(value * value for value in rotation) - 1.0) > 0.001:
+            raise ValueError("Invalid holster quaternion")
+
+        matrices.append(_pose_to_gltf_matrix(BoneTransform(bone_id, values[:3], rotation)))
+
+    if not matrices:
+        raise ValueError("Missing shared holster pose")
+    if any(max(abs(a - b) for a, b in zip(matrices[0], other)) > 1e-4 for other in matrices[1:]):
+        raise ValueError("Conflicting shared holster poses")
+
+    resolved = dict(bindings)
+    resolved[geometry_uid] = replace(binding, joint_node_matrices=(matrices[0],))
+    return resolved
+
 def resolve_static_attachment_bindings(payload, bindings):
     """Place single-bone attachments using their embedded global pose"""
 
@@ -401,7 +459,7 @@ def resolve_static_attachment_bindings(payload, bindings):
 
         if poses:
             resolved[geometry_uid] = replace(binding, joint_node_matrices=(_pose_to_gltf_matrix(poses[0]),))
-    return resolved
+    return resolve_holster_binding(payload, resolved)
 
 def resolve_attachment_frames(bindings: Mapping[int, MeshBinding]) -> dict[int, MeshBinding]:
     """Align attachment axis conventions using matching source bind bones"""
