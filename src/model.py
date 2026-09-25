@@ -327,6 +327,61 @@ def _default_joint_node_matrices(binding: MeshBinding) -> tuple[tuple[float, ...
         for inverse_bind_matrix in binding.inverse_bind_matrices
     )
 
+def align_holster_root(payload, offset, bindings, matrix):
+    """Place a holster subtree in the matching body root's frame"""
+    marker = struct.pack("<I", 0xF6ECC8A9)
+    seen = set()
+
+    while True:
+        if offset in seen or offset + 10 > len(payload):
+            raise ValueError("Invalid holster root chain")
+        seen.add(offset)
+
+        kind = payload[offset + 8]
+        if kind == 3:
+            break
+        if kind != 2 or offset + 18 > len(payload):
+            raise ValueError("Invalid holster parent record")
+
+        parent_uid = struct.unpack_from("<Q", payload, offset + 9)[0]
+        signature = struct.pack("<Q", parent_uid) + marker
+        parent = payload.find(signature)
+        if parent < 0 or payload.find(signature, parent + 1) >= 0:
+            raise ValueError("Missing or ambiguous holster parent node")
+        offset = parent + 8
+
+    root_id = struct.unpack_from("<I", payload, offset + 4)[0]
+    hosts = [
+        pose
+        for uid, binding in bindings.items()
+        if uid != 0x7B8293A4C
+        for bone, pose in zip(binding.bone_ids, _default_joint_node_matrices(binding))
+        if bone == root_id
+    ]
+    if not hosts:
+        return matrix
+    if len(hosts) != 1:
+        raise ValueError("Ambiguous holster body root")
+
+    if offset + 86 > len(payload) or payload[offset + 9] != 0:
+        raise ValueError("Truncated holster root pose")
+
+    tag, zero, pose_type = struct.unpack_from("<III", payload, offset + 10)
+    if (tag & 0xFFFF0000) != 0xFBF80000 or zero or pose_type != 0x23F349BE:
+        raise ValueError("Unsupported holster root pose")
+
+    values = struct.unpack_from("16f", payload, offset + 22)
+    if not all(math.isfinite(value) for value in values):
+        raise ValueError("Non-finite holster root pose")
+    if values[3] != 0.0 or values[11] != 0.0:
+        raise ValueError("Unsupported holster root pose layout")
+    if abs(sum(value * value for value in values[4:8]) - 1.0) > 0.001:
+        raise ValueError("Invalid holster root quaternion")
+
+    root = _pose_to_gltf_matrix(BoneTransform(root_id, values[:3], values[4:8]))
+    correction = _gltf_multiply(hosts[0], invert_gltf_matrix(root))
+    return _gltf_multiply(correction, matrix)
+
 def resolve_holster_binding(payload, bindings):
     """Place the shared holster using its package-owned skeleton pose"""
     # Полная хрень
@@ -374,7 +429,8 @@ def resolve_holster_binding(payload, bindings):
         if abs(sum(value * value for value in rotation) - 1.0) > 0.001:
             raise ValueError("Invalid holster quaternion")
 
-        matrices.append(_pose_to_gltf_matrix(BoneTransform(bone_id, values[:3], rotation)))
+        matrix = _pose_to_gltf_matrix(BoneTransform(bone_id, values[:3], rotation))
+        matrices.append(align_holster_root(payload, offset, bindings, matrix))
 
     if not matrices:
         raise ValueError("Missing shared holster pose")
