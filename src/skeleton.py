@@ -98,6 +98,11 @@ def apply_skeleton_hierachy(document, skeletons):
 
     nodes = document["nodes"]
     child_nodes = set()
+    joint_worlds = {
+        joint: tuple(nodes[joint]["matrix"])
+        for skin in document.get("skins", ())
+        for joint in skin["joints"]
+    }
 
     for skin in document.get("skins", ()):
         joints = skin["joints"]
@@ -165,6 +170,8 @@ def apply_skeleton_hierachy(document, skeletons):
 
         unresolved = sum(bone not in candidates[0] for bone in unique)
         print(f"Skeleton hierachy: {skin['name']}: {len(parents)} parent links, {unresolved} unmapped bone IDs", flush=True)
+
+    child_nodes.update(attach_shared_holster(document, skeletons, joint_worlds))
 
     for scene in document.get("scenes", ()):
         scene["nodes"] = [
@@ -239,6 +246,13 @@ def resolve_model_skeletons(payload, index):
     from src.model import load_asset_payload, read_mesh_bindings
 
     owned = read_model_skeletons(payload)
+    if 0x7B8293A4C in owned:
+        owned[0x7B8293A4C] = tuple(
+            graph for graph in read_skeleton_parents(payload)
+            if 0x8E904DC4 in graph
+        )
+        if not owned[0x7B8293A4C]:
+            raise ValueError("Missing shared holster skeleton")
     if not any(owned.values()):
         return owned
 
@@ -263,3 +277,65 @@ def resolve_model_skeletons(payload, index):
             supplement_skeleton(graph, reference_groups, required)
 
     return owned
+
+def attach_shared_holster(document, skeletons, worlds):
+    """Connect the shared holster to its nearest exported source ancestor"""
+    nodes = document["nodes"]
+    skins = document.get("skins", ())
+    matches = [
+        skin for skin in skins
+        if skin.get("extras", {}).get("siegeGeometryUid") == "00000007B8293A4C"
+    ]
+    if not matches:
+        return set()
+    if len(matches) != 1:
+        raise ValueError("Ambiguous shared holster skin")
+
+    skin = matches[0]
+    if len(skin["joints"]) != 1:
+        raise ValueError("Unexpected shared holster joints")
+
+    child = skin["joints"][0]
+    if nodes[child].get("extras", {}).get("siegeBoneId") != "8E904DC4":
+        raise ValueError("Unexpected shared holster bone")
+
+    graphs = skeletons.get(0x7B8293A4C, ())
+    if not graphs:
+        raise ValueError("Missing shared holster skeleton")
+
+    available = {}
+    for other in skins:
+        if other is skin:
+            continue
+        for joint in other["joints"]:
+            uid = int(nodes[joint]["extras"]["siegeBoneId"], 16)
+            available.setdefault(uid, set()).add(joint)
+
+    targets = set()
+    for graph in graphs:
+        parent = graph.get(0x8E904DC4)
+        seen = {0x8E904DC4}
+
+        while parent is not None and parent not in available:
+            if parent in seen or parent not in graph:
+                raise ValueError("Invalid shared holster ancestry")
+            seen.add(parent)
+            parent = graph[parent]
+
+        if parent is None or len(available[parent]) != 1:
+            raise ValueError("Missing or ambiguous shared holster ancestor")
+        targets.add(next(iter(available[parent])))
+
+    if len(targets) != 1:
+        raise ValueError("Conflicting shared holster ancestors")
+    parent = targets.pop()
+
+    if any(child in node.get("children", ()) for node in nodes):
+        raise ValueError("Shared holster already has a parent")
+
+    from src.gltf import invert_gltf_matrix, multiply_matrices, transpose_matrix
+
+    local = transpose_matrix(multiply_matrices(transpose_matrix(invert_gltf_matrix(worlds[parent])), transpose_matrix(worlds[child]),))
+    nodes[parent].setdefault("children", []).append(child)
+    nodes[child]["matrix"] = list(local)
+    return {child}
