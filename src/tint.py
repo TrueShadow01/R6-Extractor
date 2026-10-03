@@ -150,7 +150,7 @@ def bake_tinted_material(slot, output_directory):
 
     with Image.open(directory / slot.diffuse) as source:
         baked = tint_image(source, [uniforms[name] for name in names], custom_mask=custom_mask)
-        baked.save(directory / filename)
+        baked.save(directory / filename, compress_level=3)
 
     mask_description = (
         "verified shared gray texture"

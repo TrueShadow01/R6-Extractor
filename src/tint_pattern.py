@@ -110,7 +110,7 @@ def bake_pattern_material(slot, directory, uniforms):
 
     with Image.open(directory / slot.diffuse) as source:
         baked = pattern_image(source, colors, directory / pattern, directory / detail if detail else None)
-        baked.save(directory / filename)
+        baked.save(directory / filename, compress_level=3)
 
     print(f"Pattern tint bake: {slot.material_uid:016X} ({pattern})", flush=True)
     return replace(

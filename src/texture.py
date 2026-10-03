@@ -3,7 +3,7 @@
 import struct
 import io
 import math
-from PIL import Image
+from PIL import Image, ImageMath
 
 POW2 = {64, 128, 256, 512, 1024, 2048, 4096}
 TEXMAPDATA_MAGIC = bytes.fromhex("3d4b0cc3")
@@ -39,18 +39,18 @@ BC5_Z_TABLE = bytes(
 )
 
 def reconstruct_bc5_z(image: Image.Image) -> Image.Image:
-    """Reconstruct the positive Z component of a two-channel BC5 normal"""
+    """Reconstruct BC5 Z using the existing lookup table in Pillow"""
 
-    image = image.convert("RGBA")
-    pixels = bytearray(image.tobytes())
+    red, green, _, alpha = image.convert("RGBA").split()
 
-    for offset in range(0, len(pixels), 4):
-        red = pixels[offset]
-        green = pixels[offset + 1]
+    indices = ImageMath.lambda_eval(
+        lambda channels: channels["red"] * 256 + channels["green"],
+        red=red.convert("I"),
+        green=green.convert("I")
+    )
 
-        pixels[offset + 2] = BC5_Z_TABLE[(red << 8) | green]
-
-    return Image.frombytes("RGBA", image.size, bytes(pixels))
+    blue = indices.point(BC5_Z_TABLE, "L")
+    return Image.merge("RGBA", (red, green, blue, alpha))
 
 def compressed_mip_chain_size(width: int, height: int, block_size: int) -> int:
     """Return the exact byte size of a complete BCn mip chain"""
@@ -199,6 +199,6 @@ def save_png(path, payload):
     if texture_type == 0 and image.getextrema()[3] == (0, 0):
         image.putalpha(255)
 
-    image.save(path)
+    image.save(path, compress_level=3)
 
     return width, height, format_code, texture_type
