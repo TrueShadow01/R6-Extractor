@@ -519,6 +519,104 @@ def merge_fk_armatures(body, objects):
 
     body["r6_fk_merged"] = True
 
+def connect_fk_helpers(arm, head_name):
+    """Restore verified helper follows while preserving imported poses"""
+    bones = arm.data.bones
+    anchors = [
+        bone for bone in bones
+        if bone.name.endswith("_LeftForeArm")
+    ]
+    if bpy.context.mode != "OBJECT" or len(anchors) != 1:
+        raise RuntimeError("FK helper setup requires 1 primary body rig")
+
+    prefix = anchors[0].name.split("_join_", 1)[0] + "_join_"
+    primary = {}
+    for bone in bones:
+        if bone.name.startswith(prefix):
+            uid = bone.get("siegeBoneId")
+            if uid:
+                if uid in primary:
+                    raise RuntimeError("Ambiguous primary bone: " + uid)
+                primary[uid] = bone.name
+    head_ids = {
+        bone.get("siegeBoneId")
+        for bone in bones
+        if not bone.name.startswith(prefix)
+        and bone.get("siegeHeadDescendant") is True
+    }
+
+    # Nearest exported ancestors verified against Iana src pkg and shared ref skel
+    glove_groups = {
+        "B675F36C": """
+            063B3421 BDB82694 24B1772E A49904DA 3D905560 E46D88FC
+            7D64D946 0DA5584D E167C14B 19910DC9 51EE4C69 1A05C34F
+            01FF77C7 E736CE53 573BB631 B88E62B2
+        """.split(),
+        "75F94D30": """
+            76CFDB37 5F4D44D1 2BBB5B07 CDCAE074 B133130A
+        """.split(),
+        "30818F43": ["4C4EB4FD"],
+        "F0F3D174": ["C22B13C9", "EED4E2A6"],
+    }
+    glove_targets = {
+        uid: target
+        for target, ids in glove_groups.items()
+        for uid in ids
+    }
+
+    plans = {}
+    for bone in bones:
+        uid = bone.get("siegeBoneId")
+
+        if bone.name.startswith("part_0000003A60F42559_join_"):
+            target_id = uid if uid in primary else glove_targets.get(uid)
+            target = primary.get(target_id)
+            if target is None or bone.parent is not None:
+                raise RuntimeError("Unsupported glove helper: " + bone.name)
+            plans[bone.name] = target
+        elif bone.name.startswith(prefix) and bone.parent is None and bone.name != head_name and uid in head_ids:
+            plans[bone.name] = head_name
+
+    if not plans:
+        return
+
+    if any(arm.pose.bones[name].constraints for name in plans):
+        raise RuntimeError("FK helpers already have constraints")
+
+    bpy.context.view_layer.update()
+    poses = {
+        bone.name: bone.matrix.copy()
+        for bone in arm.pose.bones
+    }
+
+    bpy.ops.object.select_all(action="DESELECT")
+    arm.select_set(True)
+    bpy.context.view_layer.objects.active = arm
+
+    bpy.ops.object.mode_set(mode="EDIT")
+    try:
+        for name, target in plans.items():
+            bone = arm.data.edit_bones[name]
+            rest = bone.matrix.copy()
+            bone.parent = arm.data.edit_bones[target]
+            bone.use_connect = False
+            bone.matrix = rest
+    finally:
+        bpy.ops.object.mode_set(mode="OBJECT")
+
+    for name in plans:
+        arm.pose.bones[name].matrix = poses[name]
+
+    bpy.context.view_layer.update()
+    error = max(
+        abs(arm.pose.bones[name].matrix[r][c] - old[r][c])
+        for name, old in poses.items()
+        for r in range(4)
+        for c in range(4)
+    )
+    if error > 0.0001:
+        raise RuntimeError("FK helper setup changed the pose, reimport before posing")
+
 def organize_fk_bones(arm, head_name):
     """Group FK display bones"""
     bones = arm.data.bones
@@ -602,6 +700,7 @@ def connect_fk_head(objects):
     body = bodies[0]
     head_name = connect_operator_head(body, objects)
     merge_fk_armatures(body, objects)
+    connect_fk_helpers(body, head_name)
     organize_fk_bones(body, head_name)
 
     for obj in bpy.context.selected_objects:
