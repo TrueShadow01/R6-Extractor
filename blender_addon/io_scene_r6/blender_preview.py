@@ -519,6 +519,69 @@ def merge_fk_armatures(body, objects):
 
     body["r6_fk_merged"] = True
 
+def organize_fk_bones(arm, head_name):
+    """Group FK display bones"""
+    bones = arm.data.bones
+    anchors = [
+        bone for bone in bones
+        if bone.name.endswith("_LeftForeArm")
+    ]
+    if len(anchors) != 1 or head_name not in bones:
+        raise RuntimeError("Cannot identify the primary FK skeleton")
+
+    prefix = anchors[0].name.split("_join_")[0] + "_join_"
+    labels = {"Head", "Hips", "Spine", "Spine1", "Spine2"}
+
+    for side in ("Left", "Right"):
+        labels.update(
+            side + part for part in (
+                "Arm", "ForeArm", "Hand",
+                "Shoulder", "UpLeg", "Leg",
+                "Foot", "ToeBase"
+            )
+        )
+        labels.update(
+            side + "Hand" + finger + str(segment)
+            for finger in ("Index", "Middle", "Pinky", "Ring", "Thumb")
+            for segment in (1, 2, 3)
+        )
+        labels.update(
+            side + "InHand" + finger
+            for finger in ("Index", "Middle", "Pinky", "Ring")
+        )
+
+    groups = {
+        name: arm.data.collections.get(name)
+        or arm.data.collections.new(name)
+        for name in ("Body", "Face", "Helpers")
+    }
+
+    head = bones[head_name]
+    for bone in bones:
+        if bone == head or bone.name.startswith(prefix) and bone.name.rsplit("_", 1)[-1] in labels:
+            group = "Body"
+        elif head in bone.parent_recursive:
+            group = "Face"
+        else:
+            group = "Helpers"
+
+        for collection in tuple(bone.collections):
+            collection.unassign(bone)
+        groups[group].assign(bone)
+
+        bone.hide = False
+        bone.hide_select = False
+        bone.select = False
+
+    for collection in arm.data.collections_all:
+        collection.is_solo = False
+
+    for name, collection in groups.items():
+        collection.is_visible = name == "Body"
+
+    arm.data.collections.active = groups["Body"]
+    arm.show_in_front = True
+
 def connect_fk_head(objects):
     """Connect supported haed rigs to a head bone for Pose Mode posing"""
     from .blender_ik import connect_operator_head
@@ -539,6 +602,7 @@ def connect_fk_head(objects):
     body = bodies[0]
     head_name = connect_operator_head(body, objects)
     merge_fk_armatures(body, objects)
+    organize_fk_bones(body, head_name)
 
     for obj in bpy.context.selected_objects:
         obj.select_set(False)
