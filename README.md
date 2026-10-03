@@ -24,7 +24,7 @@ Requires 64-bit Windows, a local Siege installation, a compatible Oodle runtime 
 
 ### Oodle
 
-Supply a compatible `oo2core_*_win64.dll` you are authorized to use. Some games using Oodle include this DLL in their installation folders, you may already have a suitable copy in a game you own. Compatibility is not guaranteed.
+Supply a compatible `oo2core_*_win64.dll`. Some games using Oodle include this DLL in their installation folders, you may already have a suitable copy in a game you own. Compatibility is not guaranteed.
 
 Place the DLL beside `R6ForgeExtractor.exe`, or set `R6_OODLE_DLL` to its full path.
 
@@ -34,8 +34,6 @@ For example, launch from PowerShell:
 $env:R6_OODLE_DLL = "C:\Path\To\oo2core_8_win64.dll"
 .\R6ForgeExtractor.exe
 ```
-
-Oodle is not bundled. See [RAD's official Oodle page](https://www.radgametools.com/oodle.htm) for product information and evaluation requests.
 
 ## Export and open an operator
 
@@ -52,8 +50,6 @@ Exports use:
 <destination>/<operator-name>/<body-or-head>/<model-UID>/
 ```
 
-The UI remembers paths and successful exports across restarts. Moving or deleting exported files invalidates their saved paths.
-
 Export attempts every primary group-0 model and excludes alternate groups. It stops on the first failure and retains completed files. Closing the UI waits for the active indexing, export or installation operation to finish.
 
 The asset database is stored in `output/r6-assets.sqlite` beside the executables. Registry browsing does not require the database.
@@ -64,7 +60,7 @@ The add-on imports geometry and applies the existing material fixes. Ordinary gl
 
 To import an existing export manually, use **File → Import → Rainbow Six Siege Operator** in Blender. Select the operator folder containing `body` and `head`.
 
-Blender 4.5 is required by this alpha. The UI confirms that Blender launched, import errors appear in Blender's system console.
+Blender 4.5 is required by this alpha.
 
 FK posing uses Blender’s Pose Mode. The R6 importer adjusts bone display lengths and enables In Front for easier selection. Head hierarchy and deformation support still vary by operator. IK remains experimental and optional.
 
