@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from src.operator_registry import read_operator_registry
+from src.model import operator_model_jobs
 from desktop.preview_widget import PreviewWidget
 from desktop.material_inspector import MaterialInspector
 from app_runtime import (
@@ -317,12 +318,11 @@ class MainWindow(QMainWindow):
                 return
 
         operator = item.data(Qt.ItemDataRole.UserRole)
-        parts = []
-        for label, part in (("body", operator.body), ("head", operator.head)):
-            if not part.model_groups or not part.model_groups[0]:
-                self.report_error(f"No primary {label} models for {operator.name}.")
-                return
-            parts.extend((label, uid) for uid in dict.fromkeys(part.model_groups[0]))
+        try:
+            parts = operator_model_jobs(operator, database)
+        except (OSError, ValueError) as error:
+            self.report_error(str(error))
+            return
 
         folder = QFileDialog.getExistingDirectory(self, "Choose export destination", self.settings.value("export_directory", str(project / "output"), type=str),)
         if not folder:

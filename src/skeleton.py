@@ -73,7 +73,7 @@ def source_head_bone_ids(payload):
 
     return frozenset(bone for bone, matches in classifications.items() if all(matches))
 
-def read_model_skeletons(payload):
+def read_owned_model_skeletons(payload):
     from src.material import CURRENT_MESH, scan_nested_entries
 
     results = {}
@@ -94,6 +94,178 @@ def read_model_skeletons(payload):
         results[geometry] = read_skeleton_parents(blob)
 
     return results
+
+def read_fk_driver_parents(payload, bindings):
+    """Read static FK follows"""
+    import math
+    from src.gltf import invert_matrix, multiply_matrices, transpose_matrix
+
+    geometry = 0x9D00C02FF
+    binding = bindings.get(geometry)
+    if binding is None:
+        return {}
+
+    helpers = (0x04BCD8D5, 0x39DCF165)
+    drivers_expected = (0x757F1291, 0xDC54D032)
+    graphs = read_skeleton_parents(payload)
+    inverse = {}
+
+    for uid, matrix in zip(binding.bone_ids, binding.inverse_bind_matrices):
+        if uid in inverse:
+            raise ValueError("Ambiguous FK driver binding")
+        inverse[uid] = transpose_matrix(matrix)
+
+    def parent_of(uid):
+        parents = {
+            graph[uid] for graph in graphs
+            if uid in graph and graph[uid] is not None
+        }
+        if len(parents) != 1:
+            raise ValueError(f"Missing or conflicting FK driver ancestry: {uid:08X}")
+        return parents.pop()
+
+    def check_close(actual, expected):
+        if len(actual) != len(expected) or any(not math.isfinite(a) or not math.isfinite(b) or abs(a - b) > 0.00001 for a, b in zip(actual, expected)):
+            raise ValueError("Unsupported FK driver matrices or weights")
+
+    targets = {helper: parent_of(helper) for helper in helpers}
+    if len(set(targets.values())) != 2:
+        raise ValueError("Ambiguous FK driver targets")
+    if any(uid not in inverse for uid in (*helpers, *drivers_expected)):
+        raise ValueError("Missing FK driver skin binding")
+
+    primary, secondary = drivers_expected
+    if parent_of(secondary) != primary:
+        raise ValueError("FK drivers do not share a rigid FK branch")
+    if any(parent_of(target) != parent_of(primary) for target in targets.values()):
+        raise ValueError("Unsupported FK driver target ancestry")
+
+    signature = struct.pack("<6IfI", 4, 6, 2, 0x274, 2, 6, 1.0, 1)
+    records = {}
+    cursor = 0
+
+    while True:
+        start = payload.find(signature, cursor)
+        if start < 0:
+            break
+
+        cursor = start + len(signature)
+        if start + 40 > len(payload):
+            continue
+
+        target = struct.unpack_from("<I", payload, start + 32)[0]
+        if target not in targets.values():
+            continue
+        if start + 644 > len(payload) or target in records:
+            raise ValueError("Truncated or duplicate FK driver record")
+
+        def u32(offset):
+            return struct.unpack_from("<I", payload, start + offset)[0]
+
+        def matrix(offset):
+            return struct.unpack_from("<16f", payload, start + offset)
+
+        if u32(104) != 2 or (u32(236), u32(308)) != drivers_expected:
+            raise ValueError("Unsupported FK driver inputs")
+        if u32(36) != parent_of(target) or u32(240) != parent_of(primary) or u32(312) != primary:
+            raise ValueError("FK driver record conflicts with source ancestry")
+
+        weights = struct.unpack_from("<2f", payload, start + 636)
+        check_close(weights, (0.4, 0.6))
+
+        identity = tuple(float(i % 5 == 0) for i in range(16))
+        check_close(matrix(108), identity)
+
+        products = []
+        for index, (bone, weight) in enumerate(zip(drivers_expected, weights)):
+            weighted_inverse = matrix(380 + index * 64)
+            driver_world = matrix(508 + index * 64)
+
+            check_close(weighted_inverse, tuple(value * weight for value in inverse[bone]))
+            check_close(driver_world, invert_matrix(inverse[bone]))
+
+            products.append(multiply_matrices(driver_world, weighted_inverse))
+
+        check_close(tuple(sum(values) for values in zip(*products)), identity)
+        helper = next(
+            uid for uid, target_id in targets.items()
+            if target_id == target
+        )
+        check_close(matrix(172), invert_matrix(inverse[helper]))
+        records[target] = primary
+
+    if set(records) != set(targets.values()):
+        raise ValueError("Missing verified FK driver records")
+
+    return {
+        geometry: {
+            helper: records[target]
+            for helper, target in targets.items()
+        }
+    }
+
+def merge_skeleton_graphs(graphs):
+    """Join agreeing src fragments"""
+    choices = {}
+
+    for graph in graphs:
+        for bone, parent in graph.items():
+            choices.setdefault(bone, set())
+            if parent is not None:
+                choices[bone].add(parent)
+
+    if any(len(parents) > 1 for parents in choices.values()):
+        raise ValueError("Conflicting source skeleton parents")
+
+    merged = {
+        bone: next(iter(parents), None)
+        for bone, parents in choices.items()
+    }
+    components = {}
+
+    for bone in merged:
+        root = bone
+        seen = set()
+
+        while merged[root] is not None:
+            if root in seen or merged[root] not in merged:
+                raise ValueError("Invalid merged skeletong ancestry")
+            seen.add(root)
+            root = merged[root]
+
+        components.setdefault(root, {})[bone] = merged[bone]
+
+    return tuple(components.values())
+
+class SourceSkeleton(dict):
+    def __init__(self, graph, owns_head=False, fk_driver_parents=None):
+        super().__init__(graph)
+        self.owns_head = owns_head
+        self.fk_driver_parents = fk_driver_parents or {}
+
+def read_model_skeletons(payload):
+    from src.model import read_mesh_bindings
+
+    graphs = merge_skeleton_graphs(read_skeleton_parents(payload))
+    owned = read_owned_model_skeletons(payload)
+    bindings = read_mesh_bindings(payload)
+    drivers = read_fk_driver_parents(payload, bindings)
+
+    return {
+        geometry: tuple(
+            SourceSkeleton(
+                graph,
+                any(
+                    0x07C159A2 in item
+                    for item in owned.get(geometry, ())
+                ),
+                drivers.get(geometry)
+            )
+            for graph in graphs
+            if set(binding.bone_ids) & graph.keys()
+        )
+        for geometry, binding in bindings.items()
+    }
 
 def apply_skeleton_hierachy(document, skeletons):
     if not skeletons:
@@ -122,6 +294,26 @@ def apply_skeleton_hierachy(document, skeletons):
         graphs = skeletons.get(geometry, ())
         if not graphs:
             continue
+
+        source_parents = {}
+        for graph in graphs:
+            for bone, parent in graph.items():
+                key = f"{bone:08X}"
+                value = f"{parent:08X}" if parent is not None else ""
+                if value or key not in source_parents:
+                    source_parents[key] = value
+
+        extras = nodes[joints[0]].setdefault("extras", {})
+        extras["siegeSkeletonParents"] = source_parents
+        extras["siegeOwnsHeadSkeleton"] = any(getattr(graph, "owns_head", False) for graph in graphs)
+
+        fk_drivers = {
+            f"{uid:08X}": f"{parent:08X}"
+            for graph in graphs
+            for uid, parent in getattr(graph, "fk_driver_parents", {}).items()
+        }
+        if fk_drivers:
+            extras["siegeFkDriverParents"] = fk_drivers
 
         by_id = {}
         for joint in joints:
@@ -192,27 +384,12 @@ def apply_skeleton_hierachy(document, skeletons):
         ]
 
 def supplement_skeleton(graph, reference_groups, required):
-    """Add only unanimous helper chains anchored below the owned root"""
-    roots = {
-        bone for bone, parent in graph.items()
-        if parent is None
-    }
-    groups = [
-        [
-            ref for ref in references
-            if {
-                bone for bone, parent in ref.items()
-                if parent is None
-            } == roots and all(ref[bone] == graph[bone] for bone in graph.keys() & ref.keys())
-        ]
-        for references in reference_groups
-    ]
-    if not all(groups):
+    """Add a helper only when both references agree on its ancestry"""
+    if len(reference_groups) < 2:
         return
 
     def chain(ref, bone):
-        missing = []
-        seen = set()
+        missing, seen = [], set()
 
         while bone not in graph:
             if bone is None or bone not in ref or bone in seen:
@@ -221,34 +398,34 @@ def supplement_skeleton(graph, reference_groups, required):
             missing.append((bone, ref[bone]))
             bone = ref[bone]
 
-        # Sharing only the root is insufficient evidence
         if graph[bone] is None:
             return None
 
-        # The existing ancestry must agree all the way to the root
-        while bone is not None:
-            if bone in seen or bone not in ref or bone not in graph:
-                return None
-            if ref[bone] != graph[bone]:
+        while graph[bone] is not None:
+            if bone in seen or bone not in ref or ref[bone] != graph[bone]:
                 return None
             seen.add(bone)
             bone = graph[bone]
 
+        if bone not in ref:
+            return None
+
         return tuple(missing)
 
-    candidates = [
-        ref for group in groups
-        for ref in group
-    ]
-    common = set.intersection(*(set(ref) for ref in candidates))
     additions = {}
 
-    for bone in (common & set(required)) - graph.keys():
-        chains = [chain(ref, bone) for ref in candidates]
-        if chains[0] is None:
+    for bone in set(required) - graph.keys():
+        groups = [
+            [chain(ref, bone) for ref in refs if bone in ref]
+            for refs in reference_groups
+        ]
+        if not all(groups):
             continue
-        if any(item != chains[0] for item in chains[1:]):
+
+        chains = [item for group in groups for item in group]
+        if chains[0] is None or any(item != chains[0] for item in chains):
             continue
+
         additions.update(chains[0])
 
     graph.update(additions)

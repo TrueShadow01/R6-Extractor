@@ -35,7 +35,11 @@ def read_lod0_islands(payload, tris, tail, num_islands):
             a, b, c = struct.unpack_from("<HHH", payload, tris + triangle * 6)
 
             if a != b and b != c and a != c:
-                faces.append((a, b, c))
+                faces.append((
+                    a + record[1],
+                    b + record[1],
+                    c + record[1]
+                ))
 
         islands.append(
             MeshIsland(

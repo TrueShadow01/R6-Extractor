@@ -520,11 +520,12 @@ def merge_fk_armatures(body, objects):
     body["r6_fk_merged"] = True
 
 def connect_fk_helpers(arm, head_name):
-    """Restore verified helper follows while preserving imported poses"""
+    from .blender_ik import source_parent_map, source_parent_target
+
     bones = arm.data.bones
     anchors = [
         bone for bone in bones
-        if bone.name.endswith("_LeftForeArm")
+        if bone.name.endswith("_LeftArm")
     ]
     if bpy.context.mode != "OBJECT" or len(anchors) != 1:
         raise RuntimeError("FK helper setup requires 1 primary body rig")
@@ -538,44 +539,45 @@ def connect_fk_helpers(arm, head_name):
                 if uid in primary:
                     raise RuntimeError("Ambiguous primary bone: " + uid)
                 primary[uid] = bone.name
-    head_ids = {
-        bone.get("siegeBoneId")
-        for bone in bones
-        if not bone.name.startswith(prefix)
-        and bone.get("siegeHeadDescendant") is True
-    }
+    if head_name is not None:
+        primary["07C159A2"] = head_name
 
-    # Nearest exported ancestors verified against Iana src pkg and shared ref skel
-    glove_groups = {
-        "B675F36C": """
-            063B3421 BDB82694 24B1772E A49904DA 3D905560 E46D88FC
-            7D64D946 0DA5584D E167C14B 19910DC9 51EE4C69 1A05C34F
-            01FF77C7 E736CE53 573BB631 B88E62B2
-        """.split(),
-        "75F94D30": """
-            76CFDB37 5F4D44D1 2BBB5B07 CDCAE074 B133130A
-        """.split(),
-        "30818F43": ["4C4EB4FD"],
-        "F0F3D174": ["C22B13C9", "EED4E2A6"],
-    }
-    glove_targets = {
-        uid: target
-        for target, ids in glove_groups.items()
-        for uid in ids
-    }
+    parents = source_parent_map((arm,))
+    driver_parents = {}
+
+    for bone in bones:
+        stored = bone.get("siegeFkDriverParents")
+        if stored is not None:
+            geometry = bone.name.split("_join_", 1)[0]
+            driver_parents[geometry] = dict(stored.items())
 
     plans = {}
+
     for bone in bones:
         uid = bone.get("siegeBoneId")
+        if bone.name == head_name:
+            continue
 
-        if bone.name.startswith("part_0000003A60F42559_join_"):
-            target_id = uid if uid in primary else glove_targets.get(uid)
+        geometry = bone.name.split("_join_", 1)[0]
+        driver_id = driver_parents.get(geometry, {}).get(uid)
+
+        if driver_id is not None:
+            if driver_id not in primary:
+                raise RuntimeError("Missing FK driver: " + driver_id)
+            target = primary[driver_id]
+        elif not bone.name.startswith(prefix) and uid in primary:
+            target = primary[uid]
+        elif bone.parent is None:
+            target_id = source_parent_target(uid, parents, primary)
             target = primary.get(target_id)
-            if target is None or bone.parent is not None:
-                raise RuntimeError("Unsupported glove helper: " + bone.name)
+
+            if target is None and head_name is not None and bone.get("siegeHeadDescendant") is True:
+                target = head_name
+        else:
+            continue
+
+        if target is not None and (bone.parent is None or bone.parent.name != target):
             plans[bone.name] = target
-        elif bone.name.startswith(prefix) and bone.parent is None and bone.name != head_name and uid in head_ids:
-            plans[bone.name] = head_name
 
     if not plans:
         return
@@ -592,8 +594,8 @@ def connect_fk_helpers(arm, head_name):
     bpy.ops.object.select_all(action="DESELECT")
     arm.select_set(True)
     bpy.context.view_layer.objects.active = arm
-
     bpy.ops.object.mode_set(mode="EDIT")
+
     try:
         for name, target in plans.items():
             bone = arm.data.edit_bones[name]
@@ -604,8 +606,16 @@ def connect_fk_helpers(arm, head_name):
     finally:
         bpy.ops.object.mode_set(mode="OBJECT")
 
-    for name in plans:
-        arm.pose.bones[name].matrix = poses[name]
+    for bone in sorted(arm.pose.bones, key=lambda bone: len(bone.parent_recursive)):
+        parent_frames = {}
+
+        if bone.parent is not None:
+            parent_frames = {
+                "parent_matrix": poses[bone.parent.name],
+                "parent_matrix_local": bone.parent.bone.matrix_local
+            }
+
+        bone.matrix_basis = bone.bone.convert_local_to_pose(poses[bone.name], bone.bone.matrix_local, invert=True, **parent_frames)
 
     bpy.context.view_layer.update()
     error = max(
@@ -622,9 +632,9 @@ def organize_fk_bones(arm, head_name):
     bones = arm.data.bones
     anchors = [
         bone for bone in bones
-        if bone.name.endswith("_LeftForeArm")
+        if bone.name.endswith("_LeftArm")
     ]
-    if len(anchors) != 1 or head_name not in bones:
+    if len(anchors) != 1 or head_name is not None and head_name not in bones:
         raise RuntimeError("Cannot identify the primary FK skeleton")
 
     prefix = anchors[0].name.split("_join_")[0] + "_join_"
@@ -654,11 +664,11 @@ def organize_fk_bones(arm, head_name):
         for name in ("Body", "Face", "Helpers")
     }
 
-    head = bones[head_name]
+    head = bones.get(head_name) if head_name is not None else None
     for bone in bones:
         if bone == head or bone.name.startswith(prefix) and bone.name.rsplit("_", 1)[-1] in labels:
             group = "Body"
-        elif head in bone.parent_recursive:
+        elif head is not None and head in bone.parent_recursive or head is None and bone.get("r6_head_part") is True:
             group = "Face"
         else:
             group = "Helpers"
@@ -675,18 +685,18 @@ def organize_fk_bones(arm, head_name):
         collection.is_solo = False
 
     for name, collection in groups.items():
-        collection.is_visible = name == "Body"
+        collection.is_visible = name == "Body" or (head is None and name == "Face")
 
     arm.data.collections.active = groups["Body"]
     arm.show_in_front = True
 
 def connect_fk_head(objects):
-    """Connect supported head rigs to a head bone for Pose Mode posing"""
+    """Connect and merge operator rigs"""
     from .blender_ik import connect_operator_head
 
     objects = tuple(objects)
     suffixes = (
-        "_LeftForeArm", "_RightForeArm",
+        "_LeftArm", "_RightArm",
         "_LeftUpLeg", "_RightUpLeg"
     )
     bodies = [
@@ -698,7 +708,13 @@ def connect_fk_head(objects):
         raise RuntimeError("FK head setup requires one identifiable body rig")
 
     body = bodies[0]
-    head_name = connect_operator_head(body, objects)
+    head_name = connect_operator_head(body, objects, allow_no_head=True)
+    if head_name is None:
+        for obj in objects:
+            if obj.type == "ARMATURE" and obj != body:
+                for bone in obj.data.bones:
+                    bone["r6_head_part"] = True
+
     merge_fk_armatures(body, objects)
     connect_fk_helpers(body, head_name)
     organize_fk_bones(body, head_name)
@@ -710,8 +726,23 @@ def connect_fk_head(objects):
 
     for bone in body.data.bones:
         bone.select = False
-    body.data.bones[head_name].select = True
-    body.data.bones.active = body.data.bones[head_name]
+
+    selected_name = head_name
+    if selected_name is None:
+        prefix = next(
+            bone.name.split("_join_", 1)[0] + "_join_"
+            for bone in body.data.bones
+            if bone.name.endswith("_LeftArm")
+        )
+        selected_name = next(
+            bone.name
+            for bone in body.data.bones
+            if bone.name.startswith(prefix)
+            and bone.name.endswith("_Spine2")
+        )
+
+    body.data.bones[selected_name].select = True
+    body.data.bones.active = body.data.bones[selected_name]
     body.show_in_front = True
 
     return body, head_name

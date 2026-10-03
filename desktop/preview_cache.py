@@ -13,8 +13,9 @@ from app_runtime import (
     worker_executable
 )
 from src.operator_registry import read_operator_registry
+from src.model import operator_model_jobs
 
-CACHE_VERSION = 34
+CACHE_VERSION = 35
 
 def model_files_exist(model):
     """Check the glTF and its external buffers/images"""
@@ -90,11 +91,7 @@ def prepare_preview(game, operator_uid, *, operator=None):
     if operator is None:
         raise ValueError(f"Operator not found: {operator_uid:016X}")
 
-    jobs = []
-    for label, part in (("body", operator.body), ("head", operator.head)):
-        if not part.model_groups or not part.model_groups[0]:
-            raise ValueError(f"No primary {label} models for {operator.name}")
-        jobs.extend((label, uid) for uid in dict.fromkeys(part.model_groups[0]))
+    jobs = operator_model_jobs(operator, database)
 
     # incomplete preparation must never retain a success marker
     directory.mkdir(parents=True, exist_ok=True)

@@ -517,6 +517,149 @@ def resolve_static_attachment_bindings(payload, bindings):
             resolved[geometry_uid] = replace(binding, joint_node_matrices=(_pose_to_gltf_matrix(poses[0]),))
     return resolve_holster_binding(payload, resolved)
 
+def resolve_fitted_head_frames(bindings):
+    """Align inspected fitted head parts using their src bind frames"""
+    resolved = dict(bindings)
+
+    for guest_id, host_id, count, fitted_shoulders in (
+        (0x5978C88BFD, 0x5978C88BF6, 47, {0x416FDA92, 0xF9872CD6}),
+        (0x62FFE76CD8, 0x62FFE76CBD, 80, set()),
+    ):
+        guest = resolved.get(guest_id)
+        host = resolved.get(host_id)
+
+        if guest is None or host is None or guest.joint_node_matrices:
+            continue
+
+        matrices = _default_joint_node_matrices(guest)
+        own = dict(zip(guest.bone_ids, matrices))
+        reference = dict(zip(
+            host.bone_ids,
+            _default_joint_node_matrices(host)
+        ))
+        common = own.keys() & reference.keys()
+
+        if HOST_HEAD_ROOT not in common or len(common) != count:
+            raise ValueError("Head attachment source bindings changed")
+
+        correction = _gltf_multiply(reference[HOST_HEAD_ROOT], invert_gltf_matrix(own[HOST_HEAD_ROOT]))
+
+        for uid in common:
+            delta = _gltf_multiply(reference[uid], invert_gltf_matrix(own[uid]))
+
+            if uid in fitted_shoulders:
+                basis_error = max(
+                    abs(correction[i] - delta[i])
+                    for i in range(16)
+                    if i not in (12, 13, 14)
+                )
+                position_error = sum(
+                    (correction[i] - delta[i]) ** 2
+                    for i in (12, 13, 14)
+                ) ** 0.5
+                matches = (
+                    basis_error <= 1e-4
+                    and position_error <= 0.011
+                )
+            else:
+                matches = max(
+                    abs(a - b)
+                    for a, b in zip(correction, delta)
+                ) <= 1e-4
+
+            if not matches:
+                raise ValueError("Head attachment source frames disagree")
+
+        resolved[guest_id] = replace(
+            guest,
+            joint_node_matrices=tuple(
+                _gltf_multiply(correction, matrix)
+                for matrix in matrices
+            )
+        )
+
+    return resolved
+
+def is_auxiliary_only_model(payload):
+    from src.metadata import InvalidFileMetadata, parse_file_metadata
+
+    try:
+        metadata = parse_file_metadata(payload)
+        data = payload[metadata.data_offset:]
+
+        if metadata.file_type != 0xADE00798 or len(data) < 318:
+            return False
+        if struct.unpack_from("<II", data, 0) != (0xADE00798, 1):
+            return False
+        if struct.unpack_from("<III", data, 176) != (1, 0x2CECF817, 0x626956DB):
+            return False
+        if struct.unpack_from("<III", data, 236) != (1, 1, 0x626956DB):
+            return False
+        if any(struct.unpack_from("<Q", data, offset)[0] != metadata.uid for offset in (220, 281)):
+            return False
+
+        child = parse_file_metadata(data[294:])
+        if child.file_type != 0x626956DB or child.uid == 0:
+            return False
+        if struct.unpack_from("<Q", data, 256)[0] != child.uid:
+            return False
+
+        start = 294 + child.data_offset
+        if data[start:start + 4] != struct.pack("<I", child.file_type):
+            return False
+
+        return not scan_nested_entries(payload)
+    except (InvalidFileMetadata, struct.error):
+        return False
+
+def operator_model_jobs(operator, database):
+    """Exclude verified nonvisual entries from export and preview"""
+    from src.database import load_asset_index
+    from src.depgraph import load_depgraph
+    from src.metadata import parse_file_metadata
+
+    parts = (("body", operator.body), ("head", operator.head))
+
+    for label, part in parts:
+        if not part.model_groups or not part.model_groups[0]:
+            raise ValueError(f"No primary {label} models for {operator.name}")
+
+    uids = {
+        uid
+        for _, part in parts
+        for uid in part.model_groups[0]
+    }
+    index = load_asset_index(database, uids)
+    graphs = {}
+    jobs = []
+
+    for label, part in parts:
+        start = len(jobs)
+
+        for uid in dict.fromkeys(part.model_groups[0]):
+            record = index.primary(uid)
+            if record is None:
+                raise ValueError(f"Model {uid:016X} is absent from the asset index")
+
+            payload = load_asset_payload(record)
+            if parse_file_metadata(payload).uid != uid:
+                raise ValueError(f"Stale asset index for {record.archive.name}, rebuild the index")
+
+            if is_auxiliary_only_model(payload):
+                path = record.archive.with_suffix(".depgraphbin")
+                if path not in graphs:
+                    graphs[path] = load_depgraph(path)
+
+                if graphs[path].get(uid):
+                    raise ValueError(f"Auxiliary model {uid:016X} unexpectedly has dependencies")
+
+                print(f"Ignoring nonvisual auxiliary model {uid:016X}", flush=True)
+                continue
+            jobs.append((label, uid))
+        if len(jobs) == start:
+            raise ValueError(f"No renderable {label} models for {operator.name}")
+    return jobs
+
 def resolve_attachment_frames(bindings: Mapping[int, MeshBinding]) -> dict[int, MeshBinding]:
     """Align attachment axis conventions using matching source bind bones"""
 
@@ -528,7 +671,7 @@ def resolve_attachment_frames(bindings: Mapping[int, MeshBinding]) -> dict[int, 
         return all(abs(a - b) <= tolerance for a, b in zip(left, right))
 
     for binding in bindings.values():
-        if binding.joint_node_matrices or HOST_HEAD_ROOT not in binding.bone_ids:
+        if binding.joint_node_matrices:
             continue
 
         matrices = _default_joint_node_matrices(binding)
@@ -541,10 +684,11 @@ def resolve_attachment_frames(bindings: Mapping[int, MeshBinding]) -> dict[int, 
 
             host_matrices = dict(zip(host.bone_ids, _default_joint_node_matrices(host)))
             common = own.keys() & host_matrices.keys()
-            if HOST_HEAD_ROOT not in common or len(common) < 3:
+            if len(common) < 3:
                 continue
 
-            delta = _gltf_multiply(host_matrices[HOST_HEAD_ROOT], invert_gltf_matrix(own[HOST_HEAD_ROOT]))
+            anchor = HOST_HEAD_ROOT if HOST_HEAD_ROOT in common else min(common)
+            delta = _gltf_multiply(host_matrices[anchor], invert_gltf_matrix(own[anchor]))
             if not all(agrees(delta, _gltf_multiply(host_matrices[bone_id], invert_gltf_matrix(own[bone_id]))) for bone_id in common):
                 continue
 
@@ -587,7 +731,7 @@ def resolve_attachment_frames(bindings: Mapping[int, MeshBinding]) -> dict[int, 
                     joint_node_matrices=tuple(_gltf_multiply(correction, matrix) for matrix in head_matrices)
                 )
 
-    return resolved
+    return resolve_fitted_head_frames(resolved)
 
 def resolve_static_face_bindings(bindings: Mapping[int, MeshBinding], payload: bytes | None = None) -> dict[int, MeshBinding]:
     """Apply the package's neutral pose to its shared facial geometry"""

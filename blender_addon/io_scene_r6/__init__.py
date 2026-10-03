@@ -11,7 +11,7 @@ from .blender_preview import import_siege_model, connect_fk_head
 bl_info = {
     "name": "Rainbow Six Siege Operator Import",
     "author": "TrueShadow01",
-    "version": (0, 2, 0),
+    "version": (0, 3, 0),
     "blender": (4, 5, 0),
     "location": "File > Import > Rainbow Six Siege Operator",
     "description": "Import exported head/body models with Siege Materials",
@@ -78,7 +78,11 @@ class IMPORT_SCENE_OT_r6_operator(bpy.types.Operator):
             self.report({"WARNING"}, f"Models imported, FK setup incomplete: {error}")
             return {"FINISHED"}
 
-        self.report({"INFO"}, f"Imported {folder.name}: {completed} models with Siege materials.")
+        if head_name is None:
+            self.report({"WARNING"}, "FK imported. Use the Face collection's mechanical joints, no unified Head control")
+        else:
+            self.report({"INFO"}, f"Imported {folder.name}: {completed} models with Siege materials")
+
         return {"FINISHED"}
 
 def menu_import(self, context):

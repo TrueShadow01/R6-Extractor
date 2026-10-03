@@ -201,7 +201,52 @@ def create_operator_ik(objects):
     bpy.context.view_layer.update()
     return arm
 
-def connect_operator_head(body, objects):
+def source_parent_map(objects):
+    choices = {}
+
+    for obj in objects:
+        if obj.type != "ARMATURE":
+            continue
+
+        for bone in obj.data.bones:
+            stored = bone.get("siegeSkeletonParents")
+            if stored is None:
+                continue
+
+            for uid, parent in stored.items():
+                if parent:
+                    choices.setdefault(uid, set()).add(parent)
+    if any(len(parents) != 1 for parents in choices.values()):
+        raise RuntimeError("Conflicting operator skeleton ancestry")
+
+    parents = {
+        uid: next(iter(values))
+        for uid, values in choices.items()
+    }
+
+    for uid in parents:
+        seen = set()
+        while uid in parents:
+            if uid in seen:
+                raise RuntimeError("Cyclic operator skeleton ancestry")
+            seen.add(uid)
+            uid = parents[uid]
+    return parents
+
+def source_parent_target(uid, parents, available):
+    seen = set()
+
+    while uid in parents:
+        if uid in seen:
+            raise RuntimeError("Cyclic operator skeleton ancestry")
+        seen.add(uid)
+        uid = parents[uid]
+
+        if uid in available:
+            return uid
+    return None
+
+def connect_operator_head(body, objects, *, allow_no_head=False):
     """Connect supported head joints by source identity, preserving placement"""
     facial_ids = set("""
         07C159A2 40CDE165 CE744349 347B7E2A 4ED9C94E 75710E2B
@@ -238,7 +283,8 @@ def connect_operator_head(body, objects):
     if ambiguous_ids & {"07C159A2", "1630ABF4"}:
         raise RuntimeError("Ambiguous body Head or Spine 2 Target")
 
-    plans, head_frames = [], []
+    parents = source_parent_map((body, *heads))
+    plans, head_frames, head_sources = [], [], []
     bpy.context.view_layer.update()
 
     for arm in heads:
@@ -250,6 +296,7 @@ def connect_operator_head(body, objects):
 
             if uid == "07C159A2":
                 head_frames.append(arm.matrix_world @ bone.matrix)
+                head_sources.append((arm, bone))
 
             # Потомки наследуют движение связанного с ними корня.
             # Descendants inherit the motion of their connected root
@@ -258,12 +305,16 @@ def connect_operator_head(body, objects):
             if bone.constraints:
                 raise RuntimeError("Head joint already has constraints: " + bone.name)
 
-            if uid in facial_ids or bone.bone.get("siegeHeadDescendant") is True:
-                target_id = "07C159A2"
-            elif uid in by_id:
+            source_target = source_parent_target(uid, parents, set(by_id) | {"07C159A2"})
+
+            if uid in by_id:
                 if uid in ambiguous_ids:
                     raise RuntimeError("Ambiguous body target: " + uid)
                 target_id = uid
+            elif source_target is not None:
+                target_id = source_target
+            elif uid in facial_ids or bone.bone.get("siegeHeadDescendant") is True:
+                target_id = "07C159A2"
             elif uid == "8023796D":
                 # Source neck joint's nearest available body ancestor
                 target_id = "1630ABF4"
@@ -272,8 +323,43 @@ def connect_operator_head(body, objects):
 
             plans.append((arm, bone, target_id))
 
-    if not head_frames or any((matrix.translation - head_frames[0].translation).length > 0.0001 for matrix in head_frames[1:]):
-        raise RuntimeError("Missing or inconsistent head attachment positions")
+    mechanical = allow_no_head and "07C159A2" not in by_id and not head_frames and all(target_id in by_id for _, _, target_id in plans)
+
+    if "07C159A2" not in by_id and not mechanical:
+        spine = body.pose.bones[by_id["1630ABF4"]]
+        spine_position = (body.matrix_world @ spine.matrix).translation
+
+        candidates = list(zip(head_sources, head_frames))
+
+        aligned = [
+            item for item in candidates
+            if any(
+                b.name.split("_join_", 1)[0] == item[0][1].name.split("_join_", 1)[0]
+                and b.bone.get("siegeBoneId") == "1630ABF4"
+                and (
+                    (item[0][0].matrix_world @ b.matrix).translation - spine_position
+                ).length <= 0.0001
+                for b in item[0][0].pose.bones
+            )
+        ]
+        if aligned:
+            candidates = aligned
+
+        owned = [
+            item for item in candidates
+            if any(
+                b.name.split("_join_", 1)[0] == item[0][1].name.split("_join_", 1)[0]
+                and b.get("siegeOwnsHeadSkeleton") is True
+                for b in item[0][0].data.bones
+            )
+        ]
+        if owned:
+            candidates = owned
+
+        head_frames = [item[1] for item in candidates]
+
+        if not head_frames or any((matrix.translation - head_frames[0].translation).length > 0.0001 for matrix in head_frames[1:]):
+            raise RuntimeError("Missing or inconsistent head attachment positions")
 
     selected = list(bpy.context.selected_objects)
     active = bpy.context.view_layer.objects.active
@@ -286,7 +372,7 @@ def connect_operator_head(body, objects):
     ]
 
     try:
-        if "07C159A2" not in by_id:
+        if "07C159A2" not in by_id and not mechanical:
             if body.data.users != 1:
                 raise RuntimeError("Body armature data is shared")
 
@@ -354,7 +440,7 @@ def connect_operator_head(body, objects):
         bpy.context.view_layer.objects.active = active
 
     body["r6_head_connected"] = True
-    return by_id["07C159A2"]
+    return by_id.get("07C159A2")
 
 def create_head_control(body, head_name, objects):
     """Add an object-mode head control and shorten head display bones"""
