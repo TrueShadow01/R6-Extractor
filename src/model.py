@@ -15,7 +15,7 @@ from typing import Iterable, Mapping
 
 from PIL import Image
 
-from src.skeleton import resolve_model_skeletons
+from src.skeleton import resolve_model_skeletons, source_head_bone_ids
 from src.tint import bake_tinted_material
 from src.gltf import (
     MaterialTextures,
@@ -139,8 +139,8 @@ class MeshPart:
     normals: list[tuple[float, float, float]]
     islands: tuple[MeshIsland, ...]
     tangents: tuple[tuple[float, float, float, float], ...] = ()
-    joints: tuple[tuple[int, int, int, int], ...] = ()
-    weights: tuple[tuple[float, float, float, float], ...] = ()
+    joints: tuple[tuple[int, ...], ...] = ()
+    weights: tuple[tuple[float, ...], ...] = ()
     binding: MeshBinding | None = None
 
 @dataclass(frozen=True)
@@ -1095,7 +1095,8 @@ def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: A
         normal=normal,
         specular=specular,
         material_textures=material_textures or None,
-        skeletons=resolve_model_skeletons(model_payload, index) if model_payload is not None else {}
+        skeletons=resolve_model_skeletons(model_payload, index) if model_payload is not None else {},
+        head_bone_ids=source_head_bone_ids(model_payload) if model_payload is not None else ()
     )
 
     return ModelExportResult(

@@ -258,7 +258,7 @@ def connect_operator_head(body, objects):
             if bone.constraints:
                 raise RuntimeError("Head joint already has constraints: " + bone.name)
 
-            if uid in facial_ids:
+            if uid in facial_ids or bone.bone.get("siegeHeadDescendant") is True:
                 target_id = "07C159A2"
             elif uid in by_id:
                 if uid in ambiguous_ids:

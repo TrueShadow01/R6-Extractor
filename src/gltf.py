@@ -306,7 +306,7 @@ def siege_to_gltf_vector(value: tuple[float, float, float]) -> tuple[float, floa
 
     return x, z, -y
 
-def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: str | Path, *, diffuse: str | None = None, normal: str | None = None, specular: str | None = None, material_textures: Sequence[MaterialTextures] | None = None, skeletons=None) -> Path:
+def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: str | Path, *, diffuse: str | None = None, normal: str | None = None, specular: str | None = None, material_textures: Sequence[MaterialTextures] | None = None, skeletons=None, head_bone_ids=()) -> Path:
     """Write a multi-part glTF using external PNG textures"""
 
     output_directory = Path(output_directory).resolve()
@@ -437,18 +437,6 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
             for component in tangent
         ]
 
-        joint_values = [
-            joint
-            for vertex_joints in part.joints
-            for joint in vertex_joints
-        ]
-
-        weight_values = [
-            weight
-            for vertex_weights in part.weights
-            for weight in vertex_weights
-        ]
-
         # The mesh parser flips Siege UVs vertically.
         # Convert them for glTF's upper-left texture origin
         texture_coordinates = [
@@ -475,15 +463,42 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
         normal_accessor = add_accessor(pack_floats(normals), target=ARRAY_BUFFER, component_type=FLOAT, count=len(part.normals), value_type="VEC3", name=f"{prefix}_normals")
         uv_accessor = add_accessor(pack_floats(texture_coordinates), target=ARRAY_BUFFER, component_type=FLOAT, count=len(part.uvs), value_type="VEC2", name=f"{prefix}_uvs")
         tangent_accessor = None
-        joint_accessor = None
-        weight_accessor = None
+        skin_attributes = {}
 
         if converted_tangents:
             tangent_accessor = add_accessor(pack_floats(tangents), target=ARRAY_BUFFER, component_type=FLOAT, count=len(converted_tangents), value_type="VEC4", name=f"{prefix}_tangents")
 
-        if joint_values:
-            joint_accessor = add_accessor(pack_unsigned_bytes(joint_values), target=ARRAY_BUFFER, component_type=UNSIGNED_BYTE, count=len(part.joints), value_type="VEC4", name=f"{prefix}_joints")
-            weight_accessor = add_accessor(pack_floats(weight_values), target=ARRAY_BUFFER, component_type=FLOAT, count=len(part.weights), value_type="VEC4", name=f"{prefix}_weights")
+        if part.joints:
+            influence_count = len(part.joints[0])
+            if influence_count not in (4, 8) or any(len(j) != influence_count or len(w) != influence_count for j, w in zip(part.joints, part.weights)):
+                raise ValueError(f"Part {part.uid:016X} has unsupported skin influence counts")
+
+            for group in range(influence_count // 4):
+                start = group * 4
+                joints = [
+                    value for values in part.joints
+                    for value in values[start:start + 4]
+                ]
+                weights = [
+                    value for values in part.weights
+                    for value in values[start:start + 4]
+                ]
+                skin_attributes[f"JOINTS_{group}"] = add_accessor(
+                    pack_unsigned_bytes(joints),
+                    target=ARRAY_BUFFER,
+                    component_type=UNSIGNED_BYTE,
+                    count=len(part.joints),
+                    value_type="VEC4",
+                    name=f"{prefix}_joints_{group}"
+                )
+                skin_attributes[f"WEIGHTS_{group}"] = add_accessor(
+                    pack_floats(weights),
+                    target=ARRAY_BUFFER,
+                    component_type=FLOAT,
+                    count=len(part.weights),
+                    value_type="VEC4",
+                    name=f"{prefix}_weights_{group}"
+                )
 
         primitives = []
 
@@ -513,14 +528,7 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
                             if tangent_accessor is not None
                             else {}
                         ),
-                        **(
-                            {
-                                "JOINTS_0": joint_accessor,
-                                "WEIGHTS_0": weight_accessor
-                            }
-                            if joint_accessor is not None and weight_accessor is not None
-                            else {}
-                        )
+                        **skin_attributes,
                     },
                     "indices": index_accessor,
                     "material": material_id,
@@ -574,7 +582,14 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
                 nodes.append(
                     {
                         "name": f"{prefix}_join_{bone_index:03d}_{BONE_NAMES.get(bone_id, f'{bone_id:08X}')}",
-                        "extras": {'siegeBoneId': f"{bone_id:08X}"},
+                        "extras": {
+                            "siegeBoneId": f"{bone_id:08X}",
+                            **(
+                                {"siegeHeadDescendant": True}
+                                if bone_id in head_bone_ids
+                                else {}
+                            ),
+                        },
                         "matrix": list(joint_node_matrix)
                     }
                 )

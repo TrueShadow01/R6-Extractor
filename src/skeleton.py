@@ -61,6 +61,18 @@ def read_skeleton_parents(payload):
 
     return tuple(results)
 
+def source_head_bone_ids(payload):
+    """Identify bones with Head src ancestor"""
+    classifications = {}
+    for graph in read_skeleton_parents(payload):
+        for bone in graph:
+            ancestor = bone
+            while ancestor is not None and ancestor != 0x07C159A2:
+                ancestor = graph[ancestor]
+            classifications.setdefault(bone, []).append(ancestor == 0x07C159A2)
+
+    return frozenset(bone for bone, matches in classifications.items() if all(matches))
+
 def read_model_skeletons(payload):
     from src.material import CURRENT_MESH, scan_nested_entries
 

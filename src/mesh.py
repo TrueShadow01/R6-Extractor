@@ -46,31 +46,28 @@ def read_lod0_islands(payload, tris, tail, num_islands):
     return tuple(islands)
 
 def read_skin_weights(payload, vbo, verts_len, num_verts, vert_len):
-    """Read four joint indices and normalized weights from a skinned vertex buffer"""
-
-    if vert_len != 0x24:
+    """Read 4 or 8 influences from planar skin blocks"""
+    groups = {0x24: 1, 0x2C: 2}.get(vert_len)
+    if groups is None:
         return (), ()
 
-    joints_offset = vbo + verts_len - num_verts * 8
-    weight_offsets = joints_offset + num_verts * 4
-
-    joints = []
-    weights = []
+    joints_offset = vbo + verts_len - num_verts * groups * 8
+    weights_offset = joints_offset + num_verts * groups * 4
+    joints, weights = [], []
 
     for index in range(num_verts):
-        joint_values = struct.unpack_from("<4B", payload, joints_offset + index * 4)
-        weight_values = struct.unpack_from("<4B", payload, weight_offsets + index * 4)
-
+        joint_values = tuple(
+            value
+            for group in range(groups)
+            for value in struct.unpack_from("<4B", payload, joints_offset + group * num_verts * 4 + index * 4)
+        )
+        weight_values = tuple(
+            value
+            for group in range(groups)
+            for value in struct.unpack_from("<4B", payload, weights_offset + group * num_verts * 4 + index * 4)
+        )
         total = sum(weight_values)
-
-        if total:
-            normalized = tuple(
-                value / total
-                for value in weight_values
-            )
-        else:
-            normalized = (1.0, 0.0, 0.0, 0.0)
-
+        normalized = tuple(value / total for value in weight_values) if total else (1.0,) + (0.0,) * (groups * 4 - 1)
         joints.append(joint_values)
         weights.append(normalized)
 
