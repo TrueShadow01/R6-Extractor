@@ -14,7 +14,7 @@ Includes operator search, asset indexing, export, Blender 4.5 add-on installatio
 
 ## Standalone setup
 
-Requires 64-bit Windows, a local Siege installation, a compatible Oodle runtime ([such as this one](https://drive.google.com/file/d/1Q2Bhz1jmjBFRBzsN0eS1UDMsqgDCpdXl/view?usp=sharing)) and Blender 4.5. Python is not required for the standalone build.
+Requires 64-bit Windows, a local Siege installation, a compatible Oodle runtime and Blender 4.5. Python is not required for the standalone build.
 
 1. Extract the entire release ZIP into a folder.
 2. Keep `R6ForgeExtractor.exe`, `R6Worker.exe` and `_internal` together.
