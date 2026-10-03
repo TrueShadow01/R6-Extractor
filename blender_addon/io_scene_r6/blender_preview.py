@@ -681,7 +681,7 @@ def organize_fk_bones(arm, head_name):
     arm.show_in_front = True
 
 def connect_fk_head(objects):
-    """Connect supported haed rigs to a head bone for Pose Mode posing"""
+    """Connect supported head rigs to a head bone for Pose Mode posing"""
     from .blender_ik import connect_operator_head
 
     objects = tuple(objects)
