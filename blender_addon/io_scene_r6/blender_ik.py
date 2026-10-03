@@ -211,6 +211,12 @@ def connect_operator_head(body, objects):
         D8F170CA 22FE4DA9 CC6830DB 36670DB8 A3032C97 590C11F4
     """.split())
 
+    # Iana: скелет-родитель, соединения с головой
+    facial_ids.update({
+        "484DA6B2", "4F2062AB", "AFF58BB5",
+        "55FAB6D6"
+    })
+
     heads = [
         obj for obj in objects
         if obj.type == "ARMATURE" and obj != body
@@ -221,15 +227,16 @@ def connect_operator_head(body, objects):
         raise RuntimeError("Head is already connected")
 
     by_id = {}
+    ambiguous_ids = set()
     for bone in body.data.bones:
         uid = bone.get("siegeBoneId")
         if uid:
             if uid in by_id:
-                raise RuntimeError("Ambiguous body bone ID: " + uid)
+                ambiguous_ids.add(uid)
             by_id[uid] = bone.name
 
-    if "1630ABF4" not in by_id:
-        raise RuntimeError("Body has no identified Spine2 bone")
+    if ambiguous_ids & {"07C159A2", "1630ABF4"}:
+        raise RuntimeError("Ambiguous body Head or Spine 2 Target")
 
     plans, head_frames = [], []
     bpy.context.view_layer.update()
@@ -254,6 +261,8 @@ def connect_operator_head(body, objects):
             if uid in facial_ids:
                 target_id = "07C159A2"
             elif uid in by_id:
+                if uid in ambiguous_ids:
+                    raise RuntimeError("Ambiguous body target: " + uid)
                 target_id = uid
             elif uid == "8023796D":
                 # Source neck joint's nearest available body ancestor
