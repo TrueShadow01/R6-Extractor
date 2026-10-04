@@ -6,6 +6,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from PIL import Image, ImageMath
+from functools import lru_cache
 
 from src.tint_pattern import bake_pattern_material
 
@@ -40,23 +41,37 @@ def read_tint_parameters(blob):
 
     return tuple((f"TintSource{name}", tuple(color)) for name, color in zip("ABCDEFG", colors)) + (("TintSourceSelectors", tuple(selectors)),)
 
+_TINT_LINEAR = tuple(
+        value / 12.92
+        if value <= 0.04045
+        else ((value + 0.055) / 1.055) ** 2.4
+        for value in (n / 255 for n in range(256))
+    )
+
+@lru_cache(maxsize=512)
+def _tint_lookup_row(gain):
+    """Reuse identical gain rows without changing color calculation"""
+    row = bytearray()
+
+    for value in _TINT_LINEAR:
+        value = max(0.0, min(1.0, value * gain))
+        encoded = (
+            12.92 * value
+            if value <= 0.0031308
+            else 1.055 * value ** (1 / 2.4) - 0.055
+        )
+        row.append(round(encoded * 255))
+
+    return bytes(row)
+
 def tint_image(source, colors, custom_mask=None):
     rgba = source.convert("RGBA")
     alpha = rgba.getchannel("A")
 
-    linear = [
-        v / 12.92
-        if v <= 0.04045
-        else ((v + 0.055) / 1.055) ** 2.4
-        for v in (n / 255 for n in range(256))
-    ]
-
-    # A/B use 0.5 as mathematical neutral, preserve them
+    # A/B use 0.5 as neutral
     a, b = colors[:2]
 
     def linear_region(color):
-        # Experimental: source region RGB may be stored as sRGB
-        # leave the scalar in W out of the paint bucket - Victor
         return tuple(
             value / 12.92
             if value < 0.04045
@@ -68,10 +83,11 @@ def tint_image(source, colors, custom_mask=None):
 
     if custom_mask is not None:
         custom_mask = linear_region(tuple(custom_mask) + (1.0,))[:3]
+
     channels = []
 
     for channel in range(3):
-        table = []
+        table = bytearray()
 
         for alpha_byte in range(256):
             opacity = alpha_byte / 255
@@ -91,21 +107,14 @@ def tint_image(source, colors, custom_mask=None):
             elif category == 1:
                 gain *= g[channel]
 
-            for value in linear:
-                value = max(0.0, min(1.0, value * gain))
-                encoded = (
-                    12.92 * value
-                    if value <= 0.0031308
-                    else 1.055 * value ** (1 / 2.4) - 0.055
-                )
-                table.append(round(encoded * 255))
+            table.extend(_tint_lookup_row(gain))
+
         indices = ImageMath.lambda_eval(
             lambda args: args["alpha"] * 256 + args["channel"],
             alpha=alpha.convert("I"),
             channel=rgba.getchannel(channel).convert("I")
         )
         channels.append(indices.point(table, "L"))
-
     return Image.merge("RGBA", (*channels, alpha))
 
 def bake_tinted_material(slot, output_directory):

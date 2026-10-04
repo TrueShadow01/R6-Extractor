@@ -44,10 +44,12 @@ def pattern_image(source, colors, pattern_path, detail_path=None):
     detail = _repeat_texture(detail_path, rgba.size, (a[3], b[3])) if detail_path is not None else None
 
     linear = [_linear(i / 255) for i in range(256)]
-    weight = alpha.point([max(0, 2 * i / 255  - 1) for i in range(256)], "F")
-    low = alpha.point([i / 255 - max(0, 2 * i / 255 - 1) for i in range(256)], "F")
-    middle = alpha.point([float(round(2 * i / 255) == 1) for i in range(256)], "F")
-    high = alpha.point([float(round(2 * i / 255) == 2) for i in range(256)], "F")
+    # Calculate alpha-only coefficients on 256 values
+    ramp = Image.frombytes("L", (256, 1), bytes(range(256)))
+    weight = ramp.point([max(0, 2 * i / 255  - 1) for i in range(256)], "F")
+    low = ramp.point([i / 255 - max(0, 2 * i / 255 - 1) for i in range(256)], "F")
+    middle = ramp.point([float(round(2 * i / 255) == 1) for i in range(256)], "F")
+    high = ramp.point([float(round(2 * i / 255) == 2) for i in range(256)], "F")
 
     channels = []
     for channel in range(3):
@@ -55,28 +57,76 @@ def pattern_image(source, colors, pattern_path, detail_path=None):
         mask = pattern.getchannel(channel).point(linear, "F")
         custom0 = detail.getchannel(channel).point([i / 255 for i in range(256)], "F") if detail is not None else 1.0
 
+        blend = ImageMath.lambda_eval(
+            lambda q: (
+                0.5 + (a[channel] - 0.5) * q["low"]
+            ) * (1 - q["weight"]),
+            low=low,
+            weight=weight
+        )
+
+        if detail is None:
+            blend = ImageMath.lambda_eval(
+                lambda q: q["blend"] + b[channel] * q["weight"],
+                blend=blend,
+                weight=weight
+            )
+
+        blend = alpha.point(
+            [blend.getpixel((i, 0)) for i in range(256)],
+            "F"
+        )
+
+        if detail is not None:
+            blend = ImageMath.lambda_eval(
+                lambda q: (
+                    q["blend"] + q["custom0"] * b[channel] * q["weight"]
+                ),
+                blend=blend,
+                custom0=custom0,
+                weight=alpha.point(
+                    [weight.getpixel((i, 0)) for i in range(256)],
+                    "F"
+                )
+            )
+
+        tone = ImageMath.lambda_eval(
+            lambda q: (
+                (1 - q["middle"] - q["high"]) + q["middle"] * _linear(g[channel])
+            ),
+            middle=middle,
+            high=high
+        )
+
         value = ImageMath.lambda_eval(
-            lambda q: q["base"] * 2 * (
-                (0.5 + (a[channel] - 0.5) * q["low"]) * (1 - q["weight"]) + q["custom0"] * b[channel] * q["weight"]
-            ) * (
-                (1 - q["middle"] - q["high"]) + q["middle"] * _linear(g[channel]) + q["high"] * q["mask"]
+            lambda q: (
+                q["base"] * 2 * q["blend"]
+                * (q["tone"] + q["high"] * q["mask"])
             ),
             base=base,
-            low=low,
-            weight=weight,
-            custom0=custom0,
-            middle=middle,
-            high=high,
-            mask=mask
+            blend=blend,
+            mask=mask,
+            tone=alpha.point(
+                [tone.getpixel((i, 0)) for i in range(256)],
+                "F"
+            ),
+            high=alpha.point(
+                [high.getpixel((i, 0)) for i in range(256)],
+                "F"
+            )
         )
+
         value = ImageMath.lambda_eval(
             lambda q: q["min"](q["max"](q["v"], 0), 1),
             v=value
         )
+
         encoded = ImageMath.lambda_eval(
             lambda q: q["convert"](
                 255 * (
-                    (q["v"] <= 0.0031308) * (12.92 * q["v"]) + (q["v"] > 0.0031308) * (1.055 * q["v"] ** (1 / 2.4) - 0.055)
+                    (q["v"] <= 0.0031308) * (12.92 * q["v"])
+                    + (q["v"] > 0.0031308)
+                    * (1.055 * q["v"] ** (1 / 2.4) - 0.055)
                 ) + 0.5,
                 "L"
             ),
