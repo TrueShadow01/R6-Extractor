@@ -3,11 +3,12 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { applySiegeMaterials } from "./materials.js";
 import { applySiegeClothing } from "./clothing.js";
+import { applySiegeGlass } from "./glass.js";
 import { applySiegeSurfaces } from "./surface.js";
+import { applyExperimentalHair } from "./hair.js";
 import { installStudioEnvironment } from "./environment.js";
 import { installPreviewReload } from "./reload.js";
 import { installMaterialInspector } from "./inspector.js";
-import { applyExperimentalHair } from "./hair.js";
 
 const status = document.querySelector("#status");
 
@@ -326,6 +327,7 @@ try {
         const gltf = await loader.loadAsync(url);
         applySiegeMaterials(gltf);
         await applySiegeClothing(gltf, url);
+        applySiegeGlass(gltf, url);
         await applySiegeSurfaces(gltf, url);
         await applyExperimentalHair(gltf, url);
 

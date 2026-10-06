@@ -10,6 +10,9 @@ export async function applySiegeSurfaces(gltf, modelUrl) {
 
         for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
             const extras = material.userData;
+            if (extras.siegeGlassPreviewV1 || extras.siegeEyeOverlayPreviewV1) {
+                continue;
+            }
 
             if (extras.siegePackedMaterialTexture && ![
                 "000000557005948D", // eyes

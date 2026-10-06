@@ -611,6 +611,56 @@ def apply_eye_property_overrides(material_blob, uniforms):
 
     return tuple(replace(uniform, values=values.get(uniform.name, uniform.values)) for uniform in uniforms)
 
+def apply_eye_overlay_property_overrides(material_blob, uniforms):
+    """Read properties of shader 2B188360D9"""
+    fields = (
+        (0x2FB94CE9, 10, "DepthScale"),
+        (0x3DBB5683, 10, "FresnelExponent"),
+        (0x0AF2C694D1C4E883, 28, None)
+    )
+
+    prefix = struct.pack("<IQHIH", 3,fields[0][0], 0, 10, 0)
+    start = material_blob.find(prefix)
+
+    if start < 0 or material_blob.find(prefix, start + 1) >= 0:
+        raise ValueError("Missing or ambiguous eye overlay property table")
+
+    cursor = start + 4
+    values = {}
+
+    for key, kind, name in fields:
+        size = 4 if kind == 10 else 8
+
+        if cursor + 16 + size > len(material_blob):
+            raise ValueError("Truncated eye overlay property table")
+
+        header = struct.unpack_from("<QHIH", material_blob, cursor)
+
+        if header != (key, 0, kind, 0):
+            raise ValueError("Unexpected eye overlay property layout")
+
+        cursor += 16
+
+        if name is not None:
+            value = struct.unpack_from("<f", material_blob, cursor)[0]
+
+            if not math.isfinite(value) or value <= 0:
+                raise ValueError("Invalid eye overlay opacity property")
+
+            values[name] = (value,)
+
+        cursor += size
+
+    found = {uniform.name for uniform in uniforms}
+
+    if not values.keys() <= found:
+        raise ValueError("Missing eye overlay shader bindings")
+
+    return tuple(
+        replace(uniform, values=values.get(uniform.name, uniform.values),)
+        for uniform in uniforms
+    )
+
 def _material_selector_source(material_blob: bytes, spec_uid: int, bindings_by_spec: dict[int, str], bindings_by_index: dict[int, str]) -> tuple[str, str | None]:
     position = material_blob.find(struct.pack("<Q", spec_uid))
 
@@ -762,7 +812,10 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
             if selector_binding in ("TintCustom0", "TintCustom1"):
                 continue
 
-            # Nyx, the detail map got here first again lol - Isaac
+            # Reflection texture, retain its selector but not as base albedo
+            if shader_uid == 0x0000002B188360D9 and selector_binding == "SecondaryEnv":
+                continue
+
             # Explicit base selectors take priority over custom shader maps
             if selector_source == "base" and texture_role not in base_roles:
                 roles[texture_role] = compile_uids
@@ -787,7 +840,10 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
         if material_parameter is None:
             material_parameter = UNTEXTURED_COLOR_PARAMETERS.get(shader_uid)
 
-        material_uniforms = apply_material_uniform_overrides(material_blob, default_uniforms, material_bindings, parameter_index=material_parameter)
+        if shader_uid == 0x0000002B188360D9:
+            material_uniforms = apply_eye_overlay_property_overrides(material_blob, default_uniforms)
+        else:
+            material_uniforms = apply_material_uniform_overrides(material_blob, default_uniforms, material_bindings, parameter_index=material_parameter)
 
         if shader_uid == TINTED_HEADGEAR_SHADER:
             material_uniforms += tuple(
@@ -824,11 +880,11 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
 
         solid_color = read_solid_material_color(material_blob, shader_uid, has_diffuse=bool(roles.get(DIFFUSE_ROLE)),)
 
-        # Aiden, no texture doesn't mean no material. Victor checked - Blake
         # This shader stores its color directly after the shader UID
         if (shader_uid in {
             0x00000000523BA2BF,
-            0x000000003BD13B9E
+            0x000000003BD13B9E,
+            0x0000002B188360D9
         } or (material_uid, shader_uid) == (
             0x0000005978CB7154,
             0x0000000F2BB85C7E

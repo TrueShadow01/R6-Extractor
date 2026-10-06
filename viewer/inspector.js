@@ -198,6 +198,10 @@ export function installMaterialInspector(renderer, camera, model) {
             "Depth Write: " + material.depthWrite
         ];
 
+        if (extras.siegeOpticalApproximation) {
+            diagnostics.push(extras.siegeOpticalApproximation);
+        }
+
         if (extras.siegeShaderUid === "0000000F2BB85C7E") {
             diagnostics.push("Compatibility rule: exporter hides this overlay shader. Solis visibility is unverified.");
         }

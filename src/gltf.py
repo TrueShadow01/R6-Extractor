@@ -1,10 +1,8 @@
 """Minimal dependency free glTF 2.0 writer for Siege models"""
-
-# Yo Nyx, wait for blake to the glass shader done and implement it into here tho and help him to not go insane lol - Shadow
-
 from __future__ import annotations
 
 from PIL import Image
+from src.glass import apply_optical_preview, split_atlas_lenses
 
 import json
 import math
@@ -312,7 +310,7 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
     output_directory = Path(output_directory).resolve()
     output_directory.mkdir(parents=True, exist_ok=True)
 
-    parts = tuple(parts)
+    parts, material_textures = split_atlas_lenses(tuple(parts), material_textures)
 
     if not parts:
         raise ValueError("Cannot write a model without mesh parts")
@@ -786,6 +784,21 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
         if extras:
             material["extras"] = extras
 
+        apply_optical_preview(material, slot_textures)
+        if "siegeGlassPreviewV1" in material.get("extras", {}) and slot_textures.diffuse:
+            # Atlas alpha may encode selectors rather than  transparency
+            # Preserve the original texture for the other material slots
+            source_path = output_directory / slot_textures.diffuse
+            glass_filename = source_path.stem + "_glass_rgb.png"
+
+            if glass_filename not in texture_cache:
+                with Image.open(source_path) as source_image:
+                    source_image.convert("RGB").save(output_directory / glass_filename)
+
+            material["extras"]["siegeGlassSourceBaseColor"] = slot_textures.diffuse
+            pbr["baseColorTexture"] = {
+                "index": add_texture(glass_filename)
+            }
         materials.append(material)
 
     document = {
