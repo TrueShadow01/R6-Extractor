@@ -160,6 +160,95 @@ def apply_clothing_preview(material, spec, document, gltf_path):
         links.remove(link)
     links.new(gamma.outputs["Color"], base)
 
+def layout_material_nodes(material):
+    """Arrange imported shader nodes"""
+    if not material.use_nodes or material.node_tree is None:
+        return
+
+    tree = material.node_tree
+    all_nodes = tuple(tree.nodes)
+
+    def arrange(parent):
+        items = [node for node in all_nodes if node.parent == parent]
+        if not items:
+            return 240.0, 160.0
+
+        sizes = {}
+        for node in items:
+            if node.type == "FRAME":
+                node.shrink = True
+                sizes[node] = arrange(node)
+                continue
+
+            if node.type == "REROUTE":
+                sizes[node] = (40.0, 60.0)
+                continue
+
+            node.width = 260.0
+            sockets = [
+                socket for socket in (*node.inputs, *node.outputs)
+                if socket.enabled and not socket.hide
+            ]
+            vectors = sum(
+                socket.type == "VECTOR" and not socket.is_linked
+                for socket in node.inputs
+                if socket.enabled and not socket.hide
+            )
+            height = 140.0 + 28.0 * len(sockets) + 80.0 * vectors
+            if node.type == "BSDF_PRINCIPLED":
+                height = max(height, 1400.0)
+            elif node.type in {"TEX_IMAGE", "VALTORGB", "CURVE_RGB"}:
+                height = max(height, 420.0)
+            sizes[node] = (260.0, max(height, node.dimensions.y))
+
+        def owner(node):
+            while node is not None and node.parent != parent:
+                node = node.parent
+            return node
+
+        following = {node: set() for node in items}
+        for link in tree.links:
+            source = owner(link.from_node)
+            target = owner(link.to_node)
+            if source in following and target in following and source != target:
+                following[source].add(target)
+
+        levels = {}
+        remaining = set(items)
+        while remaining:
+            ready = [
+                node for node in items
+                if node in remaining and not (following[node] & remaining)
+            ]
+            if not ready:
+                # Frames can create apparent cycles between otherwise valid nodes
+                for node in items:
+                    if node in remaining:
+                        levels[node] = 0
+                break
+            for node in ready:
+                levels[node] = 1 + max(
+                    (levels[target] for target in following[node]),
+                    default=-1
+                )
+            remaining.difference_update(ready)
+
+        x = 40.0 if parent is not None else 0.0
+        top = 60.0 if parent is not None else 0.0
+        bottom = top
+        for level in sorted(set(levels.values()), reverse=True):
+            column = [node for node in items if levels[node] == level]
+            y = top
+            for node in column:
+                node.location = (x, -y)
+                y += sizes[node][1] + 70.0
+            bottom = max(bottom, y - 70.0)
+            x += max(sizes[node][0] for node in column) + 100.0
+
+        return x - 100.0 + 40.0, bottom + 40.0
+
+    arrange(None)
+
 def apply_siege_materials(gltf_path: Path, *, materials=None) -> None:
     document = json.loads(gltf_path.read_text(encoding="utf-8"))
 
@@ -786,6 +875,8 @@ def import_siege_model(gltf_path):
         if material.as_pointer() not in before_materials
     )
     apply_siege_materials(gltf_path, materials=imported_materials)
+    for material in imported_materials:
+        layout_material_nodes(material)
 
     # Manual appearance correction for Fuze's default body only
     if source_model == "000000156B7353F8":
@@ -800,6 +891,8 @@ def render_preview(gltf_path: Path, output_path: Path) -> None:
     bpy.ops.import_scene.gltf(filepath=str(gltf_path), disable_bone_shape=True, bone_heuristic="TEMPERANCE")
 
     apply_siege_materials(gltf_path)
+    for material in bpy.data.materials:
+        layout_material_nodes(material)
 
     meshes = [
         obj
