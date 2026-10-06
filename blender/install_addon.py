@@ -31,7 +31,8 @@ def install(blender):
     sources = {
         "io_scene_r6/__init__.py": addon / "__init__.py",
         "io_scene_r6/blender_preview.py": addon / "blender_preview.py",
-        "io_scene_r6/blender_ik.py": addon / "blender_ik.py"
+        "io_scene_r6/blender_ik.py": addon / "blender_ik.py",
+        "io_scene_r6/blender_glass.py": addon / "blender_glass.py"
     }
     for source in sources.values():
         if not source.is_file():

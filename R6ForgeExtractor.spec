@@ -23,6 +23,10 @@ datas = [
         str(project / "blender_addon" / "io_scene_r6" / "blender_ik.py"),
         "blender_addon/io_scene_r6",
     ),
+    (
+        str(project / "blender_addon" / "io_scene_r6" / "blender_glass.py"),
+        "blender_addon/io_scene_r6",
+    ),
     (str(project / "docs" / "images" / "app.ico"), "docs/images"),
 ]
 

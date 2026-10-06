@@ -8,6 +8,12 @@ import json
 from pathlib import Path
 from mathutils import Vector
 
+if __package__:
+    from .blender_glass import apply_glass_preview
+else:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from blender_glass import apply_glass_preview
+
 def script_arguments() -> list[str]:
     try:
         separator = sys.argv.index("--")
@@ -188,6 +194,9 @@ def apply_siege_materials(gltf_path: Path, *, materials=None) -> None:
             ),
             None
         )
+
+        if apply_glass_preview(material, principled, extras):
+            continue
 
         if apply_experimental_hair(material, principled, extras, gltf_path):
             continue
