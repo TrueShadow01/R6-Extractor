@@ -914,7 +914,7 @@ def render_preview(gltf_path: Path, output_path: Path) -> None:
     bpy.ops.import_scene.gltf(filepath=str(gltf_path), disable_bone_shape=True, bone_heuristic="TEMPERANCE")
 
     apply_siege_materials(gltf_path)
-    layout_materials_safely(bpy.datamaterials)
+    layout_materials_safely(bpy.data.materials)
 
     meshes = [
         obj
