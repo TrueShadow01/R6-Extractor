@@ -143,14 +143,6 @@ The standalone CLI is available through:
 
 Tests use synthetic data and do not require game assets or Oodle.
 
-## Next steps
-
-1. Broaden experimental body and head rig compatibility, including newer operators
-2. Improve neck controls, deformation and remaining material effects
-3. Verify packaged builds, Blender imports and saved `.blend` scenes
-4. Before 1.0, audit every operator available in the supported game version: extraction, materials and textures, head/body placement, skeleton hierarchy, skin deformation, IK controls and Blender save/reopen behavior. Resolve failures or document an explicit support boundary before release
-5. Add cancellation and resumable batch exports
-
 ## License and third-party assets
 
 See [LICENSE](LICENSE) for the project license. Bundled dependencies retain their respective licenses.
