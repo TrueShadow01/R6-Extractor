@@ -160,6 +160,30 @@ def apply_clothing_preview(material, spec, document, gltf_path):
         links.remove(link)
     links.new(gamma.outputs["Color"], base)
 
+def layout_materials_safely(materials):
+    """Keep cosmetic layout failures from interrupting model import"""
+    failed = []
+    for material in materials:
+        try:
+            layout_material_nodes(material)
+        except Exception as error:
+            failed.append(material.name)
+            print(f"R6 WARNING: Node layout failed for {material.name!r}: {type(error).__name__}: {error}. Import continues", flush=True)
+
+    if failed and not bpy.app.background:
+        def draw(menu, context):
+            menu.layout.label(text="Import continued. Some nodes could node be arranged.")
+            for name in failed[:5]:
+                menu.layout.label(text=name)
+            if len(failed) > 5:
+                menu.layout.label(text=f"And {len(failed) - 5} more materials.")
+            menu.layout.label(text="See the system console for error details")
+
+        try:
+            bpy.context.window_manager.popup_menu(draw, title="R6 node layout warning", icon="ERROR")
+        except Exception as error:
+            print(f"R6 WARNING: Could not display layout warning: {error}", flush=True)
+
 def layout_material_nodes(material):
     """Arrange imported shader nodes"""
     if not material.use_nodes or material.node_tree is None:
@@ -875,8 +899,7 @@ def import_siege_model(gltf_path):
         if material.as_pointer() not in before_materials
     )
     apply_siege_materials(gltf_path, materials=imported_materials)
-    for material in imported_materials:
-        layout_material_nodes(material)
+    layout_materials_safely(imported_materials)
 
     # Manual appearance correction for Fuze's default body only
     if source_model == "000000156B7353F8":
@@ -891,8 +914,7 @@ def render_preview(gltf_path: Path, output_path: Path) -> None:
     bpy.ops.import_scene.gltf(filepath=str(gltf_path), disable_bone_shape=True, bone_heuristic="TEMPERANCE")
 
     apply_siege_materials(gltf_path)
-    for material in bpy.data.materials:
-        layout_material_nodes(material)
+    layout_materials_safely(bpy.datamaterials)
 
     meshes = [
         obj
