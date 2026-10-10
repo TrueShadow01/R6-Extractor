@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QApplication, QFileDialog, QLabel, QLineEdit, QListWidget,
     QListWidgetItem, QMainWindow, QPlainTextEdit, QPushButton,
     QHBoxLayout, QVBoxLayout, QSplitter, QTabWidget, QWidget,
-    QCheckBox
+    QCheckBox, QMessageBox
 )
 
 from src.operator_registry import read_operator_registry
@@ -130,6 +130,10 @@ class MainWindow(QMainWindow):
         self.ik_checkbox = QCheckBox("Create experimental IK controls")
         self.ik_checkbox.setToolTip("Applies when opening in Blender. Save as .blend to retain controls.")
         layout.addWidget(self.ik_checkbox)
+
+        self.portable_checkbox = QCheckBox("Save a portable .blend when opening")
+        self.portable_checkbox.setToolTip("Pack Textures, show the report and confirm before replacing an existing File.")
+        layout.addWidget(self.portable_checkbox)
 
         self.search = QLineEdit()
         self.search.setPlaceholderText("Search operators...")
@@ -373,7 +377,8 @@ class MainWindow(QMainWindow):
             self.export_button, self.install_button, self.open_button,
             self.index_button, self.load, self.browse, self.game_path,
             self.operators, self.search, self.preview_button,
-            self.blender_edit, self.blender_browse, self.ik_checkbox
+            self.blender_edit, self.blender_browse, self.ik_checkbox,
+            self.portable_checkbox
         ):
             widget.setEnabled(not busy)
 
@@ -541,6 +546,24 @@ class MainWindow(QMainWindow):
             self.report_error(f"Launch script not found: {script}")
             return
 
+        self.blender_launch_save = None
+        if self.portable_checkbox.isChecked():
+            folder = models[0].parents[2]
+            filename, _ = QFileDialog.getSaveFileName(self, "Save portable Blender model", str(folder / f"{folder.name}.blend"), "Blender files (*.blend)", options=QFileDialog.Option.DontConfirmOverwrite)
+            if not filename:
+                return
+            if not filename.lower().endswith(".blend"):
+                filename += ".blend"
+            destination = Path(filename).expanduser().resolve()
+            if destination.exists():
+                if not destination.is_file():
+                    self.report_error("Choose a file, not a directory.")
+                    return
+                answer = QMessageBox.question(self, "Replace Blender File?", f"Replace the existing file?\n\n{destination}", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+                if answer != QMessageBox.StandardButton.Yes:
+                    return
+            self.blender_launch_save = str(destination)
+
         self.blender_path = blender
         self.blender_launch_script = script
         self.blender_launch_models = models
@@ -579,6 +602,7 @@ class MainWindow(QMainWindow):
             "--python", str(self.blender_launch_script),
             "--",
             *(["--experimental-ik"] if self.blender_launch_ik else []),
+            *(["--save-blend", self.blender_launch_save] if self.blender_launch_save else []),
             *[str(path) for path in self.blender_launch_models],
         ]
         with external_program_environment():
