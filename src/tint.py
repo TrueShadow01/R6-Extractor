@@ -64,7 +64,7 @@ def _tint_lookup_row(gain):
 
     return bytes(row)
 
-def tint_image(source, colors, custom_mask=None):
+def tint_image(source, colors, custom_mask=None, *, apply_region_colors=True):
     rgba = source.convert("RGBA")
     alpha = rgba.getchannel("A")
 
@@ -98,7 +98,7 @@ def tint_image(source, colors, custom_mask=None):
             tint += b[channel] * weight
             gain = 2 * tint
 
-            category = round(2 * opacity)
+            category = round(2 * opacity) if apply_region_colors else 0
             if category == 2:
                 if custom_mask is not None:
                     gain *= custom_mask[channel]
@@ -118,6 +118,33 @@ def tint_image(source, colors, custom_mask=None):
     return Image.merge("RGBA", (*channels, alpha))
 
 def bake_tinted_material(slot, output_directory):
+    # Ela's default cap: source A/B tint, no custom tint textures
+    if (slot.shader_uid, slot.material_uid) == (0x99E2C947, 0xFA8CC0A93):
+        uniforms = dict(slot.shader_uniforms)
+        if "ExperimentalElaCapTintV1" in uniforms:
+            return slot
+
+        names = [f"TintSource{name}" for name in "ABCDEFG"]
+        if not slot.diffuse or any(name not in uniforms for name in names):
+            raise ValueError("Ela cap tint parameters are missing. Re-export the head.")
+        if tuple(uniforms.get("TintSourceSelectors", ())) != (0, 7, 0, 0, 0, 3, 0, 0):
+            raise ValueError("Ela cap uses an unsupported custom tint texture..")
+
+        directory = Path(output_directory)
+        filename = f"{slot.material_uid:016X}_ela_tint_v1.png"
+        with Image.open(directory / slot.diffuse) as source:
+            baked = tint_image(source, [uniforms[name] for name in names], apply_region_colors=False)
+            baked.save(directory / filename, compress_level=3)
+
+        print("Experimental Ela cap tint: source A/B colors applied.", flush=True)
+        return replace(
+            slot,
+            diffuse=filename,
+            solid_color=(1.0, 1.0, 1.0, 1.0),
+            shader_textures=slot.shader_textures + (("SourceAlbedo", slot.diffuse),),
+            shader_uniforms=slot.shader_uniforms + (("ExperimenalElaCapTintV1", (1.0,)),),
+        )
+
     if slot.shader_uid != SHADER or not slot.diffuse:
         return slot
 

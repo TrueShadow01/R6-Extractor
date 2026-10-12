@@ -845,7 +845,7 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
         else:
             material_uniforms = apply_material_uniform_overrides(material_blob, default_uniforms, material_bindings, parameter_index=material_parameter)
 
-        if shader_uid == TINTED_HEADGEAR_SHADER:
+        if shader_uid == TINTED_HEADGEAR_SHADER or (shader_uid, material_uid) == (0x99E2C947, 0xFA8CC0A93):
             material_uniforms += tuple(
                 ShaderUniform(
                     owner_uid=material_uid,
