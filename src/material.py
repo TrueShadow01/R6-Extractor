@@ -936,6 +936,22 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
 
             position += 1
 
+    # Override can reference a base material outside this package
+    override_tag = struct.pack("<I", 0x23F89D5C)
+    position = 0
+    while True:
+        position = header.find(override_tag, position)
+        if position < 0:
+            break
+
+        if position >= 8 and position + 20 <= len(header):
+            marker, reserved = struct.unpack_from("<II", header, position - 8)
+            base_uid, override_uid = struct.unpack_from("<QQ", header, position + 4)
+            if base_uid not in material_entries and (override_uid in textured_material_uids or (override_uid in resolved_materials and resolved_materials[override_uid].solid_color is not None)):
+                material_overrides[base_uid] = override_uid
+
+        position += 4
+
     part_materials = []
 
     for geometry_uid in geometry_uids:
@@ -957,7 +973,7 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
 
         mesh_blob = payload[mesh_entry.offset:mesh_entry.end]
 
-        base_material_uids = referenced_uids(mesh_blob, material_entries.keys(), preserve_duplicates=True)
+        base_material_uids = referenced_uids(mesh_blob, material_entries.keys() | material_overrides.keys(), preserve_duplicates=True)
 
         part_materials.append(
             tuple(
