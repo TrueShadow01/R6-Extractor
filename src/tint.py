@@ -11,6 +11,16 @@ from functools import lru_cache
 from src.tint_pattern import bake_pattern_material
 
 SHADER = 0x841DC11F9
+# Source-checked materials using legacy A/B tint layout
+LEGACY_TINT_MATERIALS = frozenset({
+    0x109D4D3E4, 0x109D4D380,                   # Echo
+    0xFA8CC0ACD, 0xFA8CC0A93,                   # Ela
+    0x96C7A2832, 0x96C7A3CFB, 0x96C7A2723,      # IQ
+    0x96C7A4020, 0x96C7A2757,
+    0x995497897, 0x995497822, 0x9954978B3,      # Mute
+    0x995497909, 0x99549791D, 0x9954978F5,      # Smoke
+    0x75D0E20AF,
+})
 PREFIX = struct.pack("<III", 0xFBF80000, 0, 0xF2CE7E39)
 
 def read_tint_parameters(blob):
@@ -118,31 +128,42 @@ def tint_image(source, colors, custom_mask=None, *, apply_region_colors=True):
     return Image.merge("RGBA", (*channels, alpha))
 
 def bake_tinted_material(slot, output_directory):
-    # Ela's default cap: source A/B tint, no custom tint textures
-    if (slot.shader_uid, slot.material_uid) == (0x99E2C947, 0xFA8CC0A93):
+    if slot.shader_uid == 0x99E2C947 and slot.material_uid in LEGACY_TINT_MATERIALS:
         uniforms = dict(slot.shader_uniforms)
-        if "ExperimentalElaCapTintV1" in uniforms:
+        marker = "ExperimentalLegacyABTintV1"
+        if marker in uniforms:
             return slot
 
         names = [f"TintSource{name}" for name in "ABCDEFG"]
         if not slot.diffuse or any(name not in uniforms for name in names):
-            raise ValueError("Ela cap tint parameters are missing. Re-export the head.")
+            raise ValueError(f"Missing legacy tint parameters: {slot.material_uid:016X}")
         if tuple(uniforms.get("TintSourceSelectors", ())) != (0, 7, 0, 0, 0, 3, 0, 0):
-            raise ValueError("Ela cap uses an unsupported custom tint texture..")
+            raise ValueError(f"Unsupported legacy tint selectors: {slot.material_uid:016X}")
+
+        # Always use original albedo when upgrading older ela bake
+        textures = dict(slot.shader_textures)
+        source_name = textures.get("SourceAlbedo", slot.diffuse)
+        old_markers = {"ExperimentalElaCapTintV1", "ExperimenalElaCapTintV1"} # 2nd value is a typo which I introduced with the ela cap fix
+        if old_markers.intersection(uniforms) and "SourceAlbedo" not in textures:
+            raise ValueError("The previous Ela bake has no SourceAlbedo. Re-export it.")
 
         directory = Path(output_directory)
-        filename = f"{slot.material_uid:016X}_ela_tint_v1.png"
-        with Image.open(directory / slot.diffuse) as source:
+        filename = f"{slot.material_uid:016X}_experimental_ab_tint_v1.png"
+        with Image.open(directory / source_name) as source:
             baked = tint_image(source, [uniforms[name] for name in names], apply_region_colors=False)
             baked.save(directory / filename, compress_level=3)
 
-        print("Experimental Ela cap tint: source A/B colors applied.", flush=True)
+        print(f"Experimental A/B tint: {slot.material_uid:016X}", flush=True)
         return replace(
             slot,
             diffuse=filename,
             solid_color=(1.0, 1.0, 1.0, 1.0),
-            shader_textures=slot.shader_textures + (("SourceAlbedo", slot.diffuse),),
-            shader_uniforms=slot.shader_uniforms + (("ExperimenalElaCapTintV1", (1.0,)),),
+            shader_textures=tuple(
+                item for item in slot.shader_textures if item[0] != "SourceAlbedo"
+            ) + (("SourceAlbedo", source_name),),
+            shader_uniforms=tuple(
+                item for item in slot.shader_uniforms if item[0] not in old_markers
+            ) + ((marker, (1.0,)),),
         )
 
     if slot.shader_uid != SHADER or not slot.diffuse:

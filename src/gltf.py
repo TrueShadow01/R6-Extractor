@@ -766,6 +766,12 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
                 for name, values in slot_textures.shader_uniforms
             }
 
+        if "ExperimentalLegacyABTintV1" in extras.get("siegeShaderUniforms", {}):
+            material["name"] += "_Experimental_AB_Tint"
+            extras["siegeMaterialApproximation"] = (
+                "Source A/B colors. Approximate legacy tint blending."
+            )
+
         if slot_textures.specular:
             extras["siegePackedMaterialTexture"] = slot_textures.specular
 

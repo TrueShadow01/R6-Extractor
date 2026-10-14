@@ -7,7 +7,7 @@ import struct
 import math
 from typing import Collection, Iterable
 
-from src.tint import read_tint_parameters
+from src.tint import read_tint_parameters, LEGACY_TINT_MATERIALS
 from src.metadata import (
     FileMetadata,
     InvalidFileMetadata,
@@ -845,7 +845,7 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
         else:
             material_uniforms = apply_material_uniform_overrides(material_blob, default_uniforms, material_bindings, parameter_index=material_parameter)
 
-        if shader_uid == TINTED_HEADGEAR_SHADER or (shader_uid, material_uid) == (0x99E2C947, 0xFA8CC0A93):
+        if shader_uid == TINTED_HEADGEAR_SHADER or (shader_uid == 0x99E2C947 and material_uid in LEGACY_TINT_MATERIALS):
             material_uniforms += tuple(
                 ShaderUniform(
                     owner_uid=material_uid,
@@ -946,9 +946,10 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
 
         if position >= 8 and position + 20 <= len(header):
             marker, reserved = struct.unpack_from("<II", header, position - 8)
-            base_uid, override_uid = struct.unpack_from("<QQ", header, position + 4)
-            if base_uid not in material_entries and (override_uid in textured_material_uids or (override_uid in resolved_materials and resolved_materials[override_uid].solid_color is not None)):
-                material_overrides[base_uid] = override_uid
+            if marker & 0xFFFF0000 == UNIFORM_MARKER and reserved == 0:
+                base_uid, override_uid = struct.unpack_from("<QQ", header, position + 4)
+                if base_uid not in material_entries and (override_uid in textured_material_uids or (override_uid in resolved_materials and resolved_materials[override_uid].solid_color is not None)):
+                    material_overrides[base_uid] = override_uid
 
         position += 4
 
