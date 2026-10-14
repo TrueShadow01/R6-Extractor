@@ -201,7 +201,7 @@ def read_shader_uniforms(payload: bytes) -> tuple[ShaderUniform, ...]:
             values = ()
             value_offset = name_end + 1
 
-            if uniform_type == 0 or _uniform_class == TEXTURE_UNIFORM_CLASS:
+            if uniform_type == 0 or _uniform_class in { TEXTURE_UNIFORM_CLASS, 0xA74343F4 }:
                 # Texture uniforms finish with their TextureMapSpec UID
                 if value_offset + 32 <= entry.end:
                     candidate_uid = struct.unpack_from("<Q", payload, value_offset + 24)[0]
