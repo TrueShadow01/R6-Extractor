@@ -16,7 +16,8 @@ export async function applySiegeSurfaces(gltf, modelUrl) {
 
             if (extras.siegePackedMaterialTexture && ![
                 "000000557005948D", // eyes
-                "000000003051C028" // hair uses a different shader
+                "000000003051C028", // hair shader
+                "00000055B93242F6", // newer hair shader
             ].includes(extras.siegeShaderUid)) {
                 materials.add(material);
             }

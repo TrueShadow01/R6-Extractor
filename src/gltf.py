@@ -62,6 +62,7 @@ OPAQUE_SHADER_UIDS = {
 
 ALPHA_MASK_SHADER_UIDS = {
     0x000000003051C028, # hair and eyelashes
+    0x00000055B93242F6, # newer hair variant
 }
 
 GLASS_SHADER_UIDS = {

@@ -14,7 +14,7 @@ export async function applyExperimentalHair(gltf, modelUrl) {
         }
 
         for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
-            if (material.userData.siegeShaderUid != "000000003051C028") {
+            if (!["000000003051C028", "00000055B93242F6"].includes(material.userData.siegeShaderUid)) {
                 continue;
             }
             if (material.userData.siegeExperimentalHair) {

@@ -316,9 +316,7 @@ def apply_siege_materials(gltf_path: Path, *, materials=None) -> None:
 
         packed_filename = extras.get("siegePackedMaterialTexture")
 
-        # node crackheads were on it again lol - Isaac
-        # incredible crackheads, true - shadow
-        if principled is not None and packed_filename is not None and extras.get("siegeShaderUid") != "000000003051C028":
+        if principled is not None and packed_filename is not None and extras.get("siegeShaderUid") not in ("000000003051C028", "00000055B93242F6"):
             packed_path = gltf_path.parent / packed_filename
 
             if packed_path.is_file():
@@ -1084,7 +1082,7 @@ def apply_experimental_hair(material, principled, extras, gltf_path):
     """Approximate two hair lobes. The source field mapping is experimental"""
     import math
 
-    if extras.get("siegeShaderUid") != "000000003051C028" or principled is None:
+    if extras.get("siegeShaderUid") not in ("000000003051C028", "00000055B93242F6") or principled is None:
         return False
 
     values = extras.get("siegeShaderUniforms", {}).get("ExperimentalHairSourceV1")
