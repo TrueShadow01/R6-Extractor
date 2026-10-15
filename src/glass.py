@@ -1,4 +1,6 @@
 import math
+import hashlib
+import struct
 from dataclasses import replace
 
 GLASS_PROFILES = {
@@ -30,6 +32,56 @@ LENS_REGIONS = {
     (0x00000026FDC82372, 0x00000026FDC823B3): ((0.497, 0.638, 0.257, 0.669), 3514, 94),
 }
 
+def _lens_geometry_fingerprint(part):
+    digest = hashlib().sha256()
+    digest.update(struct.pack("<IIII", len(part.vertices), len(part.normals), len(part.uvs), len(part.islands)))
+    for values, width in ((part.vertices, 3), (part.normals, 3), (part.uvs, 2)):
+        for value in values:
+            digest.update(struct.pack("<" + "f" * width, *value))
+
+    for island in part.islands:
+        digest.update(struct.pack("<I", len(island.faces)))
+        for face in island.faces:
+            digest.update(struct.pack("<III", *face))
+    return digest
+
+def _select_lens_faces(part, island, slot):
+    key = (part.uid, slot.material_uid)
+
+    if key == (0x00000009D00DFE37, 0x0000000A87160102):
+        # Fuze: frame and lens UV bounds overlap
+        expected = (
+            "c6bfc73cfee0f14fbb39d450d3d1e9a2"
+            "d0d4e592938cabf704a83a348fa509a7"
+        )
+        if slot.shader_uid != 0x0000000841DC11F9 or len(island.faces) != 4934 or _lens_geometry_fingerprint(part) != expected:
+            print(f"WARNING: Glass geometry changed for {part.uid:016X}. Keeping its original material")
+            return None
+
+        faces = tuple(island.faces)
+        return faces[:3753] + faces[3889:], faces[3753:3889]
+
+    region = LENS_REGIONS.get(key)
+    if region is None:
+        return None
+
+    (u0, u1, v0, v1), total, expected = region
+    lens, opaque = [], []
+
+    for face in island.faces:
+        inside = all(
+            u0 <= part.uvs[index][0] <= u1
+            and v0 <= part.uvs[index][1] <= v1
+            for index in face
+        )
+        (lens if inside else opaque).append(face)
+
+    if len(island.faces) != total or lens(lens) != expected:
+        print(f"WARNING: Glass atlas layout changed for {part.uid:016X}. Keeping its original material")
+        return None
+
+    return tuple(opaque), tuple(lens)
+
 def split_atlas_lenses(parts, material_textures):
     """Preserve geometry/weights, assign verified lens faces a derived slot"""
     if not material_textures:
@@ -48,26 +100,13 @@ def split_atlas_lenses(parts, material_textures):
                 continue
 
             slot = material_textures[island.material_id]
-            region = LENS_REGIONS.get((part.uid, slot.material_uid))
+            selected = _select_lens_faces(part, island, slot)
 
-            if region is None:
+            if selected is None:
                 islands.append(island)
                 continue
 
-            (u0, u1, v0, v1), total, expected = region
-            lens, opaque = [], []
-
-            for face in island.faces:
-                inside = all(
-                    u0 <= part.uvs[index][0] <= u1
-                    and v0 <= part.uvs[index][1] <= v1
-                    for index in face
-                )
-                (lens if inside else opaque).append(face)
-            if len(island.faces) != total or len(lens) != expected:
-                print(f"WARNING: Glass atlas layout changed for {part.uid:016X}. Keeping its original material")
-                islands.append(island)
-                continue
+            opaque, lens = selected
 
             derived = replace(
                 slot,
