@@ -33,7 +33,7 @@ LENS_REGIONS = {
 }
 
 def _lens_geometry_fingerprint(part):
-    digest = hashlib().sha256()
+    digest = hashlib.sha256()
     digest.update(struct.pack("<IIII", len(part.vertices), len(part.normals), len(part.uvs), len(part.islands)))
     for values, width in ((part.vertices, 3), (part.normals, 3), (part.uvs, 2)):
         for value in values:
