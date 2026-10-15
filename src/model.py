@@ -57,11 +57,11 @@ TEXTURE_TYPES = {
     0xD7B5C478, # LowResTexMap
 }
 
-BONE_RECORD_TAG = 0x3761F6E4
+BONE_RECORD_TAG = 0xF8321ADC
 BONE_RECORD_SIZE = 80
 
-POSE_GROUP_TAG = 0x01C8F539
-POSE_TRANSFORM_TAG = 0x4A0A58DA
+POSE_GROUP_TAG = 0x09EB30B6
+POSE_TRANSFORM_TAG = 0xD3344438
 POSE_ENTRY_PREFIX_SIZE = 9
 POSE_TRANSFORM_SIZE = 45
 
@@ -329,7 +329,7 @@ def _default_joint_node_matrices(binding: MeshBinding) -> tuple[tuple[float, ...
 
 def align_holster_root(payload, offset, bindings, matrix):
     """Place a holster subtree in the matching body root's frame"""
-    marker = struct.pack("<I", 0xF6ECC8A9)
+    marker = struct.pack("<I", 0x71EDFDE3)
     seen = set()
 
     while True:
@@ -367,7 +367,7 @@ def align_holster_root(payload, offset, bindings, matrix):
         raise ValueError("Truncated holster root pose")
 
     tag, zero, pose_type = struct.unpack_from("<III", payload, offset + 10)
-    if (tag & 0xFFFF0000) != 0xFBF80000 or zero or pose_type != 0x23F349BE:
+    if (tag & 0xFFFF0000) != 0xFBF80000 or zero or pose_type != 0x8D37C90B:
         raise ValueError("Unsupported holster root pose")
 
     values = struct.unpack_from("16f", payload, offset + 22)
@@ -400,7 +400,7 @@ def resolve_holster_binding(payload, bindings):
     if not any(bone_id in graph for graph in graphs):
         raise ValueError("Shared holster has no package-owned skeleton")
 
-    signature = struct.pack("<II", 0xF6ECC8A9, bone_id)
+    signature = struct.pack("<II", 0x71EDFDE3, bone_id)
     cursor = 0
     matrices = []
 
@@ -416,7 +416,7 @@ def resolve_holster_binding(payload, bindings):
             continue
 
         marker, zero, kind = struct.unpack_from("<III", payload, offset + 18)
-        if (marker & 0xFFFF0000) != 0xFBF80000 or zero or kind != 0x23F349BE:
+        if (marker & 0xFFFF0000) != 0xFBF80000 or zero or kind != 0x8D37C90B:
             continue
 
         values = struct.unpack_from("<16f", payload, offset + 30)
@@ -587,19 +587,19 @@ def is_auxiliary_only_model(payload):
         metadata = parse_file_metadata(payload)
         data = payload[metadata.data_offset:]
 
-        if metadata.file_type != 0xADE00798 or len(data) < 318:
+        if metadata.file_type != 0x590E73FB or len(data) < 318:
             return False
-        if struct.unpack_from("<II", data, 0) != (0xADE00798, 1):
+        if struct.unpack_from("<II", data, 0) != (0x590E73FB, 1):
             return False
-        if struct.unpack_from("<III", data, 176) != (1, 0x2CECF817, 0x626956DB):
+        if struct.unpack_from("<III", data, 176) != (1, 0x2CECF817, 0x544E82E0):
             return False
-        if struct.unpack_from("<III", data, 236) != (1, 1, 0x626956DB):
+        if struct.unpack_from("<III", data, 236) != (1, 1, 0x544E82E0):
             return False
         if any(struct.unpack_from("<Q", data, offset)[0] != metadata.uid for offset in (220, 281)):
             return False
 
         child = parse_file_metadata(data[294:])
-        if child.file_type != 0x626956DB or child.uid == 0:
+        if child.file_type != 0x544E82E0 or child.uid == 0:
             return False
         if struct.unpack_from("<Q", data, 256)[0] != child.uid:
             return False

@@ -13,19 +13,19 @@ from src.parser import iter_container_offsets, map_archive, read_container
 # Эйден, Блейк, загляните в «Ubisoft Forge Offset», чтобы придумать, как автоматизировать процесс обнаружения
 
 REGISTRY_UID = 0x0000005B9ACA7913
-REGISTRY_TYPE = 0x480ECC85
+REGISTRY_TYPE = 0x2AB3EF6B
 ROSTER_COUNT_OFFSET = 5932 # Relative to the registry data, not the archive
-OPERATOR_TYPE = 0xAFCC12EA
-BODY_TYPE = 0x69EE9B83
-HEAD_TYPE = 0xA2929EB6
-APPEARANCE_TYPE = 0x6A796325
-NAME_TYPE = 0x9791FFA6
+OPERATOR_TYPE = 0x11A20649
+BODY_TYPE = 0x03590DC3
+HEAD_TYPE = 0x9095ABAE
+APPEARANCE_TYPE = 0x7FE5F877
+NAME_TYPE = 0xD0EC9CCC
 DEFAULT_NAME_KEY = 0x6500000000031543
 SLOT_TAG = bytes.fromhex("081bd4c0")
 TEXT_TAG = bytes.fromhex("4dcec95f")
 KEEP_TYPES = {
     REGISTRY_TYPE, OPERATOR_TYPE, BODY_TYPE, HEAD_TYPE,
-    APPEARANCE_TYPE, NAME_TYPE, 0x5F7CD612, 0x7019E9F1,
+    APPEARANCE_TYPE, NAME_TYPE, 0x75D41065, 0x2B92CF07,
 }
 NAME_ALIASES = {
     "HEIST": "Denari",
@@ -140,7 +140,7 @@ def _localized_text(data: bytes) -> tuple[str, int]:
 
 def _default_part(records: dict[int, list[RegistryRecord]], item_uid: int, slot: int) -> DefaultPart:
     item_type = BODY_TYPE if slot == 0 else HEAD_TYPE
-    ui_type = 0x7019E9F1 if slot == 0 else 0x5F7CD612
+    ui_type = 0x2B92CF07 if slot == 0 else 0x75D41065
     item = _record(records, item_uid, item_type)
     ui = _record(records, _u64(item.data, 53), ui_type)
     if _localized_text(ui.data)[1] != DEFAULT_NAME_KEY:

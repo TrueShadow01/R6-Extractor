@@ -14,13 +14,13 @@ from src.metadata import (
     parse_file_metadata
 )
 
-CURRENT_MATERIAL = 0x8D80D049
-CURRENT_TEXTURE_MAP_SPEC = 0x4F09331E
-CURRENT_TEXTURE_MAP = 0xC64B1659
-CURRENT_TEXTURE_SELECTOR = 0xBE79171E
-CURRENT_MESH = 0x4E7F1BB4
-CURRENT_SHADER_DEFINES = 0x0D2C5AB0
-CURRENT_SHADER_UNIFORMS = 0x243BFED9
+CURRENT_MATERIAL = 0x505A2021
+CURRENT_TEXTURE_MAP_SPEC = 0x87CE3D94
+CURRENT_TEXTURE_MAP = 0x07CA0C90
+CURRENT_TEXTURE_SELECTOR = 0x3B9A54D9
+CURRENT_MESH = 0x7DFEB735
+CURRENT_SHADER_DEFINES = 0xD01611C7
+CURRENT_SHADER_UNIFORMS = 0xD8F8C3E5
 
 RECOGNIZED_TYPES = {
     CURRENT_MATERIAL,
@@ -32,7 +32,7 @@ RECOGNIZED_TYPES = {
 }
 
 UNIFORM_MARKER = 0xFBF80000
-TEXTURE_UNIFORM_CLASS = 0x9B57F12F
+TEXTURE_UNIFORM_CLASS = 0x6186E596
 
 DIFFUSE_ROLE = 0
 NORMAL_ROLE = 1
@@ -201,7 +201,7 @@ def read_shader_uniforms(payload: bytes) -> tuple[ShaderUniform, ...]:
             values = ()
             value_offset = name_end + 1
 
-            if uniform_type == 0 or _uniform_class in { TEXTURE_UNIFORM_CLASS, 0xA74343F4 }:
+            if uniform_type == 0 or _uniform_class in { TEXTURE_UNIFORM_CLASS, 0x5AC16360 }:
                 # Texture uniforms finish with their TextureMapSpec UID
                 if value_offset + 32 <= entry.end:
                     candidate_uid = struct.unpack_from("<Q", payload, value_offset + 24)[0]
@@ -567,8 +567,8 @@ def apply_eye_property_overrides(material_blob, uniforms):
     """Read the verified 12-property layout used by shader 557005948D"""
 
     fields = (
-        (0x0AF2C694D1C4E883, 28, None),
-        (0x0AF2C69430F7E9F3, 28, None),
+        (0x8C9802ADD1C4E883, 28, None),
+        (0x8C9802AD30F7E9F3, 28, None),
         (0x4F6D05D9, 13, "ScleraColorWhite"),
         (0xABA880A5, 13, "ScleraColorBlack"),
         (0x53851558, 13, "IrisColorWhite"),
@@ -616,7 +616,7 @@ def apply_eye_overlay_property_overrides(material_blob, uniforms):
     fields = (
         (0x2FB94CE9, 10, "DepthScale"),
         (0x3DBB5683, 10, "FresnelExponent"),
-        (0x0AF2C694D1C4E883, 28, None)
+        (0x8C9802ADD1C4E883, 28, None)
     )
 
     prefix = struct.pack("<IQHIH", 3,fields[0][0], 0, 10, 0)
@@ -937,7 +937,7 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
             position += 1
 
     # Override can reference a base material outside this package
-    override_tag = struct.pack("<I", 0x23F89D5C)
+    override_tag = struct.pack("<I", 0x73F86CAC)
     position = 0
     while True:
         position = header.find(override_tag, position)

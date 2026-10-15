@@ -32,7 +32,7 @@ def read_tint_parameters(blob):
         struct.unpack_from("<I", blob, start + offset)[0]
         for offset in (20, 88)
     ]
-    if classes != [0xBE79171E, 0xBE79171E]:
+    if classes != [0x3B9A54D9, 0x3B9A54D9]:
         return ()
 
     colors = [
