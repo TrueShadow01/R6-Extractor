@@ -863,7 +863,7 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
         if shader_uid == 0x000000557005948D:
             material_uniforms = apply_eye_property_overrides(material_blob, material_uniforms)
 
-        if shader_uid == (0x000000003051C028, 0x00000055B93242F6) and material_start + 174 <= material_entry.end:
+        if shader_uid in (0x000000003051C028, 0x00000055B93242F6) and material_start + 174 <= material_entry.end:
             if struct.unpack_from("<I", payload, material_start + 130)[0] == UNIFORM_MARKER and struct.unpack_from("<I", payload, material_start + 138)[0] == 0xF6348091:
                 hair_values = struct.unpack_from("<8f", payload, material_start + 142)
                 if all(math.isfinite(value) for value in hair_values) and -3.0 <= hair_values[0] <= 3.0 and all(0.0 <= value <= 1.0 for value in hair_values[1:]):
