@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 from src.operator_registry import read_operator_registry
 from src.model import operator_model_jobs
 from desktop.preview_widget import PreviewWidget
+from desktop.preview_cache import CacheLease, clean_preview_cache
 from desktop.material_inspector import MaterialInspector
 from app_runtime import (
     worker_arguments,
@@ -58,11 +59,29 @@ class RegistryLoader(QThread):
         except Exception as error:
             self.failed.emit(f"{type(error).__name__}: {error}")
 
+class CacheCleaner(QThread):
+    def __init__(self, options, parent=None):
+        super().__init__(parent)
+        self.options = options
+        self.result = None
+
+    def run(self):
+        try:
+            self.result = clean_preview_cache(**self.options)
+        except Exception as error:
+            self.result = {
+                "count": 0,
+                "bytes": 0,
+                "skipped": 0,
+                "errors": [str(error)]
+            }
+
 class MainWindow(QMainWindow):
     def __init__(self, *, developer_mode=False):
         super().__init__()
         self.settings = QSettings("R6ForgeExtractor", "Desktop")
         self.worker = None
+        self.preview_job_lease = None
         self.export_process = None
         self.registry_game_path = None
         self.complete_exports = self.load_completed_exports()
@@ -125,6 +144,9 @@ class MainWindow(QMainWindow):
         blender_row.addWidget(QLabel("Blender 4.5"))
         blender_row.addWidget(self.blender_edit, 1)
         blender_row.addWidget(self.blender_browse)
+        self.clear_cache_button = QPushButton("Clear preview cache")
+        self.clear_cache_button.clicked.connect(self.clear_preview_cache)
+        blender_row.addWidget(self.clear_cache_button)
         layout.addLayout(blender_row)
 
         self.ik_checkbox = QCheckBox("Create experimental IK controls")
@@ -378,7 +400,7 @@ class MainWindow(QMainWindow):
             self.index_button, self.load, self.browse, self.game_path,
             self.operators, self.search, self.preview_button,
             self.blender_edit, self.blender_browse, self.ik_checkbox,
-            self.portable_checkbox
+            self.portable_checkbox, self.clear_cache_button
         ):
             widget.setEnabled(not busy)
 
@@ -438,6 +460,10 @@ class MainWindow(QMainWindow):
             self.finish_export(False, self.export_process.errorString())
 
     def finish_export(self, success, message):
+        if self.preview_job_lease is not None:
+            self.preview_job_lease.close()
+            self.preview_job_lease = None
+
         process = self.export_process
         self.export_process = None
         self.export_jobs = []
@@ -674,10 +700,17 @@ class MainWindow(QMainWindow):
 
         game = Path(self.game_path.text().strip()).resolve()
         if game != self.registry_game_path:
-            self.report_error("Reload oeprators after changing the game folder")
+            self.report_error("Reload operators after changing the game folder")
             return
 
         operator = item.data(Qt.ItemDataRole.UserRole)
+
+        try:
+            self.preview_job_lease = CacheLease()
+        except Exception as error:
+            self.report_error(str(error))
+            return
+
         self.preview_output = ""
         self.export_jobs = []
         self.export_decoder = codecs.getincrementaldecoder("utf-8")("replace")
@@ -731,6 +764,63 @@ class MainWindow(QMainWindow):
             return
 
         self.finish_export(True, "Preview data ready, loading the viewer.")
+        self.start_cache_cleanup(keep=self.preview.model_root, remove=True)
+
+    def clear_preview_cache(self):
+        self.start_cache_cleanup()
+
+    def start_cache_cleanup(self, *, keep=None, remove=False):
+        if self.close_requested or self.worker is not None or self.export_process is not None:
+            return
+
+        protected = [path for models in self.load_completed_exports().values() for path in models]
+        protected.extend(getattr(self, "blender_launch_models", ()))
+
+        worker = CacheCleaner(
+            {
+                "keep": keep,
+                "protected": protected,
+                "remove": remove
+            },
+            self
+        )
+        self.worker = worker
+        self.set_export_busy(True)
+        self.statusBar().showMessage("Cleaning preview cache..." if remove else "Checking preview cache...")
+        worker.finished.connect(self.cache_cleanup_finished)
+        worker.start()
+
+    def cache_cleanup_finished(self):
+        worker = self.worker
+        result = worker.result
+        options = worker.options
+        self.worker = None
+        worker.deleteLater()
+        self.set_export_busy(False)
+
+        size = result["bytes"] / (1024 ** 2)
+        verb = "Removed" if options["remove"] else "Can remove"
+        message = f"{verb} {result['count']} preview generations ({size:.1f} MiB)."
+        self.log.appendPlainText(message)
+        for error in result["errors"]:
+            self.log.appendPlainText(f"Cache: {error}")
+        self.statusBar().showMessage(message)
+
+        if self.close_requested:
+            self.close()
+            return
+
+        if not options["remove"] and result["count"]:
+            answer = QMessageBox.question(
+                self,
+                "Clear preview cache",
+                f"Remove {result['count']} unused preview generations and reclaim approximately {size:.1f} MiB?\n\n"
+                "The displayed preview is retained. Removed previews will be generated again when needed.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+            if answer == QMessageBox.StandardButton.Yes:
+                self.start_cache_cleanup(remove=True)
 
     def closeEvent(self, event):
         if self.audit_actions is not None and self.audit_actions.process is not None:

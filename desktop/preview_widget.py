@@ -17,6 +17,7 @@ from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWebChannel import QWebChannel
 
 from app_runtime import resource_directory
+from desktop.preview_cache import CacheLease
 
 class MaterialBridge(QObject):
     material_selected = Signal(str)
@@ -30,6 +31,7 @@ class PreviewWidget(QWidget):
         super().__init__(parent)
         self.viewer_root = resource_directory() / "viewer"
         self.model_root = None
+        self.cache_lease = None
         self.manifest = None
         self.token = uuid.uuid4().hex
 
@@ -116,6 +118,19 @@ class PreviewWidget(QWidget):
         self.view.setHtml("<body style='background: #24282d'></body>")
 
     def load_manifest(self, path):
+        lease = CacheLease(Path(path).resolve().parent)
+        try:
+            self._load_manifest(path)
+        except Exception:
+            lease.close()
+            raise
+
+        previous = self.cache_lease
+        self.cache_lease = lease
+        if previous is not None:
+            previous.close()
+
+    def _load_manifest(self, path):
         path = Path(path).resolve()
         document = json.loads(path.read_text(encoding="utf-8"))
         root = path.parent
@@ -186,3 +201,6 @@ class PreviewWidget(QWidget):
     def shutdown(self):
         self.server.shutdown()
         self.server.server_close()
+        if self.cache_lease is not None:
+            self.cache_lease.close()
+            self.cache_lease = None
