@@ -786,7 +786,8 @@ class MainWindow(QMainWindow):
         )
         self.worker = worker
         self.set_export_busy(True)
-        self.statusBar().showMessage("Cleaning preview cache..." if remove else "Checking preview cache...")
+        if keep is None:
+            self.statusBar().showMessage("Cleaning preview cache..." if remove else "Checking preview cache...")
         worker.finished.connect(self.cache_cleanup_finished)
         worker.start()
 
@@ -798,13 +799,14 @@ class MainWindow(QMainWindow):
         worker.deleteLater()
         self.set_export_busy(False)
 
-        size = result["bytes"] / (1024 ** 2)
-        verb = "Removed" if options["remove"] else "Can remove"
-        message = f"{verb} {result['count']} preview generations ({size:.1f} MiB)."
-        self.log.appendPlainText(message)
-        for error in result["errors"]:
-            self.log.appendPlainText(f"Cache: {error}")
-        self.statusBar().showMessage(message)
+        if options["keep"] is None or result["count"] or result["errors"]:
+            size = result["bytes"] / (1024 ** 2)
+            verb = "Removed" if options["remove"] else "Can remove"
+            message = f"{verb} {result['count']} preview generations ({size:.1f} MiB)."
+            self.log.appendPlainText(message)
+            for error in result["errors"]:
+                self.log.appendPlainText(f"Cache: {error}")
+            self.statusBar().showMessage(message)
 
         if self.close_requested:
             self.close()
