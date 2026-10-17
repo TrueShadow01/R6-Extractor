@@ -150,3 +150,7 @@ See [LICENSE](LICENSE) for the project license. Bundled dependencies retain thei
 Rainbow Six Siege and its assets belong to Ubisoft. Game assets and the proprietary Oodle runtime are not included or covered by this project's license.
 
 See [THIRD_PARTY.md](THIRD_PARTY.md) for bundled dependency notices and source locations.
+
+## Other
+
+Feel free to join my Discord server [here](https://discord.com/invite/DtzjYhCsdb), if you have any questions or problems.
