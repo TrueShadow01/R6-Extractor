@@ -81,7 +81,7 @@ class ReviewWindow(QWidget):
         self.search.setPlaceholderText("Search operators...")
 
         self.filter_status = QComboBox()
-        self.filter_status.addItems(["All", *STATUSES, "Needs recheck"])
+        self.filter_status.addItems(["Needs attention", "All", *STATUSES, "Needs recheck"])
 
         self.filter_summary = QLabel()
         self.filter_summary.setWordWrap(True)
@@ -104,8 +104,15 @@ class ReviewWindow(QWidget):
         self.notes.textChanged.connect(self.changed)
         self.save_button.clicked.connect(self.save_review)
 
-        if self.records:
-            self.operators.setCurrentRow(0)
+        first_pending = next(
+            (
+                row for row, record in enumerate(self.records)
+                if self.review_status(record) != "Looks correct"
+            ),
+            None
+        )
+        if first_pending is not None:
+            self.operators.setCurrentRow(first_pending)
 
         self.search.textChanged.connect(self.apply_filters)
         self.filter_status.currentTextChanged.connect(self.apply_filters)
@@ -146,6 +153,10 @@ class ReviewWindow(QWidget):
                     query in record["name"].casefold()
                     and (
                         status == "All"
+                        or (
+                            status == "Needs attention"
+                            and self.review_status(record) != "Looks correct"
+                        )
                         or self.review_status(record) == status
                     )
                 )
