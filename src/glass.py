@@ -43,7 +43,7 @@ def _lens_geometry_fingerprint(part):
         digest.update(struct.pack("<I", len(island.faces)))
         for face in island.faces:
             digest.update(struct.pack("<III", *face))
-    return digest
+    return digest.hexdigest()
 
 def _select_lens_faces(part, island, slot):
     key = (part.uid, slot.material_uid)
