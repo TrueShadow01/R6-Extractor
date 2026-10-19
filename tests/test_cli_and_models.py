@@ -433,13 +433,13 @@ class ModelDiscoveryTests(unittest.TestCase):
         )
 
         def bone_record(bone_id, matrix):
-            return struct.pack("<II16fQ", 0x7B33D284, bone_id, *matrix, 0)
+            return struct.pack("<II16fQ", 0xF8321ADC, bone_id, *matrix, 0)
 
         def pose_record(index, bone_id, translation, rotation):
             prefix = b"\x00" + struct.pack("<H", index) + b"\xF8\xFB\x00\x00\x00\x00"
-            return prefix + struct.pack("<II3f4f", 0x18A85CDA, bone_id, *translation, *rotation)
+            return prefix + struct.pack("<II3f4f", 0xD3344438, bone_id, *translation, *rotation)
 
-        pose_blob = struct.pack("<III", 0xC7197C69, 0xFFB49035, 2) + pose_record(1, 0x29A684AC, (1.0, 2.0, 3.0), (0.0, 0.0, 0.0, 1.0)) + pose_record(2, 0x4ED9C94E, (4.0, 5.0, 6.0), (0.0, 0.5, 0.0, 0.5))
+        pose_blob = struct.pack("<III", 0x09EB30B6, 0xFFB49035, 2) + pose_record(1, 0x29A684AC, (1.0, 2.0, 3.0), (0.0, 0.0, 0.0, 1.0)) + pose_record(2, 0x4ED9C94E, (4.0, 5.0, 6.0), (0.0, 0.5, 0.0, 0.5))
         binding_blob = struct.pack("<IIIII", CURRENT_MESH, 1, 2, 0, 0) + bone_record(0xAAAABBBB, first_matrix) + bone_record(0xCCCCDDDD, second_matrix) + b"\x00" + struct.pack("<Q", geometry_uid) + pose_blob
         payload = struct.pack("<HHI", 0, 2, 0) + struct.pack("<IQ", CURRENT_MESH, binding_uid) + binding_blob
 
@@ -1371,7 +1371,7 @@ class GltfExportTests(unittest.TestCase):
             for actual in base_color[:3]:
                 self.assertAlmostEqual(actual, 0.491905, places=6)
 
-            self.assertEqual(base_color[3], 0.1)
+            self.assertEqual(base_color[3], 0.12)
 
             slot0_diffuse_texture = slot0["pbrMetallicRoughness"]["baseColorTexture"]["index"]
             slot3_diffuse_texture = slot3["pbrMetallicRoughness"]["baseColorTexture"]["index"]

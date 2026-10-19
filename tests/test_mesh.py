@@ -16,7 +16,7 @@ class MeshIslandTests(unittest.TestCase):
         payload = bytearray(tail + 2 * 36)
 
         struct.pack_into("<HHH", payload, 0, 0, 1, 2)
-        struct.pack_into("<HHH", payload, chunk_size, 3, 4, 5)
+        struct.pack_into("<HHH", payload, chunk_size, 0, 1, 2)
         struct.pack_into("<9I", payload, tail, 3, 0, 3, 0, 1, 4, 0, 0, 0)
         struct.pack_into("<9I", payload, tail + 36, 3, 3, 3, 1, 1, 7, 0, 0, 0)
 

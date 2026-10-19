@@ -69,13 +69,13 @@ class MaterialTests(unittest.TestCase):
                 CURRENT_SHADER_UNIFORMS,
             ),
             (
-                0xB3110874,
-                0xB9B8043D,
-                0xD555965D,
-                0x7C4A77EA,
-                0xEAE0EA75,
-                0x208C12C4,
-                0xD1E7D4EE,
+                0x505A2021,
+                0x87CE3D94,
+                0x07CA0C90,
+                0x3B9A54D9,
+                0x7DFEB735,
+                0xD01611C7,
+                0xD8F8C3E5,
             )
         )
 
@@ -315,7 +315,7 @@ class MaterialTests(unittest.TestCase):
         uniform_data = (
             struct.pack("<II", CURRENT_SHADER_UNIFORMS, 3)
             + make_uniform(0, "SecondaryEnv", 0, texture_value)
-            + make_uniform(1, "MaskRed_Detail", 1, current_texture_value, uniform_class=0x9B57F12F)
+            + make_uniform(1, "MaskRed_Detail", 1, current_texture_value, uniform_class=0x6186E596)
             + make_uniform(2, "IrisGlossiness", 1, scalar_value)
         )
 
