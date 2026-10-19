@@ -76,7 +76,7 @@ def _select_lens_faces(part, island, slot):
         )
         (lens if inside else opaque).append(face)
 
-    if len(island.faces) != total or lens(lens) != expected:
+    if len(island.faces) != total or len(lens) != expected:
         print(f"WARNING: Glass atlas layout changed for {part.uid:016X}. Keeping its original material")
         return None
 
