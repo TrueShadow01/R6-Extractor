@@ -53,9 +53,9 @@ export function applySiegeGlass(gltf) {
             material.roughnessMap = null;
             material.alphaMap = null;
             material.opacity = 1;
-            material.transparent = true;
+            material.transparent = parameters.kind === "eye" || parameters.values[0] < 1;
             material.alphaTest = 0;
-            material.depthWrite = false;
+            material.depthWrite = !material.transparent;
             material.transmission = 0;
             material.premultipliedAlpha = false;
 
