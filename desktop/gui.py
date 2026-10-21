@@ -250,6 +250,27 @@ class MainWindow(QMainWindow):
         self.log.setMaximumHeight(140)
         self.log.document().setMaximumBlockCount(5000)
         layout.addWidget(self.log)
+        self.log.hide()
+
+        self.log_toggle = QPushButton("Show Log")
+        self.log_toggle.setCheckable(True)
+
+        def toggle_log(visible):
+            self.log.setVisible(visible)
+            self.log_toggle.setText("Hide Log" if visible else "Show Log")
+            if visible:
+                self.log.moveCursor(QTextCursor.MoveOperation.End)
+                self.log.ensureCursorVisible()
+
+        self.log_toggle.toggled.connect(toggle_log)
+
+        self.copy_log_button = QPushButton("Copy Log")
+        self.copy_log_button.setEnabled(False)
+        self.copy_log_button.clicked.connect(lambda: QApplication.clipboard().setText(self.log.toPlainText()))
+        self.log.textChanged.connect(lambda: self.copy_log_button.setEnabled(not self.log.document().isEmpty()))
+
+        self.statusBar().addPermanentWidget(self.log_toggle)
+        self.statusBar().addPermanentWidget(self.copy_log_button)
 
         self.statusBar().showMessage("Choose the game folder and load operators.")
 
@@ -339,6 +360,7 @@ class MainWindow(QMainWindow):
 
     def report_error(self, message):
         self.log.appendPlainText(f"ERROR: {message}")
+        self.log_toggle.setChecked(True)
         self.statusBar().showMessage("Operation failed, see log.")
 
     def filter_operators(self, text):
@@ -855,6 +877,9 @@ class MainWindow(QMainWindow):
             verb = "Removed" if options["remove"] else "Can remove"
             message = f"{verb} {result['count']} preview generations ({size:.1f} MiB)."
             self.log.appendPlainText(message)
+            if result["errors"]:
+                self.log_toggle.setChecked(True)
+
             for error in result["errors"]:
                 self.log.appendPlainText(f"Cache: {error}")
             self.statusBar().showMessage(message)
