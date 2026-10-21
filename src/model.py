@@ -1,8 +1,6 @@
 """Composite model resolution and export"""
 
-# Yo Isaac some Poses are off for later operators + some materials are fucked still, like usual
-# Ash throws a error for not detecting a compiled mesh obj, tell Aiden to look into it, maybe some hex got fucked with the new season that i didnt check
-# - shadow
+# Fucking miss ya N - S
 
 from __future__ import annotations
 
@@ -445,7 +443,7 @@ def resolve_static_attachment_bindings(payload, bindings):
     """Place single-bone attachments using their embedded global pose"""
 
     resolved = dict(bindings)
-    skeleton_type = 0x299DF12C
+    skeleton_type = 0x8A6E72CB
 
     for entry in scan_nested_entries(payload):
         if entry.metadata.file_type != CURRENT_MESH:
@@ -478,7 +476,7 @@ def resolve_static_attachment_bindings(payload, bindings):
             raise ValueError("Ambiguous attachment skeleton")
 
         bone_id = binding.bone_ids[0]
-        signature = struct.pack("<II", 0x41899311, bone_id)
+        signature = struct.pack("<II", 0x71EDFDE3, bone_id)
         cursor = skeleton_starts[0] + 4
         poses = []
 
@@ -495,7 +493,7 @@ def resolve_static_attachment_bindings(payload, bindings):
                 continue
 
             marker, zero, kind = struct.unpack_from("<III", blob, offset + 18)
-            if (marker & 0xFFFF0000) != 0xFBF80000 or zero or kind != 0x18471F43:
+            if (marker & 0xFFFF0000) != 0xFBF80000 or zero or kind != 0x8D37C90B:
                 continue
 
             values = struct.unpack_from("<16f", blob, offset + 30)
@@ -508,13 +506,14 @@ def resolve_static_attachment_bindings(payload, bindings):
             if abs(sum(v * v for v in rotation) - 1.0) > 0.001:
                 raise ValueError("Invalid attachment quaternion")
 
-            poses.append(BoneTransform(bone_id, values[:3], rotation))
+            matrix = _pose_to_gltf_matrix(BoneTransform(bone_id, values[:3], rotation))
+            poses.append(align_holster_root(payload, entry.data_offset + offset, bindings, matrix))
 
         if len(poses) > 1:
             raise ValueError("Ambiguous attachment bone pose")
 
         if poses:
-            resolved[geometry_uid] = replace(binding, joint_node_matrices=(_pose_to_gltf_matrix(poses[0]),))
+            resolved[geometry_uid] = replace(binding, joint_node_matrices=(poses[0],))
     return resolve_holster_binding(payload, resolved)
 
 def resolve_fitted_head_frames(bindings):
