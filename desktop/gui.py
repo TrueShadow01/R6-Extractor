@@ -174,13 +174,39 @@ class MainWindow(QMainWindow):
         self.settings_button.setChecked(needs_setup)
         self.settings_panel.setVisible(needs_setup)
 
-        self.ik_checkbox = QCheckBox("Create experimental IK controls")
-        self.ik_checkbox.setToolTip("Applies when opening in Blender. Save as .blend to retain controls.")
-        layout.addWidget(self.ik_checkbox)
+        self.blender_options_button = QPushButton("Blender options")
+        self.blender_options_button.setCheckable(True)
+        toolbar.insertWidget(toolbar.indexOf(self.open_button) + 1, self.blender_options_button)
 
-        self.portable_checkbox = QCheckBox("Save a portable .blend when opening")
-        self.portable_checkbox.setToolTip("Pack Textures, show the report and confirm before replacing an existing File.")
-        layout.addWidget(self.portable_checkbox)
+        self.blender_options_panel = QWidget()
+        blender_options_layout = QVBoxLayout(self.blender_options_panel)
+        blender_options_layout.setContentsMargins(0, 4, 0, 8)
+        blender_options_layout.addWidget(QLabel("These options apply when opening in Blender."))
+
+        self.ik_checkbox = QCheckBox("Create experimental IK controls")
+        self.ik_checkbox.setToolTip("Save as .blend to retain the controls.")
+        blender_options_layout.addWidget(self.ik_checkbox)
+
+        self.portable_checkbox = QCheckBox("Save as portable .blend")
+        self.portable_checkbox.setToolTip("Pack textures, show the report and confirm before replacing an existing file.")
+        blender_options_layout.addWidget(self.portable_checkbox)
+
+        layout.addWidget(self.blender_options_panel)
+        self.blender_options_panel.hide()
+        self.blender_options_button.toggled.connect(self.blender_options_panel.setVisible)
+
+        def update_blender_options_label():
+            enabled = (
+                int(self.ik_checkbox.isChecked()) 
+                + int(self.portable_checkbox.isChecked())
+            )
+            self.blender_options_button.setText(
+                f"Blender options ({enabled})"
+                if enabled else "Blender options"
+            )
+
+        self.ik_checkbox.toggled.connect(update_blender_options_label)
+        self.portable_checkbox.toggled.connect(update_blender_options_label)
 
         self.search = QLineEdit()
         self.search.setPlaceholderText("Search operators...")
