@@ -750,66 +750,80 @@ def resolve_static_face_bindings(bindings: Mapping[int, MeshBinding], payload: b
     if shared is None:
         return resolved
 
-    host = next(
-        (
-            binding
-            for binding in bindings.values()
-            if (REQUIRED_HOST_BONES.issubset(binding.bone_ids) if len(shared.bone_ids) == len(SHARED_FACE_BONES) else HOST_HEAD_ROOT in binding.bone_ids) and SHARED_FACE_BONES.issubset(transform.bone_id for transform in binding.pose_transforms)
-        ),
-        None
-    )
+    # neutral face pose can be stored on a head accessory or at package level
+    groups = {
+        binding.pose_transforms
+        for binding in bindings.values()
+        if binding.pose_transforms
+        and SHARED_FACE_BONES.issubset(transform.bone_id for transform in binding.pose_transforms)
+    }
 
-    package_root = None
-
-    if host is None and payload is not None and len(shared.bone_ids) > len(SHARED_FACE_BONES):
-        # Some newer Heads keep their neutral face pose at package level - Isaac
+    if not groups and payload is not None:
         signature = struct.pack("<II", POSE_GROUP_TAG, 0xFFB49035)
-        groups = set()
         cursor = 0
 
         while True:
             offset = payload.find(signature, cursor)
+
             if offset < 0:
                 break
 
             cursor = offset + len(signature)
             transforms = _read_pose_transforms(payload, offset)
-            if transforms and transforms[0].bone_id == 0x40CDE165 and sum(t.bone_id == 0x40CDE165 for t in transforms) == 1 and SHARED_FACE_BONES.issubset(t.bone_id for t in transforms):
+
+            if transforms and transforms[0].bone_id in (0x40CDE165, 0x590C11F4) and SHARED_FACE_BONES.issubset(transform.bone_id for transform in transforms):
                 groups.add(transforms)
 
-        if len(groups) == 1:
-            transforms = next(iter(groups))
-            pose_bones = {t.bone_id for t in transforms}
-            candidates = [
-                binding for binding in bindings.values()
-                if HOST_HEAD_ROOT in binding.bone_ids
-            ]
-            scores = [
-                len(pose_bones.intersection(binding.bone_ids))
-                for binding in candidates
-            ]
-
-            if scores and max(scores) > 0 and scores.count(max(scores)) == 1:
-                host = replace(candidates[scores.index(max(scores))], pose_transforms=transforms)
-
-                package_root = transforms[0]
-
-    if host is None:
+    if len(groups) != 1:
         return resolved
 
-    host_matrices = _default_joint_node_matrices(host)
-    face_matrices = list(_default_joint_node_matrices(shared))
-
+    transforms = next(iter(groups))
     pose_by_bone = {
         transform.bone_id: transform
-        for transform in host.pose_transforms
+        for transform in transforms
     }
 
-    root_index = host.bone_ids.index(HOST_HEAD_ROOT)
-    root_matrix = host_matrices[root_index]
+    if len(pose_by_bone) != len(transforms):
+        return resolved
 
-    if package_root is not None:
-        root_matrix = _gltf_multiply(root_matrix, _pose_to_gltf_matrix(package_root))
+    candidates = [
+        binding
+        for binding in bindings.values()
+        if HOST_HEAD_ROOT in binding.bone_ids
+    ]
+
+    scores = [
+        len(pose_by_bone.keys() & set(binding.bone_ids))
+        for binding in candidates
+    ]
+    if not scores:
+        return resolved
+
+    best = [
+        binding
+        for binding, score in zip(candidates, scores)
+        if score == max(scores)
+    ]
+    # N you are gonna tell your family, what you told me, personally, promise me that - S
+    roots = [
+        _default_joint_node_matrices(binding)[
+            binding.bone_ids.index(HOST_HEAD_ROOT)
+        ]
+        for binding in best
+    ]
+
+    # Equal scores are safe only when the candidate head frames agree
+    if any(
+        max(abs(a - b) for a, b in zip(roots[0], root)) > 1e-4
+        for root in roots[1:]
+    ):
+        return resolved
+
+    root_matrix = roots[0]
+    face_matrices = list(_default_joint_node_matrices(shared))
+
+    if transforms[0].bone_id == 0x40CDE165:
+        root_matrix = _gltf_multiply(root_matrix, _pose_to_gltf_matrix(transforms[0]))
 
     for face_bone in FACE_LEFT_EYE, FACE_RIGHT_EYE:
         face_index = shared.bone_ids.index(face_bone)
