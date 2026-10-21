@@ -9,6 +9,9 @@ export async function applySiegeClothing(gltf, modelUrl) {
         }
 
         for (const material of (Array.isArray(object.material) ? object.material : [object.material])) {
+            if (material.userData.siegeGlassPreviewV1 !== undefined || material.userData.siegeEyeOverlayPreviewV1 !== undefined) {
+                continue;
+            }
             if (material.userData.siegeShaderUid == "0000001397A32F38" && (material.userData.siegeMaskTexture || material.userData.siegeShaderUniforms?.ClothingMaskMode?.[0] === 0)) {
                 materials.add(material);
             }
