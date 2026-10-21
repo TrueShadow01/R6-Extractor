@@ -170,6 +170,13 @@ def clean_preview_cache(*, keep=None, protected=(), remove=False):
                         continue
 
                     try:
+                        _plain(directory)
+                        try:
+                            _plain(directory / "preview.json")
+                        except FileNotFoundError:
+                            # interrupted export has no completion manifest
+                            result["skipped"] += 1
+                            continue
                         size = _generation_size(directory)
                         if remove:
                             # Recheck immediately before recursive deletion
