@@ -153,6 +153,16 @@ def apply_optical_preview(material, slot):
         pbr["metallicFactor"] = 0.0
         pbr["roughnessFactor"] = profile[1]
 
+        if isolated is not None and shader == 0x0000000099E2C947 and slot.material_uid == 0x0000000B0BABF6F7:
+            # Zofia: lens-only tint
+            pbr["baseColorFactor"][:3] = [
+                channel * 0.08
+                for channel in pbr["baseColorFactor"][:3]
+            ]
+            extras["siegeOpticalApproximation"] += (
+                " Zofia lens darkening is an artistic approximation."
+            )
+
         material["alphaMode"] = "OPAQUE" if profile[0] >= 1.0 else "BLEND"
         material.pop("alphaCutoff", None)
         return
