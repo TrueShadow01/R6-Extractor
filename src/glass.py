@@ -13,8 +13,8 @@ GLASS_PROFILES = {
     (0x000000003BD13B9E, 0x000000162B4A763C): (0.22, 0.08, 1.5),
     (0x000000003BD13B9E, 0x0000001708A03E1C): (0.22, 0.08, 1.5),
     (0x000000003BD13B9E, 0x00000061CE5AA613): (0.22, 0.08, 1.5),
-    (0x000000003BD13B9E, 0x00000056E92BCC64): (0.22, 0.08, 1.5),
-    (0x000000003BD13B9E, 0x0000005F69BB983F): (0.22, 0.08, 1.5),
+    (0x000000003BD13B9E, 0x00000056E92BCC64): (1.0, 0.08, 1.5),  # Sentry
+    (0x000000003BD13B9E, 0x0000005F69BB983F): (1.0, 0.08, 1.5),  # Striker
     (0x00000000523BA2BF, 0x0000001987553C8E): (0.22, 0.08, 1.5),
 }
 
@@ -108,9 +108,18 @@ def split_atlas_lenses(parts, material_textures):
 
             opaque, lens = selected
 
+            profile = (
+                (1.0, 0.08, 1.5)
+                if (part.uid, slot.material_uid) in {
+                    (0x0000000FF51C27F0, 0x0000000B0BABF6F7),  # Zofia
+                    (0x00000009D00DE165, 0x0000000A8715DE27),  # Pulse
+                }
+                else (0.22, 0.08, 1.5)
+            )
+
             derived = replace(
                 slot,
-                shader_uniforms=(*slot.shader_uniforms, ("ExperimentalGlassLensV1", (0.22, 0.08, 1.5)),)
+                shader_uniforms=(*slot.shader_uniforms, ("ExperimentalGlassLensV1", profile),)
             )
 
             index = len(slots)
@@ -144,7 +153,7 @@ def apply_optical_preview(material, slot):
         pbr["metallicFactor"] = 0.0
         pbr["roughnessFactor"] = profile[1]
 
-        material["alphaMode"] = "BLEND"
+        material["alphaMode"] = "OPAQUE" if profile[0] >= 1.0 else "BLEND"
         material.pop("alphaCutoff", None)
         return
 
