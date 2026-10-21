@@ -120,17 +120,28 @@ class MainWindow(QMainWindow):
         self.preview_button = QPushButton("Load Preview")
         self.preview_button.clicked.connect(self.load_preview)
 
+        self.settings_button = QPushButton("Settings")
+        self.settings_button.setCheckable(True)
+        self.settings_button.setToolTip("Paths, asset index and maintenance")
+
         toolbar = QHBoxLayout()
-        toolbar.addWidget(QLabel("Game Folder"))
-        toolbar.addWidget(self.game_path, 1)
-        toolbar.addWidget(self.browse)
         toolbar.addWidget(self.load)
-        toolbar.addWidget(self.index_button)
-        toolbar.addWidget(self.export_button)
-        toolbar.addWidget(self.install_button)
-        toolbar.addWidget(self.open_button)
+        toolbar.addStretch()
         toolbar.addWidget(self.preview_button)
+        toolbar.addWidget(self.export_button)
+        toolbar.addWidget(self.open_button)
+        toolbar.addWidget(self.settings_button)
         layout.addLayout(toolbar)
+
+        self.settings_panel = QWidget()
+        settings_layout = QVBoxLayout(self.settings_panel)
+        settings_layout.setContentsMargins(0, 8, 0, 8)
+
+        game_row = QHBoxLayout()
+        game_row.addWidget(QLabel("Game folder"))
+        game_row.addWidget(self.game_path, 1)
+        game_row.addWidget(self.browse)
+        settings_layout.addLayout(game_row)
 
         self.blender_edit = QLineEdit()
         self.blender_edit.setPlaceholderText("Path to Blender 4.5 blender.exe")
@@ -144,10 +155,24 @@ class MainWindow(QMainWindow):
         blender_row.addWidget(QLabel("Blender 4.5"))
         blender_row.addWidget(self.blender_edit, 1)
         blender_row.addWidget(self.blender_browse)
+        settings_layout.addLayout(blender_row)
+
         self.clear_cache_button = QPushButton("Clear preview cache")
         self.clear_cache_button.clicked.connect(self.clear_preview_cache)
-        blender_row.addWidget(self.clear_cache_button)
-        layout.addLayout(blender_row)
+
+        maintenance_row = QHBoxLayout()
+        maintenance_row.addWidget(self.index_button)
+        maintenance_row.addWidget(self.install_button)
+        maintenance_row.addWidget(self.clear_cache_button)
+        maintenance_row.addStretch()
+        settings_layout.addLayout(maintenance_row)
+
+        layout.addWidget(self.settings_panel)
+        self.settings_button.toggled.connect(self.settings_panel.setVisible)
+
+        needs_setup = not (Path(self.game_path.text().strip()) / "datapc64.forge").is_file()
+        self.settings_button.setChecked(needs_setup)
+        self.settings_panel.setVisible(needs_setup)
 
         self.ik_checkbox = QCheckBox("Create experimental IK controls")
         self.ik_checkbox.setToolTip("Applies when opening in Blender. Save as .blend to retain controls.")
