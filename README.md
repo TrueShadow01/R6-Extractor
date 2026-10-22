@@ -35,6 +35,8 @@ $env:R6_OODLE_DLL = "C:\Path\To\oo2core_8_win64.dll"
 .\R6ForgeExtractor.exe
 ```
 
+### From V0.4.12 Oodle will get shipped along the build in the .rar file
+
 ## Export and open an operator
 
 1. Click **Build / Update Asset Index**. Repeat after game updates.
