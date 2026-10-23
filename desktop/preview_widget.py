@@ -46,11 +46,7 @@ class PreviewWidget(QWidget):
         self.view.page().setWebChannel(self.web_channel)
         self.view.page().setBackgroundColor(QColor("#24282d"))
         self.view.setStyleSheet("background-color: #24282d;")
-        self.show_state(
-            "Preview your operators",
-            "Choose your game folder in Settings, then click Load operators.\n"
-            "Select an operator and click Load Preview."
-        )
+        self.show_welcome()
         layout.addWidget(self.label)
         layout.addWidget(self.view, 1)
 
@@ -117,6 +113,187 @@ class PreviewWidget(QWidget):
         self.reload_timer.timeout.connect(self.check_viewer_changes)
         if not getattr(sys, "frozen", False):
             self.reload_timer.start()
+
+    def show_welcome(self):
+        self.preparing = False
+        self.label.hide()
+        self.view.setHtml("""
+            <!doctype html>
+            <html>
+                <head>
+                    <meta charset="utf-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1">
+                    <style>
+                        :root {
+                            color-scheme: dark;
+                        }
+
+                        * {
+                            box-sizing: border-box;
+                        }
+
+                        body {
+                            margin: 0;
+                            min-height: 100vh;
+                            display: grid;
+                            place-items: center;
+                            padding: clamp(20px, 5vw, 48px);
+                            background: #1c2129;
+                            color: #e8edf4;
+                            font: 14px / 1.5 "Segoe UI", sans-serif;
+                        }
+
+                        main {
+                            width: min(100%, 560px);
+                        }
+
+                        .brand {
+                            display: flex;
+                            align-items: center;
+                            gap: 10px;
+                            margin-bottom: 28px;
+                            color: #aab7c8;
+                            font-size: 11px;
+                            font-weight: 600;
+                            letter-spacing: 2px;
+                            text-transform: uppercase;
+                        }
+
+                        .badge {
+                            display: grid;
+                            place-items: center;
+                            width: 36px;
+                            height: 36px;
+                            border: 1px solid #37635f;
+                            border-radius: 10px;
+                            background: #223e40;
+                            color: #6edbd1;
+                            letter-spacing: 0;
+                            font-size: 14px;
+                        }
+
+                        h1 {
+                            margin: 0 0 12px;
+                            font-size: 26px;
+                            font-weight: 600;
+                            line-height: 1.3;
+                        }
+
+                        .intro {
+                            margin: 0 0 28px;
+                            max-width: 440px;
+                            color: #aab7c8;
+                            line-height: 1.65;
+                        }
+
+                        ol {
+                            margin: 0;
+                            padding: 0;
+                            list-style: none;
+                            border: 1px solid #354050;
+                            border-radius: 12px;
+                            overflow: hidden;
+                            background: #202630;
+                        }
+
+                        li {
+                            display: grid;
+                            grid-template-columns: 28px minmax(0, 1fr);
+                            gap: 14px;
+                            padding: 17px 20px;
+                        }
+
+                        li + li {
+                            border-top: 1px solid: #303947;
+                        }
+
+                        .number {
+                            display: grid;
+                            place-items: center;
+                            align-self: start;
+                            width: 28px;
+                            height: 28px;
+                            border-radius: 8px;
+                            background: #293540;
+                            color: #6edbd1;
+                            font-size: 12px;
+                            font-weight: 600;
+                        }
+
+                        h2 {
+                            margin: 0 0 3px;
+                            font-size: 14px;
+                            font-weight: 600;
+                        }
+
+                        li p {
+                            margin: 0;
+                            color: #94a3b8;
+                            font-size: 13px;
+                        }
+
+                        strong {
+                            color: #c7d2e1;
+                            font-weight: 600;
+                        }
+
+                        footer {
+                            margin-top: 20px;
+                            padding-left: 2px;
+                            color: #94a3b8;
+                            font-size: 12px;
+                        }
+
+                        @media (max-width: 360px) {
+                            li {
+                                padding: 14px;
+                                gap: 10px;
+                            }
+
+                            .brand {
+                                margin-bottom: 20px;
+                            }
+                        }
+                    </style>
+                </head>
+                <body>
+                    <main>
+                    <div class="brand">
+                        <span class="badge" aria-hidden="true">R6</span>
+                        Forge Extractor
+                    </div>
+
+                    <h1>Getting started</h1>
+                    <p class="intro">
+                        Preview default appearances, inspect materials and export models for Blender.
+                    </p>
+
+                    <ol aria-label="Getting started">
+                        <li>
+                            <span class="number" aria-hidden="true">01</span>
+                            <div>
+                                <h2>Connect your game</h2>
+                                <p>Choose your Siege folder in <strong>Settings</strong>.
+                                Already configured? Go to step 2.</p>
+                            </div>
+                        </li>
+                        <li>
+                            <span class="number" aria-hidden="true">02</span>
+                            <div>
+                                <h2>Explore the model</h2>
+                                <p>Click <strong>Load Preview</strong>.
+                                Shift-click a surface to inspect its material.</p>
+                            </div>
+                        </li>
+                    </ol>
+
+                    <footer>
+                        First previews take longer. Cached previews load faster.
+                    </footer>
+                    </main>
+                </body>
+            </html>
+        """)
 
     def show_state(self, title, message, *, loading=False):
         self.preparing = loading
