@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QThread, Signal, QProcess, QSettings
-from PySide6.QtGui import QTextCursor, QIcon
+from PySide6.QtGui import QTextCursor, QIcon, QColor, QPalette, QFont
 from PySide6.QtWidgets import (
     QApplication, QFileDialog, QLabel, QLineEdit, QListWidget,
     QListWidgetItem, QMainWindow, QPlainTextEdit, QPushButton,
@@ -911,6 +911,153 @@ class MainWindow(QMainWindow):
 
         super().closeEvent(event)
 
+def apply_modern_theme(app, window):
+    app.setFont(QFont("Segoe UI", 10))
+
+    palette = QPalette()
+    colors = {
+        QPalette.ColorRole.Window: "#181c22",
+        QPalette.ColorRole.WindowText: "#e8edf4",
+        QPalette.ColorRole.Base: "#202630",
+        QPalette.ColorRole.AlternateBase: "#262e39",
+        QPalette.ColorRole.Text: "#e8edf4",
+        QPalette.ColorRole.Button: "#29323e",
+        QPalette.ColorRole.ButtonText: "#e8edf4",
+        QPalette.ColorRole.Highlight: "#42c8bd",
+        QPalette.ColorRole.HighlightedText: "#102320",
+        QPalette.ColorRole.ToolTipBase: "#29323e",
+        QPalette.ColorRole.ToolTipText: "#e8edf4",
+        QPalette.ColorRole.PlaceholderText: "#94a3b8",
+        QPalette.ColorRole.Link: "#42c8bd",
+    }
+    for role, color in colors.items():
+        palette.setColor(role, QColor(color))
+
+    for role in (QPalette.ColorRole.Text, QPalette.ColorRole.WindowText, QPalette.ColorRole.ButtonText):
+        palette.setColor(QPalette.ColorGroup.Disabled, role, QColor("#798596"))
+
+    app.setPalette(palette)
+
+    window.preview_button.setObjectName("primaryAction")
+    window.export_button.setText("Export")
+    window.search.setClearButtonEnabled(True)
+    window.operators.setSpacing(2)
+    window.log.setObjectName("activityLog")
+    window.centralWidget().layout().setContentsMargins(16, 12, 16, 10)
+    window.centralWidget().layout().setSpacing(10)
+
+    app.setStyleSheet("""
+        QWidget {
+            font-family: "Segoe UI";
+            font-size: 10pt;
+        }
+        QPlainTextEdit#activityLog {
+            font-family: "Consolas";
+            font-size: 9pt;
+        }
+        QPushButton {
+            padding: 7px 12px;
+            border: 1px solid #3b4656;
+            border-radius: 6px;
+            background: palette(button);
+            color: palette(button-text);
+        }
+        QPushButton:hover {
+            background: #354152;
+        }
+        QPushButton:pressed {
+            background: #1c2530;
+        }
+        QPushButton:checked {
+            background: #223e40;
+            border-color: #42c8bd;
+        }
+        QPushButton:focus {
+            border-color: #42c8bd;
+        }
+
+        QPushButton#primaryAction {
+            background: #42c8bd;
+            color: #102320;
+            border-color: #42c8bd;
+            font-weight: 600;
+        }
+        QPushButton#primaryAction:hover {
+            background: #69d8cf;
+        }
+        QPushButton#primaryAction:pressed {
+            background: #2ca79e;
+        }
+        QPushButton#primaryAction:focus {
+            border-color: #e8edf4;
+        }
+
+        QPushButton:disabled, QPushButton#primaryAction:disabled {
+            background: #242b35;
+            color: #798596;
+            border-color: #303947;
+        }
+
+        QLineEdit, QPlainTextEdit, QListWidget {
+            background: palette(base);
+            color: palette(text);
+            border: 1px solid #354050;
+            border-radius: 6px;
+            padding: 6px;
+            selection-background-color: palette(highlight);
+            selection-color: palette(highlighted-text);
+        }
+        QLineEdit:focus, QPlainTextEdit:focus, QListWidget:focus {
+            border-color: #42c8bd;
+        }
+        QListWidget::item {
+            padding: 6px;
+            border-radius: 4px;
+        }
+        QListWidget::item:hover {
+            background: #2b3745;
+        }
+        QListWidget::item:selected {
+            background: #42c8bd;
+            color: #102320;
+        }
+
+        QTabWidget::pane {
+            border: 1px solid #354050;
+            border-radius: 6px;
+        }
+        QTabBar::tab {
+            padding: 8px 12px;
+            margin-right: 3px;
+            background: #242c37;
+            color: #aab7c8;
+        }
+        QTabBar::tab:selected {
+            background: #334252;
+            color: #e8edf4;
+        }
+        QTabBar::tab:focus {
+            border: 1px solid #42c8bd;
+        }
+
+        QCheckBox {
+            spacing: 8px;
+            padding: 3px;
+        }
+        QSplitter::handle {
+            background: #181c22;
+        }
+        QSplitter::handle:hover {
+            background: #42c8bd;
+        }
+        QStatusBar {
+            border-top: 1px solid #303947;
+        }
+        QStatusBar::item  {
+            border: none;
+        }
+    """)
+
 def main():
     developer_mode = "--dev" in sys.argv[1:]
     sys.argv = [
@@ -926,6 +1073,7 @@ def main():
     app.setStyle("Fusion")
     app.setWindowIcon(QIcon(str(resource_directory() / "docs" / "images" / "app.ico")))
     window = MainWindow(developer_mode=developer_mode)
+    apply_modern_theme(app, window)
     window.show()
     return app.exec()
 
