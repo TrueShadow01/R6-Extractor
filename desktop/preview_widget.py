@@ -9,6 +9,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import quote, unquote, urlsplit
+from html import escape
 
 from PySide6.QtCore import QUrl, QTimer, QObject, Signal, Slot
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel
@@ -45,7 +46,11 @@ class PreviewWidget(QWidget):
         self.view.page().setWebChannel(self.web_channel)
         self.view.page().setBackgroundColor(QColor("#24282d"))
         self.view.setStyleSheet("background-color: #24282d;")
-        self.view.setHtml("<html><body style='margin: 0; background: #24282d;'></body></html>")
+        self.show_state(
+            "Preview your operators",
+            "Choose your game folder in Settings, then click Load operators.\n"
+            "Select an operator and click Load Preview."
+        )
         layout.addWidget(self.label)
         layout.addWidget(self.view, 1)
 
@@ -113,10 +118,96 @@ class PreviewWidget(QWidget):
         if not getattr(sys, "frozen", False):
             self.reload_timer.start()
 
-    def setText(self, text):
-        self.label.setText(text)
-        self.view.setHtml("<body style='background: #24282d'></body>")
+    def show_state(self, title, message, *, loading=False):
+        self.preparing = loading
+        self.label.hide()
+        progress = '<progress aria-label="Preparing preview"></progress>' if loading else ""
+        self.view.setHtml(f"""
+            <!doctype html>
+            <html lang="en">
+                <head>
+                    <meta charset="utf-8>
+                    <style>
+                        :root {{
+                            color-scheme: dark;
+                        }}
 
+                        * {{
+                            box-sizing: border-box;
+                        }}
+
+                        body {{
+                            margin: 0;
+                            min-height: 100vh;
+                            display: grid;
+                            place-items: center;
+                            padding: 24px;
+                            background: #24282d;
+                            color: #e8edf4;
+                            font: 14px / 1.5 "Segoe UI", sans-serif;
+                        }}
+
+                        main {{
+                            width: min(100%, 440px);
+                            padding: 28px;
+                            border: 1px solid #354050;
+                            border-radius: 12px;
+                            background: #202630;
+                        }}
+
+                        h1 {{
+                            margin: 0 0 10px;
+                            fonz-size: 22px;
+                            font-weight: 600;
+                        }}
+
+                        p {{
+                            margin: 0;
+                            color: #aab7c8;
+                            white-space: pre-line;
+                            overflow-wrap: anywhere;
+                        }}
+
+                        progress {{
+                            display: block;
+                            width: 100%;
+                            height: 6px;
+                            margin-top: 24px;
+                            accent-color: #42c8bd;
+                        }}
+                    </style>
+                </head>
+                <body>
+                    <main>
+                        <h1>{escape(str(title))}</h1>
+                        <p>{escape(str(message))}</p>
+                        {progress}
+                    </main>
+                </body>
+            </html>
+        """)
+
+    def setText(self, text):
+        title, _, message = str(text).partition("\n\n")
+        self.show_state(
+            title,
+            message or "Choose an operator from the list, then click Load Preview."
+        )
+
+    def show_loading(self, name):
+        self.show_state(
+            f"Preparing {name}",
+            "Preparing Geometry and Textures.\n"
+            "The first preview can take longer. Cached previews load faster.",
+            loading=True
+        )
+
+    def show_failure(self, message):
+        self.show_state(
+            "Preview could not load",
+            f"{message}\n\nCheck the log, then click Load Preview to try again."
+        )
+    
     def load_manifest(self, path):
         lease = CacheLease(Path(path).resolve().parent)
         try:
@@ -151,6 +242,8 @@ class PreviewWidget(QWidget):
             "models": models
         }
         self.label.setText(f"{document['operator_name']} - basic glTF material preview")
+        self.label.show()
+        self.preparing = False
         port = self.server.server_address[1]
         self.view.load(QUrl(f"http://127.0.0.1:{port}/{self.token}/viewer/index.html"))
 
@@ -182,7 +275,6 @@ class PreviewWidget(QWidget):
             if reloaded:
                 self.loaded_signature = signature
 
-        # Nyx saves three times. Blake only wants one reload - Aiden
         self.view.page().runJavaScript(
             """
             (() => {

@@ -556,6 +556,8 @@ class MainWindow(QMainWindow):
             self.log.appendPlainText(message)
             self.statusBar().showMessage(message)
         else:
+            if self.preview.preparing:
+                self.preview.show_failure(message)
             self.report_error(message)
 
         if self.close_requested:
@@ -804,6 +806,7 @@ class MainWindow(QMainWindow):
         self.export_process.errorOccurred.connect(self.export_process_error)
 
         self.set_export_busy(True)
+        self.preview.show_loading(operator.name)
         self.statusBar().showMessage(f"Preparing {operator.name} preview...")
         self.export_process.start(
             worker_executable(),

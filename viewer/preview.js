@@ -348,8 +348,10 @@ try {
     frameModel();
     installPreviewReload(camera, controls, manifest.models);
     installMaterialInspector(renderer, camera, model);
+    delete status.dataset.state;
     status.textContent = `${manifest.name} · Left Click drag: orbit · Right Click drag: pan · Mouse Wheel: zoom`;
 } catch (error) {
+    status.dataset.state = "error";
     window.r6Audit.error = String(error);
     status.textContent = `Preview failed: ${error.message}`;
     console.error(error);
