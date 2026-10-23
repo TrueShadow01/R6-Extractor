@@ -126,7 +126,7 @@ class PreviewWidget(QWidget):
             <!doctype html>
             <html lang="en">
                 <head>
-                    <meta charset="utf-8>
+                    <meta charset="utf-8">
                     <style>
                         :root {{
                             color-scheme: dark;
@@ -157,7 +157,7 @@ class PreviewWidget(QWidget):
 
                         h1 {{
                             margin: 0 0 10px;
-                            fonz-size: 22px;
+                            font-size: 22px;
                             font-weight: 600;
                         }}
 
