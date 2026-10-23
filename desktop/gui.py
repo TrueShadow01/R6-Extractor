@@ -224,10 +224,19 @@ class MainWindow(QMainWindow):
 
         self.details = QPlainTextEdit()
         self.details.setReadOnly(True)
-        self.details.setPlaceholderText("Default appearance details")
+        self.details.setPlaceholderText("Select an operator to see its default appearance and asset IDs.")
+
+        details_page = QWidget()
+        details_layout = QVBoxLayout(details_page)
+        details_layout.setContentsMargins(10, 10, 10, 10)
+        details_layout.setSpacing(8)
+        details_heading = QLabel("Default Appearance")
+        details_heading.setObjectName("inspectorHeading")
+        details_layout.addWidget(details_heading)
+        details_layout.addWidget(self.details, 1)
 
         inspector = QTabWidget()
-        inspector.addTab(self.details, "Details")
+        inspector.addTab(details_page, "Details")
         self.material_details = MaterialInspector(self.preview)
         inspector.addTab(self.material_details, "Materials / Textures")
 
@@ -1038,6 +1047,53 @@ def apply_modern_theme(app, window):
         }
         QTabBar::tab:focus {
             border: 1px solid #42c8bd;
+        }
+
+        QLabel#inspectorHeading {
+            color: #e8edf4;
+            font-weight: 600;
+            padding-top: 4px;
+        }
+        QLabel#inspectorHint {
+            color: #94e3b8;
+        }
+        QComboBox#inspectorLayers {
+            background: #29323e;
+            color: #e8edf4;
+            border: 1px solid #3b4656;
+            border-radius: 6px;
+            padding: 7px 10px;
+            min-height: 20px;
+        }
+        QComboBox#inspectorLayers:hover, QComboBox#inspectorLayers:focus {
+            border-color: #42c8bd;
+        }
+        QComboBox#inspectorLayers:disabled {
+            background: #242b35;
+            color: #798596;
+            border-color: #303947;
+        }
+        QComboBox#inspectorLayers QAbstractItemView {
+            background: #202630;
+            color: #e8edf4;
+            border: 1px solid #3b4656;
+            selection-background-color: #42c8bd;
+            selection-color: #102320;
+            padding: 4px;
+        }
+        QListWidget#textureCards::item {
+            background: #262e39;
+            border: 1px solid #354050;
+            border-radius: 6px;
+            padding: 8px;
+        }
+        QListWidget#textureCards::item:hover {
+            background: #2b3745;
+        }
+        QListWidget#textureCards::item:selected {
+            background: #223e40;
+            border-color: #42c8bd;
+            color: #e8edf4;
         }
 
         QCheckBox {
