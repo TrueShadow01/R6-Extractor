@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QThread, Signal, QProcess, QSettings
-from PySide6.QtGui import QTextCursor, QIcon
+from PySide6.QtGui import QTextCursor, QIcon, QColor, QPalette, QFont
 from PySide6.QtWidgets import (
     QApplication, QFileDialog, QLabel, QLineEdit, QListWidget,
     QListWidgetItem, QMainWindow, QPlainTextEdit, QPushButton,
@@ -120,17 +120,28 @@ class MainWindow(QMainWindow):
         self.preview_button = QPushButton("Load Preview")
         self.preview_button.clicked.connect(self.load_preview)
 
+        self.settings_button = QPushButton("Settings")
+        self.settings_button.setCheckable(True)
+        self.settings_button.setToolTip("Paths, asset index and maintenance")
+
         toolbar = QHBoxLayout()
-        toolbar.addWidget(QLabel("Game Folder"))
-        toolbar.addWidget(self.game_path, 1)
-        toolbar.addWidget(self.browse)
         toolbar.addWidget(self.load)
-        toolbar.addWidget(self.index_button)
-        toolbar.addWidget(self.export_button)
-        toolbar.addWidget(self.install_button)
-        toolbar.addWidget(self.open_button)
+        toolbar.addStretch()
         toolbar.addWidget(self.preview_button)
+        toolbar.addWidget(self.export_button)
+        toolbar.addWidget(self.open_button)
+        toolbar.addWidget(self.settings_button)
         layout.addLayout(toolbar)
+
+        self.settings_panel = QWidget()
+        settings_layout = QVBoxLayout(self.settings_panel)
+        settings_layout.setContentsMargins(0, 8, 0, 8)
+
+        game_row = QHBoxLayout()
+        game_row.addWidget(QLabel("Game folder"))
+        game_row.addWidget(self.game_path, 1)
+        game_row.addWidget(self.browse)
+        settings_layout.addLayout(game_row)
 
         self.blender_edit = QLineEdit()
         self.blender_edit.setPlaceholderText("Path to Blender 4.5 blender.exe")
@@ -144,18 +155,58 @@ class MainWindow(QMainWindow):
         blender_row.addWidget(QLabel("Blender 4.5"))
         blender_row.addWidget(self.blender_edit, 1)
         blender_row.addWidget(self.blender_browse)
+        settings_layout.addLayout(blender_row)
+
         self.clear_cache_button = QPushButton("Clear preview cache")
         self.clear_cache_button.clicked.connect(self.clear_preview_cache)
-        blender_row.addWidget(self.clear_cache_button)
-        layout.addLayout(blender_row)
+
+        maintenance_row = QHBoxLayout()
+        maintenance_row.addWidget(self.index_button)
+        maintenance_row.addWidget(self.install_button)
+        maintenance_row.addWidget(self.clear_cache_button)
+        maintenance_row.addStretch()
+        settings_layout.addLayout(maintenance_row)
+
+        layout.addWidget(self.settings_panel)
+        self.settings_button.toggled.connect(self.settings_panel.setVisible)
+
+        needs_setup = not (Path(self.game_path.text().strip()) / "datapc64.forge").is_file()
+        self.settings_button.setChecked(needs_setup)
+        self.settings_panel.setVisible(needs_setup)
+
+        self.blender_options_button = QPushButton("Blender options")
+        self.blender_options_button.setCheckable(True)
+        toolbar.insertWidget(toolbar.indexOf(self.open_button) + 1, self.blender_options_button)
+
+        self.blender_options_panel = QWidget()
+        blender_options_layout = QVBoxLayout(self.blender_options_panel)
+        blender_options_layout.setContentsMargins(0, 4, 0, 8)
+        blender_options_layout.addWidget(QLabel("These options apply when opening in Blender."))
 
         self.ik_checkbox = QCheckBox("Create experimental IK controls")
-        self.ik_checkbox.setToolTip("Applies when opening in Blender. Save as .blend to retain controls.")
-        layout.addWidget(self.ik_checkbox)
+        self.ik_checkbox.setToolTip("Save as .blend to retain the controls.")
+        blender_options_layout.addWidget(self.ik_checkbox)
 
-        self.portable_checkbox = QCheckBox("Save a portable .blend when opening")
-        self.portable_checkbox.setToolTip("Pack Textures, show the report and confirm before replacing an existing File.")
-        layout.addWidget(self.portable_checkbox)
+        self.portable_checkbox = QCheckBox("Save as portable .blend")
+        self.portable_checkbox.setToolTip("Pack textures, show the report and confirm before replacing an existing file.")
+        blender_options_layout.addWidget(self.portable_checkbox)
+
+        layout.addWidget(self.blender_options_panel)
+        self.blender_options_panel.hide()
+        self.blender_options_button.toggled.connect(self.blender_options_panel.setVisible)
+
+        def update_blender_options_label():
+            enabled = (
+                int(self.ik_checkbox.isChecked()) 
+                + int(self.portable_checkbox.isChecked())
+            )
+            self.blender_options_button.setText(
+                f"Blender options ({enabled})"
+                if enabled else "Blender options"
+            )
+
+        self.ik_checkbox.toggled.connect(update_blender_options_label)
+        self.portable_checkbox.toggled.connect(update_blender_options_label)
 
         self.search = QLineEdit()
         self.search.setPlaceholderText("Search operators...")
@@ -173,10 +224,19 @@ class MainWindow(QMainWindow):
 
         self.details = QPlainTextEdit()
         self.details.setReadOnly(True)
-        self.details.setPlaceholderText("Default appearance details")
+        self.details.setPlaceholderText("Select an operator to see its default appearance and asset IDs.")
+
+        details_page = QWidget()
+        details_layout = QVBoxLayout(details_page)
+        details_layout.setContentsMargins(10, 10, 10, 10)
+        details_layout.setSpacing(8)
+        details_heading = QLabel("Default Appearance")
+        details_heading.setObjectName("inspectorHeading")
+        details_layout.addWidget(details_heading)
+        details_layout.addWidget(self.details, 1)
 
         inspector = QTabWidget()
-        inspector.addTab(self.details, "Details")
+        inspector.addTab(details_page, "Details")
         self.material_details = MaterialInspector(self.preview)
         inspector.addTab(self.material_details, "Materials / Textures")
 
@@ -199,6 +259,27 @@ class MainWindow(QMainWindow):
         self.log.setMaximumHeight(140)
         self.log.document().setMaximumBlockCount(5000)
         layout.addWidget(self.log)
+        self.log.hide()
+
+        self.log_toggle = QPushButton("Show Log")
+        self.log_toggle.setCheckable(True)
+
+        def toggle_log(visible):
+            self.log.setVisible(visible)
+            self.log_toggle.setText("Hide Log" if visible else "Show Log")
+            if visible:
+                self.log.moveCursor(QTextCursor.MoveOperation.End)
+                self.log.ensureCursorVisible()
+
+        self.log_toggle.toggled.connect(toggle_log)
+
+        self.copy_log_button = QPushButton("Copy Log")
+        self.copy_log_button.setEnabled(False)
+        self.copy_log_button.clicked.connect(lambda: QApplication.clipboard().setText(self.log.toPlainText()))
+        self.log.textChanged.connect(lambda: self.copy_log_button.setEnabled(not self.log.document().isEmpty()))
+
+        self.statusBar().addPermanentWidget(self.log_toggle)
+        self.statusBar().addPermanentWidget(self.copy_log_button)
 
         self.statusBar().showMessage("Choose the game folder and load operators.")
 
@@ -288,6 +369,7 @@ class MainWindow(QMainWindow):
 
     def report_error(self, message):
         self.log.appendPlainText(f"ERROR: {message}")
+        self.log_toggle.setChecked(True)
         self.statusBar().showMessage("Operation failed, see log.")
 
     def filter_operators(self, text):
@@ -474,6 +556,8 @@ class MainWindow(QMainWindow):
             self.log.appendPlainText(message)
             self.statusBar().showMessage(message)
         else:
+            if self.preview.preparing:
+                self.preview.show_failure(message)
             self.report_error(message)
 
         if self.close_requested:
@@ -722,6 +806,7 @@ class MainWindow(QMainWindow):
         self.export_process.errorOccurred.connect(self.export_process_error)
 
         self.set_export_busy(True)
+        self.preview.show_loading(operator.name)
         self.statusBar().showMessage(f"Preparing {operator.name} preview...")
         self.export_process.start(
             worker_executable(),
@@ -804,6 +889,9 @@ class MainWindow(QMainWindow):
             verb = "Removed" if options["remove"] else "Can remove"
             message = f"{verb} {result['count']} preview generations ({size:.1f} MiB)."
             self.log.appendPlainText(message)
+            if result["errors"]:
+                self.log_toggle.setChecked(True)
+
             for error in result["errors"]:
                 self.log.appendPlainText(f"Cache: {error}")
             self.statusBar().showMessage(message)
@@ -835,6 +923,200 @@ class MainWindow(QMainWindow):
 
         super().closeEvent(event)
 
+def apply_modern_theme(app, window):
+    app.setFont(QFont("Segoe UI", 10))
+
+    palette = QPalette()
+    colors = {
+        QPalette.ColorRole.Window: "#181c22",
+        QPalette.ColorRole.WindowText: "#e8edf4",
+        QPalette.ColorRole.Base: "#202630",
+        QPalette.ColorRole.AlternateBase: "#262e39",
+        QPalette.ColorRole.Text: "#e8edf4",
+        QPalette.ColorRole.Button: "#29323e",
+        QPalette.ColorRole.ButtonText: "#e8edf4",
+        QPalette.ColorRole.Highlight: "#42c8bd",
+        QPalette.ColorRole.HighlightedText: "#102320",
+        QPalette.ColorRole.ToolTipBase: "#29323e",
+        QPalette.ColorRole.ToolTipText: "#e8edf4",
+        QPalette.ColorRole.PlaceholderText: "#94a3b8",
+        QPalette.ColorRole.Link: "#42c8bd",
+    }
+    for role, color in colors.items():
+        palette.setColor(role, QColor(color))
+
+    for role in (QPalette.ColorRole.Text, QPalette.ColorRole.WindowText, QPalette.ColorRole.ButtonText):
+        palette.setColor(QPalette.ColorGroup.Disabled, role, QColor("#798596"))
+
+    app.setPalette(palette)
+
+    window.preview_button.setObjectName("primaryAction")
+    window.export_button.setText("Export")
+    window.search.setClearButtonEnabled(True)
+    window.operators.setSpacing(2)
+    window.log.setObjectName("activityLog")
+    window.centralWidget().layout().setContentsMargins(16, 12, 16, 10)
+    window.centralWidget().layout().setSpacing(10)
+
+    app.setStyleSheet("""
+        QWidget {
+            font-family: "Segoe UI";
+            font-size: 10pt;
+        }
+        QPlainTextEdit#activityLog {
+            font-family: "Consolas";
+            font-size: 9pt;
+        }
+        QPushButton {
+            padding: 7px 12px;
+            border: 1px solid #3b4656;
+            border-radius: 6px;
+            background: palette(button);
+            color: palette(button-text);
+        }
+        QPushButton:hover {
+            background: #354152;
+        }
+        QPushButton:pressed {
+            background: #1c2530;
+        }
+        QPushButton:checked {
+            background: #223e40;
+            border-color: #42c8bd;
+        }
+        QPushButton:focus {
+            border-color: #42c8bd;
+        }
+
+        QPushButton#primaryAction {
+            background: #42c8bd;
+            color: #102320;
+            border-color: #42c8bd;
+            font-weight: 600;
+        }
+        QPushButton#primaryAction:hover {
+            background: #69d8cf;
+        }
+        QPushButton#primaryAction:pressed {
+            background: #2ca79e;
+        }
+        QPushButton#primaryAction:focus {
+            border-color: #e8edf4;
+        }
+
+        QPushButton:disabled, QPushButton#primaryAction:disabled {
+            background: #242b35;
+            color: #798596;
+            border-color: #303947;
+        }
+
+        QLineEdit, QPlainTextEdit, QListWidget {
+            background: palette(base);
+            color: palette(text);
+            border: 1px solid #354050;
+            border-radius: 6px;
+            padding: 6px;
+            selection-background-color: palette(highlight);
+            selection-color: palette(highlighted-text);
+        }
+        QLineEdit:focus, QPlainTextEdit:focus, QListWidget:focus {
+            border-color: #42c8bd;
+        }
+        QListWidget::item {
+            padding: 6px;
+            border-radius: 4px;
+        }
+        QListWidget::item:hover {
+            background: #2b3745;
+        }
+        QListWidget::item:selected {
+            background: #42c8bd;
+            color: #102320;
+        }
+
+        QTabWidget::pane {
+            border: 1px solid #354050;
+            border-radius: 6px;
+        }
+        QTabBar::tab {
+            padding: 8px 12px;
+            margin-right: 3px;
+            background: #242c37;
+            color: #aab7c8;
+        }
+        QTabBar::tab:selected {
+            background: #334252;
+            color: #e8edf4;
+        }
+        QTabBar::tab:focus {
+            border: 1px solid #42c8bd;
+        }
+
+        QLabel#inspectorHeading {
+            color: #e8edf4;
+            font-weight: 600;
+            padding-top: 4px;
+        }
+        QLabel#inspectorHint {
+            color: #94e3b8;
+        }
+        QComboBox#inspectorLayers {
+            background: #29323e;
+            color: #e8edf4;
+            border: 1px solid #3b4656;
+            border-radius: 6px;
+            padding: 7px 10px;
+            min-height: 20px;
+        }
+        QComboBox#inspectorLayers:hover, QComboBox#inspectorLayers:focus {
+            border-color: #42c8bd;
+        }
+        QComboBox#inspectorLayers:disabled {
+            background: #242b35;
+            color: #798596;
+            border-color: #303947;
+        }
+        QComboBox#inspectorLayers QAbstractItemView {
+            background: #202630;
+            color: #e8edf4;
+            border: 1px solid #3b4656;
+            selection-background-color: #42c8bd;
+            selection-color: #102320;
+            padding: 4px;
+        }
+        QListWidget#textureCards::item {
+            background: #262e39;
+            border: 1px solid #354050;
+            border-radius: 6px;
+            padding: 8px;
+        }
+        QListWidget#textureCards::item:hover {
+            background: #2b3745;
+        }
+        QListWidget#textureCards::item:selected {
+            background: #223e40;
+            border-color: #42c8bd;
+            color: #e8edf4;
+        }
+
+        QCheckBox {
+            spacing: 8px;
+            padding: 3px;
+        }
+        QSplitter::handle {
+            background: #181c22;
+        }
+        QSplitter::handle:hover {
+            background: #42c8bd;
+        }
+        QStatusBar {
+            border-top: 1px solid #303947;
+        }
+        QStatusBar::item  {
+            border: none;
+        }
+    """)
+
 def main():
     developer_mode = "--dev" in sys.argv[1:]
     sys.argv = [
@@ -850,6 +1132,7 @@ def main():
     app.setStyle("Fusion")
     app.setWindowIcon(QIcon(str(resource_directory() / "docs" / "images" / "app.ico")))
     window = MainWindow(developer_mode=developer_mode)
+    apply_modern_theme(app, window)
     window.show()
     return app.exec()
 

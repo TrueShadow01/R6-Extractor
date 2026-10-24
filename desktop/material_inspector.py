@@ -6,7 +6,11 @@ from urllib.parse import unquote
 
 from PySide6.QtCore import QSize
 from PySide6.QtGui import QIcon, QImageReader, QPixmap
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QPlainTextEdit, QListWidget, QListWidgetItem, QComboBox
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QPlainTextEdit,
+    QListWidget, QListWidgetItem, QComboBox,
+    QLabel
+)
 
 class MaterialInspector(QWidget):
     def __init__(self, preview, parent=None):
@@ -14,26 +18,44 @@ class MaterialInspector(QWidget):
         self.preview = preview
         self.cached_root = None
         self.documents = []
+        self.capture_id = None
 
         self.details = QPlainTextEdit()
-        self.capture_id = None
+        self.details.setReadOnly(True)
+        self.details.setPlaceholderText("Load a preview, then Shift-click a model surface.")
+
         self.layer_choices = QComboBox()
-        self.layer_choices.setPlaceholderText("Shift-click to capture layers")
+        self.layer_choices.setObjectName("inspectorLayers")
+        self.layer_choices.setPlaceholderText("No surface selected")
+        self.layer_choices.setMinimumContentsLength(16)
+        self.layer_choices.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
         self.layer_choices.setEnabled(False)
         self.layer_choices.currentIndexChanged.connect(self.choose_layer)
-        self.details.setReadOnly(True)
-        self.details.setPlaceholderText("Load a preview then Shift-click a surface.")
 
         self.textures = QListWidget()
-        self.textures.setIconSize(QSize(128, 128))
+        self.textures.setObjectName("textureCards")
+        self.textures.setIconSize(QSize(96, 96))
         self.textures.setWordWrap(True)
-        self.textures.setSpacing(6)
+        self.textures.setSpacing(4)
+
+        hint = QLabel("Shift-click a surface to inspect its material and textures.")
+        hint.setObjectName("inspectorHint")
+        hint.setWordWrap(True)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self.details, 2)
-        layout.addWidget(self.layer_choices)
-        layout.addWidget(self.textures, 3)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(8)
+        layout.addWidget(hint)
+
+        for title, widget, stretch in (
+            ("Surface layer", self.layer_choices, 0),
+            ("Material properties", self.details, 2),
+            ("Textures", self.textures, 3)
+        ):
+            heading = QLabel(title)
+            heading.setObjectName("inspectorHeading")
+            layout.addWidget(heading)
+            layout.addWidget(widget, stretch)
 
     def choose_layer(self, index):
         if index < 0 or self.capture_id is None:

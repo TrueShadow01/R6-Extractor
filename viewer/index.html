@@ -4,6 +4,16 @@
         <meta charset="utf-8">
         <title>R6 Preview</title>
         <style>
+            :root {
+                color-scheme: dark;
+                font: 13px / 1.45 "Segoe UI", sans-serif;
+                color: #e8edf4;
+            }
+
+            * {
+                box-sizing: border-box;
+            }
+
             html, body {
                 margin: 0;
                 width: 100%;
@@ -13,41 +23,104 @@
 
             body {
                 background: #24282d;
-                color: #ddd;
-                font: 13px sans-serif;
             }
-            
+
             canvas {
                 display: block;
+            }
+
+            #toolbar {
+                position: absolute;
+                top: 12px;
+                left: 12px;
+                max-width: calc(100% - 24px);
+                z-index: 2;
+                display: flex;
+                flex-wrap: wrap;
+                gap: 6px;
+                padding: 6px;
+                border: 1px solid #354050;
+                border-radius: 10px;
+                background: rgba(24, 28, 34, 0.96);
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+            }
+
+            #toolbar button {
+                min-height: 34px;
+                padding: 7px 12px;
+                border: 1px solid #3b4656;
+                border-radius: 6px;
+                background: #29323e;
+                color: #e8edf4;
+                font: inherit;
+                cursor: pointer;
+            }
+
+            #toolbar button:hover:not(:disabled) {
+                background: #354152;
+                border-color: #607086;
+            }
+
+            #toolbar button:active:not(:disabled) {
+                background: #1c2530;
+            }
+
+            #toolbar button:focus-visible {
+                outline: 2px solid #42c8bd;
+                outline-offset: 2px;
+            }
+
+            #toolbar button:disabled {
+                background: #242b35;
+                border-color: #303947;
+                color: #798596;
+                cursor: default;
             }
 
             #status {
                 position: absolute;
                 left: 12px;
                 bottom: 12px;
+                max-width: calc(100% - 24px);
+                z-index: 1;
+                padding: 8px 12px;
+                border: 1px solid #354050;
+                border-radius: 8px;
+                background: rgba(24, 28, 34, 0.94);
+                color: #c7d2e1;
+                font-size: 12px;
+                overflow-wrap: anywhere;
                 pointer-events: none;
             }
 
-            #toolbar {
-                position: absolute;
-                left: 12px;
-                top: 12px;
-                z-index: 1;
-                display: flex;
-                gap: 8px;
+            #status[data-state] {
+                left: 50%;
+                top: 50%;
+                bottom: auto;
+                transform: translate(-50%, -50%);
+                width: 420px;
+                max-width: calc(100% - 32px);
+                padding: 24px;
+                border-radius: 12px;
+                background: #202630;
+                font-size: 14px;
             }
 
-            #toolbar button {
-                background: #343e40;
-                color: #ddd;
-                border: 1px solid #555;
-                padding: 6px 10px;
-                cursor: pointer;
+            #status[data-state]::before {
+                display: block;
+                margin-bottom: 10px;
+                color: #e8edf4;
+                font-size: 20px;
+                font-weight: 600;
+                content: "Loading model";
             }
 
-            #toolbar button:disabled {
-                opacity: 0.5;
-                cursor: default;
+            #status[data-state="error"] {
+                border-color: #b96f72;
+            }
+
+            #status[data-state="error"]::before {
+                content: "Preview could not load";
             }
         </style>
         <script type="importmap">
@@ -64,7 +137,29 @@
             <button id="frame">Frame Model</button>
             <button id="reload" disabled>Reload Preview</button>
         </div>
-        <div id="status">Loading preview...</div>
+        <div id="status" data-state="loading">Loading Geometry and Textures...</div>
+        <script>
+            (() => {
+                const status = document.querySelector("#status");
+
+                function fail(message) {
+                    status.dataset.state = "error";
+                    status.textContent = String(message);
+                }
+
+                window.addEventListener("error", event => {
+                    if (event.message) {
+                        fail(event.message);
+                    } else if (event.target?.tagName === "SCRIPT") {
+                        fail("A viewer script could not load. Check the log and try Load Preview again.");
+                    }
+                }, true);
+
+                window.addEventListener("unhandledrejection", event => {
+                    fail(event.reason);
+                });
+            });
+        </script>
         <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
         <script type="module" src="./preview.js"></script>
     </body>
