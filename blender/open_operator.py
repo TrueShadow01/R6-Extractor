@@ -107,7 +107,7 @@ def save_portable_blend(destination, args):
                 warning("Portable save failed", str(error))
             return None
 
-        bpy.app.timer.register(save_after_switch, first_interval=0.1)
+        bpy.app.timers.register(save_after_switch, first_interval=0.1)
     else:
         write_file()
 

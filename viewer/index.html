@@ -158,7 +158,7 @@
                 window.addEventListener("unhandledrejection", event => {
                     fail(event.reason);
                 });
-            });
+            })();
         </script>
         <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
         <script type="module" src="./preview.js"></script>
