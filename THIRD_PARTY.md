@@ -39,5 +39,4 @@ the binary release. Retain access to the corresponding dependency sources.
 
 ## Excluded components
 
-Rainbow Six Siege assets and the proprietary Oodle runtime are not
-distributed with this application.
+Rainbow Six Siege assets are not distributed with this application.
