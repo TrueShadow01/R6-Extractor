@@ -147,7 +147,3 @@ See [LICENSE](LICENSE) for the project license.
 Rainbow Six Siege and its assets belong to Ubisoft. Game assets are
 not distributed with this application. Bundled third-party components
 retain their own licences. See [THIRD_PARTY.md](THIRD_PARTY.md).
-
-## Other
-
-Feel free to join my Discord server [here](https://discord.com/invite/DtzjYhCsdb), if you have any questions or problems.
