@@ -7,7 +7,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import Qt, QUrl, QTimer
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QHBoxLayout,
     QLabel, QListWidget, QMessageBox,
@@ -229,7 +229,7 @@ class ReviewWindow(QWidget):
             )) + "</p>"
         )
         self.message.setText("Click a thumbnail to open it. Save after reviewing.")
-        self.apply_filters()
+        QTimer.singleShot(0, self.apply_filters)
 
     def open_image(self, url):
         from PySide6.QtGui import QDesktopServices
@@ -266,7 +266,7 @@ class ReviewWindow(QWidget):
         self.dirty = False
         self.operators.item(self.current).setText(self.label(record))
         self.message.setText("Saved to " + str(self.review_path))
-        self.apply_filters()
+        QTimer.singleShot(0, self.apply_filters)
         return True
 
     def closeEvent(self, event):
