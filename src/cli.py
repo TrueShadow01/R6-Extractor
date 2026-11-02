@@ -233,6 +233,8 @@ def command_index(args: argparse.Namespace) -> int:
         print(f"    Assets: {result.asset_count}")
         print(f"    Companion containers: {diagnostics.auxiliary_containers}")
         print(f"    Errors: {errors}")
+        for message, count in diagnostics.errors.items():
+            print(f"    {count} x {message}")
 
     print()
     print(f"Archives: {len(archives)}")

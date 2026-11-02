@@ -126,7 +126,7 @@ def scan_archive(path: str | Path, diagnostics: ScanDiagnostics | None = None) -
                 raise
             except Exception as error:
                 diagnostics.metadata_errors += 1
-                diagnostics.add_error("metadata", error)
+                diagnostics.add_error(f"metadata at 0x{offset:X}", error)
                 continue
 
             diagnostics.assets += 1
