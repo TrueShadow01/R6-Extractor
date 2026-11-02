@@ -35,7 +35,7 @@ from src.material import (
     resolve_material_texture_sets,
     scan_nested_entries
 )
-from src.mesh import read_mesh_with_islands, MeshIsland
+from src.mesh import read_mesh_with_islands, MeshIsland, read_vertex_alpha
 from src.parser import (
     map_archive,
     read_container
@@ -140,6 +140,7 @@ class MeshPart:
     joints: tuple[tuple[int, ...], ...] = ()
     weights: tuple[tuple[float, ...], ...] = ()
     binding: MeshBinding | None = None
+    vertex_alpha: tuple[float, ...] = ()
 
 @dataclass(frozen=True)
 class ModelExportResult:
@@ -1000,7 +1001,8 @@ def decode_mesh_parts(records: Iterable[AssetRecord], bindings: Mapping[int, Mes
                 tangents=tangents,
                 joints=joints,
                 weights=weights,
-                binding=binding
+                binding=binding,
+                vertex_alpha=read_vertex_alpha(payload)
             )
         )
 

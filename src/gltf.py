@@ -500,6 +500,7 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
                 )
 
         primitives = []
+        alpha_accessor = None
 
         for island_index, (material_id, island_faces) in enumerate(island_groups):
             if material_id < 0:
@@ -513,6 +514,33 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
 
             if indices and max(indices) >= len(part.vertices):
                 raise ValueError(f"Part {part.uid:016X} island {island_index} contains an out of range face index")
+
+            color_attributes = {}
+            if material_textures is not None and material_id < len(material_textures) and material_textures[material_id].shader_uid == 0x0000002B188360D9:
+                alpha = getattr(part, "vertex_alpha", ())
+
+                if len(alpha) != len(part.vertices) or any(
+                    not math.isfinite(value) or not 0.0 <= value <= 1.0
+                    for value in alpha
+                ):
+                    raise ValueError(f"Eye overlay {part.uid:016X} has no valid source vertex alpha")
+            
+                if alpha_accessor is None:
+                    colors = [
+                        component
+                        for value in alpha
+                        for component in (1.0, 1.0, 1.0, value)
+                    ]
+                    alpha_accessor = add_accessor(
+                        pack_floats(colors),
+                        target=ARRAY_BUFFER,
+                        component_type=FLOAT,
+                        count=len(alpha),
+                        value_type="VEC4",
+                        name=f"{prefix}_eye_vertex_alpha"
+                    )
+
+                color_attributes["COLOR_0"] = alpha_accessor
 
             index_accessor = add_accessor(pack_unsigned_ints(indices), target=ELEMENT_ARRAY_BUFFER, component_type=UNSIGNED_INT, count=len(indices), value_type="SCALAR", name=f"{prefix}_island_{island_index}_indices")
 
@@ -528,6 +556,7 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
                             else {}
                         ),
                         **skin_attributes,
+                        **color_attributes
                     },
                     "indices": index_accessor,
                     "material": material_id,

@@ -205,6 +205,30 @@ def read_tangent_frame(payload, normal_offset, num_vertices):
 
     return normals, tangents
 
+def read_vertex_alpha(payload):
+    """Decode source vertex alpha for the float, eight-weight layout."""
+    start = payload.find(COMPILED_MESH)
+    if start < 0:
+        raise ValueError("Not a mesh payload")
+
+    fields = struct.unpack_from("<20I", payload, start + 4)
+    vertex_size, vertex_bytes = fields[3], fields[4]
+    if vertex_size != 0x2C:
+        return ()
+    if vertex_bytes % vertex_size:
+        raise ValueError("Invalid vertex block size")
+
+    count = vertex_bytes // vertex_size
+    # float positions (12), normal (4), tangent (4), binormal
+    offset = start + 84 + count * 20
+    if offset + count * 4 > len(payload):
+        raise ValueError("Truncated vertex-alpha block")
+
+    return tuple(
+        payload[offset + index * 4 + 3] / 255.0
+        for index in range(count)
+    )
+
 def read_mesh_with_islands(payload):
     mPayload = payload.find(COMPILED_MESH)
     if mPayload == -1:
