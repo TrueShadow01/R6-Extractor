@@ -70,8 +70,11 @@ def check_model(path):
             issues.append("Missing resource: " + candidate.name)
             continue
 
-        stat = candidate.stat()
-        signatures.append((candidate.name, stat.st_size, stat.st_mtime_ns))
+        digets = hashlib.sha256()
+        with candidate.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digets.update(chunk)
+        signatures.append((candidate.relative_to(path.parent.resolve()).as_posix(), digets.hexdigest()))
         if is_image:
             try:
                 with Image.open(candidate) as image:

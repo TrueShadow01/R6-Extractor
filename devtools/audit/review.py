@@ -119,13 +119,17 @@ class ReviewWindow(QWidget):
         self.apply_filters()
 
     def fingerprint(self, record):
+        capture = self.captures.get(record["uid"], {})
         identity = {
-            "cache_key": record.get("cache_key"),
             "models": [
-                (model["model"], model["fingerprint"])
+                (Path(model["model"]).name, model["fingerprint"])
                 for model in record.get("models", [])
             ],
-            "images": self.captures.get(record["uid"], {}).get("images", [])
+            "images": [
+                (Path(filename).parent.name, Path(filename).name)
+                for filename in capture.get("images", [])
+            ],
+            "capture_error": capture.get("error", "")
         }
         return hashlib.sha256(json.dumps(identity, sort_keys=True).encode("utf-8")).hexdigest()
 
@@ -160,7 +164,7 @@ class ReviewWindow(QWidget):
                         or self.review_status(record) == status
                     )
                 )
-                self.operators.item(row).setHidden(not visible)
+                self.operators.item(row).setHidden(not (visible or row == self.current))
                 matches += int(visible)
                 if row == self.current:
                     current_visible = visible

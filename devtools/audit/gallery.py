@@ -60,9 +60,8 @@ class GalleryCapture(PreviewWidget):
             identity = [
                 CAPTURE_VERSION,
                 self.viewer_hash,
-                record["cache_key"],
                 [
-                    (model["model"], model["fingerprint"])
+                    (Path(model["model"]).name, model["fingerprint"])
                     for model in record["models"]
                 ]
             ]
