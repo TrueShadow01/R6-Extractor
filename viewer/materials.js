@@ -99,7 +99,7 @@ export function applySiegeMaterials(gltf) {
                         float siegeDistance = length((vMapUv - vec2(0.75, 0.5)) * vec2(2.0, 1.0));
                         float siegeIrisMask = clamp((siegeIrisRadius - siegeDistance) / 0.01, 0.0, 1.0);
 
-                        vec3 siegeSclera = mix(siegeScleraBlack, siegeScleraWhite, siegeEye.g);
+                        vec3 siegeSclera = mix(siegeScleraBlack, siegeScleraWhite, siegeEye.r);
                         vec3 siegeIris = mix(siegeIrisBlack, siegeIrisWhite, siegeEye.r) * siegeEye.a;
 
                         diffuseColor.rgb = mix(siegeSclera, siegeIris, siegeIrisMask);

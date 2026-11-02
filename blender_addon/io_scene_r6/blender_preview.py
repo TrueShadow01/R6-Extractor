@@ -457,7 +457,7 @@ def apply_siege_materials(gltf_path: Path, *, materials=None) -> None:
             channels = nodes.new("ShaderNodeSeparateColor")
             links.new(texture.outputs["Color"], channels.inputs["Color"])
 
-            sclera = mix("Sclera tint", channels.outputs["Green"], color("ScleraColorBlack"), color("ScleraColorWhite"))
+            sclera = mix("Sclera tint", channels.outputs["Red"], color("ScleraColorBlack"), color("ScleraColorWhite"))
             iris = mix("Iris tint", channels.outputs["Red"], color("IrisColorBlack"), color("IrisColorWhite"))
             pupil = mix("Pupil / iris detail", texture.outputs["Alpha"], (0, 0, 0, 1), (1, 1, 1, 1),)
             links.new(iris.outputs[0], pupil.inputs[2])
