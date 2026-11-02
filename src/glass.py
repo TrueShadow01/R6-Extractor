@@ -4,6 +4,8 @@ import struct
 from dataclasses import replace
 
 GLASS_PROFILES = {
+    # Castle: black, opaque visor
+    (0x0000000841DC11F9, 0x0000000A1C33B4E0): (1.0, 0.08, 1.5),
     # Shared clear lenses including Blitz, Sledge and Ace's lamp
     (0x000000003BD13B9E, 0x00000001134CB4E0): (0.12, 0.08, 1.5),
     # Individually identified, untextured lens materials
@@ -152,6 +154,10 @@ def apply_optical_preview(material, slot):
         pbr["baseColorFactor"][3] = profile[0]
         pbr["metallicFactor"] = 0.0
         pbr["roughnessFactor"] = profile[1]
+
+        if (shader, slot.material_uid) == (0x0000000841DC11F9, 0x0000000A1C33B4E0):
+            pbr["baseColorFactor"][:3] = [channel * 0.04 for channel in pbr["baseColorFactor"][:3]]
+            extras["siegeOpticalApproximation"] += (" Castle opaque black tint is a approximation.")
 
         if isolated is not None and shader == 0x0000000099E2C947 and slot.material_uid == 0x0000000B0BABF6F7:
             # Zofia: lens-only tint
