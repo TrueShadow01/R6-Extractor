@@ -307,8 +307,8 @@ def load_asset_index(database: str | Path, uids: set[int]) -> AssetIndex:
                     assets.name_hash,
                     assets.flags,
                     assets.data_offset,
-                    archives.path AS archive_path
-                    archives.size AS archive_size
+                    archives.path AS archive_path,
+                    archives.size AS archive_size,
                     archives.modified_ns AS archive_modified_ns
                 FROM assets
                 JOIN archives
