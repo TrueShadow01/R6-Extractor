@@ -289,6 +289,7 @@ def load_asset_index(database: str | Path, uids: set[int]) -> AssetIndex:
     connection.row_factory = sqlite3.Row
 
     try:
+        checked_archives = set()
         batch_size = 500
 
         for start in range(0, len(requested), batch_size):
@@ -307,6 +308,8 @@ def load_asset_index(database: str | Path, uids: set[int]) -> AssetIndex:
                     assets.flags,
                     assets.data_offset,
                     archives.path AS archive_path
+                    archives.size AS archive_size
+                    archives.modified_ns AS archive_modified_ns
                 FROM assets
                 JOIN archives
                     ON archives.id = assets.archive_id
@@ -320,6 +323,18 @@ def load_asset_index(database: str | Path, uids: set[int]) -> AssetIndex:
             )
 
             for row in rows:
+                archive = Path(row["archive_path"])
+                if archive not in checked_archives:
+                    try:
+                        stat = archive.stat()
+                    except OSError as error:
+                        raise ValueError(f"Cannot validate indexed archive {archive}: {error}") from error
+
+                    if stat.st_size != row["archive_size"] or stat.st_mtime_ns != row["archive_modified_ns"]:
+                        raise ValueError(f"Asset Index is outdated for {archive}. Open Settings -> Build / Update Asset Index and retry.")
+
+                    checked_archives.add(archive)
+
                 uid = int(row["uid"], 16)
                 name_hash = bytes(row["name_hash"])
 
