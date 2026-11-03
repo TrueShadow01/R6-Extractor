@@ -893,6 +893,11 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
                 if all(math.isfinite(value) and 0.0 <= value <= 1.0 for value in candidate):
                     solid_color = candidate
 
+        # Glaz bandana: source header color, approximate texture modulation
+        if (material_uid, shader_uid) == (0x0000000A8715F23D, 0x0000000099E2C947) and roles.get(DIFFUSE_ROLE) and material_start + 28 <= material_entry.end:
+            candidate = struct.unpack_from("<4f", payload, material_start + 12)
+            if all(math.isfinite(value) and 0.0 <= value <= 1.0 for value in candidate):
+                solid_color = candidate
 
         resolved_materials[material_uid] = MaterialTextureSet(
             diffuse_uids=roles.get(DIFFUSE_ROLE, ()),

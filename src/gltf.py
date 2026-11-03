@@ -802,6 +802,10 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
                 "Source A/B colors. Approximate legacy tint blending."
             )
 
+        if slot_textures.material_uid == 0x0000000A8715F23D and slot_textures.shader_uid == 0x0000000099E2C947 and slot_textures.solid_color is not None:
+            material["name"] = "_Approx_Source_Color"
+            extras["siegeMaterialApproximation"] = ("Source header color. Approximate multiplication with the bandana texture")
+
         if slot_textures.specular:
             extras["siegePackedMaterialTexture"] = slot_textures.specular
 
