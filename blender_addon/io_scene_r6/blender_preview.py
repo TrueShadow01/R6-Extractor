@@ -167,7 +167,7 @@ def apply_clothing_preview(material, spec, document, gltf_path):
     if pattern_sources:
         coordinates = nodes.new("ShaderNodeTexCoord")
         uv_channels = nodes.new("ShaderNodeSeparateXYZ")
-        links.new(coordinates.output["UV"], uv_channels.inputs["Vector"])
+        links.new(coordinates.outputs["UV"], uv_channels.inputs["Vector"])
         source_u = uv_channels.outputs["X"]
         source_v = math_node("SUBTRACT", 1.0, uv_channels.outputs["Y"])
         pattern = None
@@ -182,7 +182,7 @@ def apply_clothing_preview(material, spec, document, gltf_path):
                 scale_u, scale_v, degrees = transform
                 if index != 0:
                     u = math_node("MULTIPLY", u, scale_u)
-                    u = math_node("MULTIPLY", v, scale_v)
+                    v = math_node("MULTIPLY", v, scale_v)
 
                 u = math_node("SUBTRACT", u, 0.5)
                 v = math_node("SUBTRACT", v, 0.5)
@@ -203,7 +203,7 @@ def apply_clothing_preview(material, spec, document, gltf_path):
                 links.new(transformed_uv.outputs[0], texture.inputs["Vector"])
                 sample = texture.outputs["Color"]
 
-            weighted = nodes.new("ShaderNodeCombineXYZ")
+            weighted = nodes.new("ShaderNodeVectorMath")
             weighted.operation = "SCALE"
             links.new(sample, weighted.inputs[0])
             weight = weights[index]
@@ -215,7 +215,7 @@ def apply_clothing_preview(material, spec, document, gltf_path):
             if pattern is None:
                 pattern = weighted.outputs["Vector"]
             else:
-                summed = nodes.new("shaderNodeVectorMath")
+                summed = nodes.new("ShaderNodeVectorMath")
                 summed.operation = "ADD"
                 links.new(pattern, summed.inputs[0])
                 links.new(weighted.outputs["Vector"], summed.inputs[1])
@@ -264,7 +264,7 @@ def layout_materials_safely(materials):
 
     if failed and not bpy.app.background:
         def draw(menu, context):
-            menu.layout.label(text="Import continued. Some nodes could node be arranged.")
+            menu.layout.label(text="Import continued. Some nodes could not be arranged.")
             for name in failed[:5]:
                 menu.layout.label(text=name)
             if len(failed) > 5:

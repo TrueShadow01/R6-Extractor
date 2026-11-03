@@ -41,7 +41,7 @@ export async function applySiegeClothing(gltf, modelUrl) {
         const layerNames = ["MaskRed", "MaskGreen", "MaskBlue"].slice(0, alphaLayers ? 2 : 3);
         const patternSources = layerNames.map(name => {
             const constant = values[name + "_PatternConstant"];
-            const filename = extras.getShaderTextures?.[name + "_Pattern"];
+            const filename = extras.siegeShaderTextures?.[name + "_Pattern"];
             const uv = values[name + "_UV"];
             const validConstant = Array.isArray(constant) && constant.length === 3 && constant.every(value => Number.isFinite(value) && value >= 0 && value <= 1);
             const validUV = Array.isArray(uv) && uv.length === 3 && uv.every(Number.isFinite);
@@ -52,10 +52,10 @@ export async function applySiegeClothing(gltf, modelUrl) {
         const patternUniforms = {};
         let patternDeclarations = "";
         let patternExpression = "";
-        const patternKey = patternsReady ? patternsReady.map(source => source.constant ? "c" : "t").join("") : "none";
+        const patternKey = patternsReady ? patternSources.map(source => source.constant ? "c" : "t").join("") : "none";
 
         if (patternsReady) {
-            const expression = [];
+            const expressions = [];
             for (const [index, source] of patternSources.entries()) {
                 const name = `siegeClothPattern${index}`;
                 if (source.constant) {

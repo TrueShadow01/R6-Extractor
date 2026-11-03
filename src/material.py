@@ -614,7 +614,7 @@ def read_clothing_preview_patterns(material_blob):
                 index=0,
                 name=f"Mask{layer}_PatternConstant",
                 uniform_type=1,
-                values=(128.0 / 255.0) * 3
+                values=(128.0 / 255.0,) * 3
             ))
         elif spec_uid:
             patterns.append((f"Mask{layer}_Pattern", spec_uid))
@@ -905,6 +905,7 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
                         role=texture_role,
                         spec_uid=spec_uid,
                         texture_map_uid=texture_map_uid,
+                        texture_uids=compile_uids,
                         source="shader",
                         shader_binding=binding
                     ))

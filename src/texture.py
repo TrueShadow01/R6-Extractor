@@ -5,7 +5,7 @@ import io
 import math
 from PIL import Image, ImageMath
 
-POW2 = {1, 2, 4, 7, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096}
+POW2 = {1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096}
 TEXMAPDATA_MAGIC = bytes.fromhex("3d4b0cc3")
 
 # Siege texture format code (DXGI format, bytes per 4x4 block)
