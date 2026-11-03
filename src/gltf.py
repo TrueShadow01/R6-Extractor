@@ -8,7 +8,7 @@ import json
 import math
 import struct
 import zlib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Iterable, Protocol, Sequence
 
@@ -707,6 +707,15 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
             slot_textures = material_textures[material_id]
         else:
             slot_textures = fallback_textures
+
+        if model_uid == 0x000000156B734198 and slot_textures.material_uid == 0x00000001134CB4E0 and slot_textures.shader_uid == 0x000000003BD13B9E:
+            slot_textures = replace(
+                slot_textures,
+                shader_uniforms=(
+                    *slot_textures.shader_uniforms,
+                    ("ExperimentalGlassLensV1", (0.60, 0.08, 1.5))
+                )
+            )
 
         pbr = {
             "baseColorFactor": list(
