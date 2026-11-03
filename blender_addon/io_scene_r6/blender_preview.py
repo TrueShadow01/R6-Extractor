@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 import bpy
 import json
+import math
 from pathlib import Path
 from mathutils import Vector
 
@@ -71,6 +72,25 @@ def apply_clothing_preview(material, spec, document, gltf_path):
     names = ("MaskRed_Color", "MaskGreen_Color", "MaskBlue_Color")
     if any(name not in uniforms for name in names):
         raise ValueError("Re-export this model with clothing color properties")
+
+    layer_names = ("MaskRed", "MaskGreen") if alpha_layers else ("MaskRed", "MaskGreen", "MaskBlue")
+    pattern_sources = []
+    for name in layer_names:
+        constant = uniforms.get(name + "_PatternConstant")
+        filename = extras.get("siegeShaderTextures", {}).get(name + "_Pattern")
+        uv = uniforms.get(name + "_UV")
+        valid_constant = (
+            isinstance(constant, (list, tuple)) and len(constant) == 3
+            and all(isinstance(v, (int, float)) and math.isfinite(v) and 0.0 <= v <= 1.0 for v in constant)
+        )
+        valid_uv = (
+            isinstance(uv, (list, tuple)) and len(uv) == 3
+            and all(isinstance(v, (int, float)) and math.isfinite(v) for v in uv)
+        )
+        if not valid_uv or not (valid_constant or isinstance(filename, str) and filename):
+            pattern_sources = []
+            break
+        pattern_sources.append((constant if valid_constant else None, filename, uv))
 
     nodes = material.node_tree.nodes
     links = material.node_tree.links
@@ -143,12 +163,84 @@ def apply_clothing_preview(material, spec, document, gltf_path):
         gain = math_node("ADD", 1.0, math_node("MULTIPLY", math_node("MULTIPLY", strength, 2.0), math_node("SUBTRACT", weighted, 0.5)))
         links.new(gain, factor.inputs[channel])
 
+    cloth_base = diffuse.outputs["Color"]
+    if pattern_sources:
+        coordinates = nodes.new("ShaderNodeTexCoord")
+        uv_channels = nodes.new("ShaderNodeSeparateXYZ")
+        links.new(coordinates.output["UV"], uv_channels.inputs["Vector"])
+        source_u = uv_channels.outputs["X"]
+        source_v = math_node("SUBTRACT", 1.0, uv_channels.outputs["Y"])
+        pattern = None
+
+        for index, (constant, filename, transform) in enumerate(pattern_sources):
+            if constant is not None:
+                color = nodes.new("ShaderNodeRGB")
+                color.outputs[0].default_value = (*constant, 1.0)
+                sample = color.outputs[0]
+            else:
+                u, v = source_u, source_v
+                scale_u, scale_v, degrees = transform
+                if index != 0:
+                    u = math_node("MULTIPLY", u, scale_u)
+                    u = math_node("MULTIPLY", v, scale_v)
+
+                u = math_node("SUBTRACT", u, 0.5)
+                v = math_node("SUBTRACT", v, 0.5)
+                c, s = math.cos(math.radians(degrees)), math.sin(math.radians(degrees))
+                rotated_u = math_node("SUBTRACT", math_node("MULTIPLY", u, c), math_node("MULTIPLY", v, s))
+                rotated_v = math_node("ADD", math_node("MULTIPLY", u, s), math_node("MULTIPLY", v, c))
+                u = math_node("ADD", rotated_u, 0.5)
+                v = math_node("ADD", rotated_v, 0.5)
+
+                if index == 0:
+                    u = math_node("MULTIPLY", u, scale_u)
+                    v = math_node("MULTIPLY", v, scale_v)
+
+                transformed_uv = nodes.new("ShaderNodeCombineXYZ")
+                links.new(u, transformed_uv.inputs["X"])
+                links.new(math_node("SUBTRACT", 1.0, v), transformed_uv.inputs["Y"])
+                texture = image_node(filename, "Non-Color")
+                links.new(transformed_uv.outputs[0], texture.inputs["Vector"])
+                sample = texture.outputs["Color"]
+
+            weighted = nodes.new("ShaderNodeCombineXYZ")
+            weighted.operation = "SCALE"
+            links.new(sample, weighted.inputs[0])
+            weight = weights[index]
+            if isinstance(weight, (int, float)):
+                weighted.inputs["Scale"].default_value = weight
+            else:
+                links.new(weight, weighted.inputs["Scale"])
+
+            if pattern is None:
+                pattern = weighted.outputs["Vector"]
+            else:
+                summed = nodes.new("shaderNodeVectorMath")
+                summed.operation = "ADD"
+                links.new(pattern, summed.inputs[0])
+                links.new(weighted.outputs["Vector"], summed.inputs[1])
+                pattern = summed.outputs["Vector"]
+
+        overlay = nodes.new("ShaderNodeMixRGB")
+        overlay.blend_type = "OVERLAY"
+        overlay.inputs[0].default_value = 1.0
+        # OVERLAY branches on its first color, game branches on pattern
+        links.new(pattern, overlay.inputs[1])
+        links.new(cloth_base, overlay.inputs[2])
+
+        pattern_blend = nodes.new("ShaderNodeMixRGB")
+        pattern_blend.blend_type = "MIX"
+        links.new(strength, pattern_blend.inputs[0])
+        links.new(cloth_base, pattern_blend.inputs[1])
+        links.new(overlay.outputs[0],pattern_blend.inputs[2])
+        cloth_base = pattern_blend.outputs[0]
+
     blend = nodes.new("ShaderNodeMixRGB")
     blend.name = "Siege Clothing Preview"
     blend.blend_type = "MULTIPLY"
     blend.use_clamp = True
     blend.inputs[0].default_value = 1.0
-    links.new(diffuse.outputs["Color"], blend.inputs[1])
+    links.new(cloth_base, blend.inputs[1])
     links.new(factor.outputs["Vector"], blend.inputs[2])
 
     gamma = nodes.new("ShaderNodeGamma")
