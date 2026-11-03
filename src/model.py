@@ -521,9 +521,11 @@ def resolve_fitted_head_frames(bindings):
     """Align inspected fitted head parts using their src bind frames"""
     resolved = dict(bindings)
 
-    for guest_id, host_id, count, fitted_shoulders in (
-        (0x5978C88BFD, 0x5978C88BF6, 47, {0x416FDA92, 0xF9872CD6}),
-        (0x62FFE76CD8, 0x62FFE76CBD, 80, set()),
+    for guest_id, host_id, count, fitted_shoulders, frame_tolerance in (
+        (0x5978C88BFD, 0x5978C88BF6, 47, {0x416FDA92, 0xF9872CD6}, 1e-4),
+        (0x62FFE76CD8, 0x62FFE76CBD, 80, set(), 1e-4),
+        # IQ: source bind frames agree within 0.26mm
+        (0x9D00E171B, 0x9D00E170A, 22, set(), 3e-4)
     ):
         guest = resolved.get(guest_id)
         host = resolved.get(host_id)
@@ -565,7 +567,7 @@ def resolve_fitted_head_frames(bindings):
                 matches = max(
                     abs(a - b)
                     for a, b in zip(correction, delta)
-                ) <= 1e-4
+                ) <= frame_tolerance
 
             if not matches:
                 raise ValueError("Head attachment source frames disagree")
