@@ -563,6 +563,64 @@ def read_clothing_preview_colors(material_blob):
 
     return tuple(result)
 
+def read_clothing_preview_patterns(material_blob):
+    """Read source pattern references and UV transforms for shader 1397A32F38"""
+    prefix = struct.pack("<IQHIH", 28, 0xB89D11A6, 0, 13, 0)
+    start = material_blob.find(prefix)
+    if start < 0:
+        return (), ()
+
+    keys = (
+        (0xB89D11A6, 0x8C9802AD5CC18D4A, 0x03A322F5, 0xEA47F3F7, 0x2E4B1B11, 0xD69C93D8, 0x2FF77BD1, 0x8C9802AD26B0A71D, 0x621DBE76),
+        (0xDA050C32, 0x8C9802AD88579D79, 0xEA7F8337, 0xB25A3C99, 0x036BCA72, 0xF4A27D27, 0x0DC9952E, 0x8C9802ADD1B0685D, 0x3A007118),
+        (0x5A5F42A7, 0x8C9802AD9F0FCEAF, 0xCF7FF6B8, 0x2E2E18AE, 0xEC865FEC, 0xCC27C964, 0x354C216D, 0x8C9802AD515555D8, 0xA674552F)
+    )
+    kinds = (13, 28, 10, 10, 10, 10, 10, 28, 10)
+    cursor = start + 4
+    uniforms = []
+    patterns = []
+
+    for layer, layer_keys in zip(("Red", "Green", "Blue"), keys):
+        fields = []
+        for key, kind in zip(layer_keys, kinds):
+            fmt = {13: "<4f", 28: "<Q", 10: "<f"}[kind]
+            size = struct.calcsize(fmt)
+            if cursor + 16 + size > len(material_blob):
+                raise ValueError("Truncated clothing pattern properties")
+            if struct.unpack_from("<QHIH", material_blob, cursor) != (key, 0, kind, 0):
+                raise ValueError("Unexpected clothing pattern property layout")
+
+            fields.append(struct.unpack_from(fmt, material_blob, cursor + 16))
+            cursor += 16 + size
+
+        uv = tuple(fields[index][0] for index in (2, 3, 4))
+        if not all(math.isfinite(value) for value in uv):
+            raise ValueError("Invalid clothing pattern UV transform")
+
+        uniforms.append(ShaderUniform(
+            owner_uid=SOLID_COSMETIC_SHADER,
+            index=0,
+            name=f"Mask{layer}_UV",
+            uniform_type=1,
+            values=uv
+        ))
+
+        spec_uid = fields[1][0]
+        if spec_uid == 0x0000000119CC47A7:
+            # Source spec -> map 119CC47A9 -> compiled 359E631C7
+            # all 64 src pixels are RGBA (128, 128, 128, 255)
+            uniforms.append(ShaderUniform(
+                owner_uid=SOLID_COSMETIC_SHADER,
+                index=0,
+                name=f"Mask{layer}_PatternConstant",
+                uniform_type=1,
+                values=(128.0 / 255.0) * 3
+            ))
+        elif spec_uid:
+            patterns.append((f"Mask{layer}_Pattern", spec_uid))
+
+    return tuple(uniforms), tuple(patterns)
+
 def apply_eye_property_overrides(material_blob, uniforms):
     """Read the verified 12-property layout used by shader 557005948D"""
 
@@ -823,6 +881,34 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
             else:
                 roles.setdefault(texture_role, compile_uids)
 
+        clothing_uniforms = ()
+
+        if shader_uid == SOLID_COSMETIC_SHADER:
+            clothing_uniforms, clothing_patterns = read_clothing_preview_patterns(material_blob)
+            for binding, spec_uid in clothing_patterns:
+                spec_entry = spec_entries.get(spec_uid)
+                spec = read_texture_map_spec(payload, spec_entry) if spec_entry else None
+                if spec is None:
+                    continue
+
+                texture_role, texture_map_uid = spec
+                map_entry = texture_map_entries.get(texture_map_uid)
+                if map_entry is None:
+                    continue
+
+                compile_uids = referenced_uids(
+                    payload[map_entry.offset:map_entry.end],
+                    texture_uids
+                )
+                if compile_uids:
+                    selectors.append(MaterialTextureSelector(
+                        role=texture_role,
+                        spec_uid=spec_uid,
+                        texture_map_uid=texture_map_uid,
+                        source="shader",
+                        shader_binding=binding
+                    ))
+
         material_bindings = tuple(bindings_by_shader.get(shader_uid, ()))
         binding_names = {
             binding.name
@@ -858,7 +944,7 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
             )
 
         if shader_uid == SOLID_COSMETIC_SHADER:
-            material_uniforms += read_clothing_preview_colors(material_blob)
+            material_uniforms += (read_clothing_preview_colors(material_blob) + clothing_uniforms)
 
         if shader_uid == 0x000000557005948D:
             material_uniforms = apply_eye_property_overrides(material_blob, material_uniforms)
