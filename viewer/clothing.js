@@ -37,6 +37,47 @@ export async function applySiegeClothing(gltf, modelUrl) {
         const colors = names.map(name => new THREE.Vector3(...values[name].slice(0, 3)));
 
         const alphaLayers = values.ClothingMaskMode?.[0] === 0;
+
+        const layerNames = ["MaskRed", "MaskGreen", "MaskBlue"].slice(0, alphaLayers ? 2 : 3);
+        const patternSources = layerNames.map(name => {
+            const constant = values[name + "_PatternConstant"];
+            const filename = extras.getShaderTextures?.[name + "_Pattern"];
+            const uv = values[name + "_UV"];
+            const validConstant = Array.isArray(constant) && constant.length === 3 && constant.every(value => Number.isFinite(value) && value >= 0 && value <= 1);
+            const validUV = Array.isArray(uv) && uv.length === 3 && uv.every(Number.isFinite);
+            return validUV && (validConstant || typeof filename === "string" && filename.length > 0) ? {constant: validConstant ? constant : null, filename, uv} : null;
+        });
+
+        const patternsReady = patternSources.every(Boolean);
+        const patternUniforms = {};
+        let patternDeclarations = "";
+        let patternExpression = "";
+        const patternKey = patternsReady ? patternsReady.map(source => source.constant ? "c" : "t").join("") : "none";
+
+        if (patternsReady) {
+            const expression = [];
+            for (const [index, source] of patternSources.entries()) {
+                const name = `siegeClothPattern${index}`;
+                if (source.constant) {
+                    patternUniforms[name] = {value: new THREE.Vector3(...source.constant)};
+                    patternDeclarations += `uniform vec3 ${name};\n`;
+                    expressions.push(`siegeWeights[${index}] * ${name}`);
+                } else {
+                    const texture = await loader.loadAsync(new URL(source.filename, baseUrl).href);
+                    texture.flipY = false;
+                    texture.colorSpace = THREE.NoColorSpace;
+                    texture.wrapS = THREE.RepeatWrapping;
+                    texture.wrapT = THREE.RepeatWrapping;
+                    texture.needsUpdate = true;
+                    patternUniforms[name] = {value: texture};
+                    patternUniforms[name + "UV"] = {value: new THREE.Vector3(...source.uv)};
+                    patternDeclarations += `uniform sampler2D ${name};\nuniform vec3 ${name}UV;\n`;
+                    expressions.push(`siegeWeights[${index}] * texture2D(${name}, siegeClothingPatternUV(vMapUv, ${name}UV, ${index === 0 ? "true" : "false"})).rgb`);
+                }
+            }
+            patternExpression = expressions.join(" + ");
+        }
+
         let mask = null;
 
         if (!alphaLayers) {
@@ -71,14 +112,28 @@ export async function applySiegeClothing(gltf, modelUrl) {
                 }
             });
 
+            Object.assign(shader.uniforms, patternUniforms);
+
             shader.fragmentShader = `
+                ${patternDeclarations}
+                vec2 siegeClothingPatternUV(vec2 uv, vec3 transform, bool rotateFirst) {
+                    if (!rotateFirst) {
+                        uv *= transform.xy;
+                    }
+
+                    uv -= vec2(0.5);
+                    float angle = radians(transform.z);
+                    float c = cos(angle);
+                    float s = sin(angle);
+                    uv = vec2(c * uv.x - s * uv.y, s * uv.x + c * uv.y) + vec2(0.5);
+                    return rotateFirst ? uv * transform.xy : uv;
+                }
                 uniform sampler2D siegeClothMask;
                 uniform vec3 siegeClothRed;
                 uniform vec3 siegeClothGreen;
                 uniform vec3 siegeClothBlue;
             ` + shader.fragmentShader;
 
-            // Nyx leave white and black mask areas alone lol - Isaac
             shader.fragmentShader = shader.fragmentShader.replace(
                 "#include <map_fragment>",
                 `
@@ -101,13 +156,19 @@ export async function applySiegeClothing(gltf, modelUrl) {
                     siegeWeights.g * siegeClothGreen +
                     siegeWeights.b * siegeClothBlue;
 
+                ${patternsReady ? `
+                    vec3 siegePattern = ${patternExpression};
+                    vec3 siegeOverlay = mix(2.0 * diffuseColor.rgb * siegePattern, 1.0 - 2.0 * (1.0 - diffuseColor.rgb) * (1.0 - siegePattern), step(vec3(0.5), siegePattern));
+                    diffuseColor.rgb = mix(diffuseColor.rgb, siegeOverlay, siegeStrength);    
+                ` : ""}
+
                 vec3 siegeGain = vec3(1.0) + 2.0 * siegeStrength * (siegeColor - vec3(0.5));
                 diffuseColor.rgb = pow(clamp(diffuseColor.rgb * siegeGain, 0.0, 1.0), vec3(2.2));
                 `
             );
         };
 
-        material.customProgramCacheKey = () => `siege-clothing-v3-${alphaLayers ? "alpha" : "rgb"}`;
+        material.customProgramCacheKey = () => `siege-clothing-v4-${alphaLayers ? "alpha" : "rgb"}-${patternKey}`;
         material.needsUpdate = true;
     }
 }
