@@ -61,7 +61,13 @@ def _select_lens_faces(part, island, slot):
             return None
 
         faces = tuple(island.faces)
-        return faces[:3753] + faces[3889:], faces[3753:3889]
+
+        # 2 lens triangles occur earlier in the source index buffer
+        lens_indices = {52, 726, *range(3753, 3889)}
+        return (
+            tuple(face for index, face in enumerate(face) if index not in lens_indices),
+            tuple(face for index, face in enumerate(face) if index in lens_indices)
+        )
 
     region = LENS_REGIONS.get(key)
     if region is None:
