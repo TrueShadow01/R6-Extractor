@@ -157,7 +157,15 @@ def bake_tinted_material(slot, output_directory):
         return replace(
             slot,
             diffuse=filename,
-            solid_color=(1.0, 1.0, 1.0, 1.0),
+            solid_color=(
+                slot.solid_color
+                if slot.material_uid in {
+                    0x0000000995497897,
+                    0x0000000995497909,
+                    0x000000099549791D
+                } and slot.solid_color is not None
+                else (1.0, 1.0, 1.0, 1.0)
+            ),
             shader_textures=tuple(
                 item for item in slot.shader_textures if item[0] != "SourceAlbedo"
             ) + (("SourceAlbedo", source_name),),
