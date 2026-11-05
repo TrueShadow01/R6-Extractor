@@ -197,7 +197,7 @@ def prepare_preview(game, operator_uid, *, operator=None):
     with CacheLease():
         return _prepare_preview(game, operator_uid, operator=operator)
 
-CACHE_VERSION = 51
+CACHE_VERSION = 52
 
 def model_files_exist(model):
     """Check the glTF and its external buffers/images"""

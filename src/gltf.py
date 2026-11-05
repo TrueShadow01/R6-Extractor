@@ -821,6 +821,16 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
                 "Source A/B colors and head color. Approximate legacy tint and texture modulation."
             )
 
+        if slot_textures.material_uid == 0x00000043F942F4DD and slot_textures.shader_uid == 0x000000003051C028 and slot_textures.diffuse == "00000043F942F4BE.png":
+            material["alphaMode"] = "BLEND"
+            material.pop("alphaCutoff", None)
+            material["doubleSided"] = True
+            material["name"] += "_Approx_Hair_Coverage"
+            extras["siegeHairCoverageApproximationV1"] = True
+            extras["siegeMaterialApproximation"] = (
+                "Original texture alpha. Approximate hair coverage."
+            )
+
         if slot_textures.specular:
             extras["siegePackedMaterialTexture"] = slot_textures.specular
 

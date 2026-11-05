@@ -40,6 +40,13 @@ export async function applyExperimentalHair(gltf, modelUrl) {
                 hair.roughnessMap = null;
                 hair.anisotropy = 0.8; // Approximate environment highlights only
 
+                if (hair.userData.siegeHairCoverageApproximationV1 === true) {
+                    hair.transparent = false;
+                    hair.alphaTest = 0;
+                    hair.alphaHash = true;
+                    hair.depthWrite = true;
+                }
+
                 const gloss = THREE.MathUtils.clamp(1.035 - 1.15 * (1 - p[1]), 0, 1);
                 hair.roughness = Math.max(0.08, Math.pow(2 / (2 ** (19 * gloss) + 2), 0.25));
 

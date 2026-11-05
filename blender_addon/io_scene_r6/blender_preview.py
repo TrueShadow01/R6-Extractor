@@ -1181,6 +1181,9 @@ def apply_experimental_hair(material, principled, extras, gltf_path):
     if not isinstance(values, (list, tuple)) or len(values) != 8 or any(not isinstance(v, (int, float)) or not math.isfinite(v) for v in values) or not -3.0 <= values[0] <= 3.0 or any(not 0.0 <= v <= 1.0 for v in values[1:]):
         return False
 
+    if extras.get("siegeHairCoverageApproximationV1") is True:
+        material.surface_render_method = "DITHERED"
+
     nodes, links = material.node_tree.nodes, material.node_tree.links
     if nodes.get("Siege Experimental Hair"):
         return True
