@@ -8,7 +8,7 @@ Includes operator search, asset indexing, export, Blender 4.5 add-on installatio
 
 *Desktop interface showing Blitz in the interactive 3D preview.*
 
-[![Latest Release](https://img.shields.io/github/v/release/TrueShadow01/R6-Extractor?include_prereleases)](https://github.com/TrueShadow01/R6-Extractor/releases)
+[![Latest Release](https://img.shields.io/github/v/release/TrueShadow01/R6-Extractor)](https://github.com/TrueShadow01/R6-Extractor/releases)
 [![Downloads](https://img.shields.io/github/downloads/TrueShadow01/R6-Extractor/total)](https://github.com/TrueShadow01/R6-Extractor/releases)
 [![License](https://img.shields.io/github/license/TrueShadow01/R6-Extractor)](LICENSE)
 

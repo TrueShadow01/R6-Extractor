@@ -11,7 +11,7 @@ from .blender_preview import import_siege_model, connect_fk_head
 bl_info = {
     "name": "Rainbow Six Siege Operator Import",
     "author": "TrueShadow01",
-    "version": (0, 3, 0),
+    "version": (1, 0, 0),
     "blender": (4, 5, 0),
     "location": "File > Import > Rainbow Six Siege Operator",
     "description": "Import exported head/body models with Siege Materials",
@@ -90,7 +90,7 @@ def menu_import(self, context):
 
 def register():
     if bpy.app.version[:2] != (4, 5):
-        raise RuntimeError("This alpha add-on targets Blender 4.5 only.")
+        raise RuntimeError("This add-on requires Blender 4.5.")
 
     bpy.utils.register_class(IMPORT_SCENE_OT_r6_operator)
     bpy.types.TOPBAR_MT_file_import.append(menu_import)

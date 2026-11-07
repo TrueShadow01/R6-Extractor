@@ -87,7 +87,7 @@ class MainWindow(QMainWindow):
         self.complete_exports = self.load_completed_exports()
         self.blender_path = Path(r"C:\Program Files\Blender Foundation\Blender 4.5\blender.exe")
         self.close_requested = False
-        self.setWindowTitle("R6 Forge Extractor - Alpha")
+        self.setWindowTitle("R6 Forge Extractor - 1.0.0")
         self.resize(1250, 780)
 
         root = QWidget()
