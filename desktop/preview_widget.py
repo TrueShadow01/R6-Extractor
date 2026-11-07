@@ -11,7 +11,7 @@ from pathlib import Path
 from urllib.parse import quote, unquote, urlsplit
 from html import escape
 
-from PySide6.QtCore import QUrl, QTimer, QObject, Signal, Slot
+from PySide6.QtCore import QUrl, QTimer, QObject, Signal, Slot, QFile, QIODevice
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel
 from PySide6.QtGui import QColor
 from PySide6.QtWebEngineWidgets import QWebEngineView
@@ -50,6 +50,14 @@ class PreviewWidget(QWidget):
         layout.addWidget(self.label)
         layout.addWidget(self.view, 1)
 
+        script = QFile(":/qtwebchannel/qwebchannel.js")
+        if not script.open(QIODevice.OpenModeFlag.ReadOnly):
+            raise RuntimeError("Cannot read Qt WebChannel JavaScript resource")
+        try:
+            self.web_channel_script = bytes(script.readAll())
+        finally:
+            script.close()
+
         owner = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -71,6 +79,9 @@ class PreviewWidget(QWidget):
                             return
                         payload = json.dumps(owner.manifest).encode("utf-8")
                         content_type = "application/json"
+                    elif relative == "viewer/qwebchannel.js":
+                        payload = owner.web_channel_script
+                        content_type = "text/javascript"
                     else:
                         category, separator, filename = relative.partition("/")
                         roots = {

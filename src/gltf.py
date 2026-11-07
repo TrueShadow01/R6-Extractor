@@ -821,7 +821,10 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
                 "Source A/B colors and head color. Approximate legacy tint and texture modulation."
             )
 
-        if slot_textures.material_uid == 0x00000043F942F4DD and slot_textures.shader_uid == 0x000000003051C028 and slot_textures.diffuse == "00000043F942F4BE.png":
+        if (slot_textures.material_uid, slot_textures.shader_uid, slot_textures.diffuse) in {
+            (0x00000043F942F4DD, 0x000000003051C028, "00000043F942F4BE.png"),
+            (0x000000684ADFEF6B, 0x00000055B93242F6, "000000684ADFEF83.png")
+        }:
             material["alphaMode"] = "BLEND"
             material.pop("alphaCutoff", None)
             material["doubleSided"] = True

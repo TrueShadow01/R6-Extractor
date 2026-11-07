@@ -1181,6 +1181,8 @@ def apply_experimental_hair(material, principled, extras, gltf_path):
     if not isinstance(values, (list, tuple)) or len(values) != 8 or any(not isinstance(v, (int, float)) or not math.isfinite(v) for v in values) or not -3.0 <= values[0] <= 3.0 or any(not 0.0 <= v <= 1.0 for v in values[1:]):
         return False
 
+    noor_hair = extras.get("siegeMaterialUid") == "000000684ADFEF6B" and extras.get("siegeShaderUid") == "00000055B93242F6" and extras.get("siegePackedMaterialTexture") == "000000684ADFEF8E.png"
+
     if extras.get("siegeHairCoverageApproximationV1") is True:
         material.surface_render_method = "DITHERED"
 
@@ -1219,7 +1221,7 @@ def apply_experimental_hair(material, principled, extras, gltf_path):
 
     bitangent = node("ShaderNodeVectorMath")
     bitangent.operation = "CROSS_PRODUCT"
-    connect(normal, bitangent.inputs[0])
+    connect(geometry.outputs["Normal"] if noor_hair else normal, bitangent.inputs[0])
     connect(tangent.outputs[0], bitangent.inputs[1])
 
     shift = node("ShaderNodeVectorMath")
@@ -1234,9 +1236,10 @@ def apply_experimental_hair(material, principled, extras, gltf_path):
 
     direction = node("ShaderNodeVectorMath")
     direction.operation = "NORMALIZE"
-    links.new(shifted.outputs[0], direction.inputs[0])
+    links.new(bitangent.outputs[0] if noor_hair else shifted.outputs[0], direction.inputs[0])
 
     mask = 1.0
+    occlusion = 1.0
     packed_path = gltf_path.parent / extras.get("siegePackedMaterialTexture", "")
     if packed_path.is_file():
         texture = node("ShaderNodeTexImage")
@@ -1245,6 +1248,9 @@ def apply_experimental_hair(material, principled, extras, gltf_path):
         channels = node("ShaderNodeSeparateColor")
         links.new(texture.outputs["Color"], channels.inputs["Color"])
         mask = channels.outputs["Red"]
+        if noor_hair:
+            occlusion = channels.outputs["Blue"]
+            mask = multiply_color(mask, occlusion)
 
     base = source(principled.inputs["Base Color"])
     tint = node("ShaderNodeMixRGB")
@@ -1253,7 +1259,10 @@ def apply_experimental_hair(material, principled, extras, gltf_path):
     tint.inputs[2].default_value = (1.0, 1.0, 1.0, 1.0)
 
     diffuse = node("ShaderNodeBsdfDiffuse")
-    connect(multiply_color(base, (values[6],) * 3 + (1.0,)), diffuse.inputs["Color"])
+    diffuse_color = multiply_color(base, (values[6],) * 3 + (1.0,))
+    if noor_hair:
+        diffuse_color = multiply_color(diffuse_color, occlusion)
+    connect(diffuse_color, diffuse.inputs["Color"])
     connect(normal, diffuse.inputs["Normal"])
     accumulated = diffuse.outputs[0]
 

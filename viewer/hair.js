@@ -58,6 +58,7 @@ export async function applyExperimentalHair(gltf, modelUrl) {
 
     for (const { hair, p } of jobs) {
         const filename = hair.userData.siegePackedMaterialTexture;
+        const noorHair = hair.userData.siegeMaterialUid === "000000684ADFEF6B" && hair.userData.siegeShaderUid === "00000055B93242F6" && filename === "000000684ADFEF8E.png"
         let mask = null;
 
         if (filename) {
@@ -123,7 +124,7 @@ export async function applyExperimentalHair(gltf, modelUrl) {
                     #include <lights_physical_fragment>
                     material.hairBase = diffuseColor.rgb;
                     material.hairMaskValue = hairHasMask > 0.5 ? texture2D(hairMask, vHairUv).r : 1.0;
-                    vec3 hairDirection = tbn[1] + normal * hairA.x;
+                    vec3 hairDirection = ${noorHair ? "tbn[1]" : "tbn[1] + normal * hairA.x"};
                     material.hairStrand = hairDirection / max(length(hairDirection), 0.00001);
                     material.diffuseColor = diffuseColor.rgb * hairB.z;
 
@@ -132,9 +133,24 @@ export async function applyExperimentalHair(gltf, modelUrl) {
                     material.specularF90 = clamp(material.hairMaskValue * 0.125 * (hairA.z + hairB.x), 0.0, 1.0);
                 `
             );
+
+            if (noorHair) {
+                shader.fragmentShader = shader.fragmentShader.replace(
+                    "#include <lights_fragment_end>",
+                    `#include <lights_fragment_end>
+                    // Source packed B occludes lighting, never coverage
+                    float noorAO = hairHasMask > 0.5 ? texture2D(hairMask, vHairUv).b : 1.0;
+                    reflectedLight.directDiffuse *= noorAO;
+                    reflectedLight.indirectDiffuse *= noorAO;
+                    reflectedLight.directSpecular *= noorAO;
+                    reflectedLight.indirectSpecular *= noorAO;
+                    `
+                );
+            }
         };
 
-        hair.customProgramCacheKey = () => "siege-experimental-hair-v3";
+        
+        hair.customProgramCacheKey = () => noorHair ? "siege-experimental-hair-v4-noor" : "siege-experimental-hair-v3";
         hair.needsUpdate = true;
     }
 
