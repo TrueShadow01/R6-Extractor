@@ -225,7 +225,7 @@ class MainWindow(QMainWindow):
         self.asset_selector.setObjectName("inspectorLayers")
         self.asset_selector.addItem("Operator model", None)
         self.asset_selector.currentIndexChanged.connect(self.show_asset)
-        self.asset_selector.setToolTip("Verified gadget choices are available for Rook and Sledge.")
+        self.asset_selector.setToolTip("Choose the operator model or one of its supported gadget models.")
         left_layout.addWidget(self.asset_selector)
 
         self.preview = PreviewWidget(self)
