@@ -46,7 +46,7 @@ def save_portable_blend(destination, args):
     lines = [
         "R6 Portable Blender Export",
         f"Blender: {bpy.app.version_string}",
-        f"Rig requested: {'Experimental IK' if args.experimental_ik else 'FK'}",
+        f"Rig requested: {'Source gadget rig' if args.gadget else 'Experimental IK' if args.experimental_ik else 'FK'}",
         f"Imported model files: {len(args.models)}",
         f"Packed images: {len(images)}",
         "Visual appearance and deformation still require manual review.",
@@ -119,9 +119,14 @@ def main():
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--experimental-ik", action="store_true")
+    parser.add_argument("--gadget", action="store_true")
     parser.add_argument("--save-blend", type=Path)
     parser.add_argument("models", nargs="+", type=Path)
     args = parser.parse_args(sys.argv[sys.argv.index("--") + 1:])
+
+    if args.gadget and args.experimental_ik:
+        parser.error("--gadget cannot be combined with --experimental-ik")
+
     IMPORT_WARNINGS.clear()
 
     if any(not path.is_file() for path in args.models):

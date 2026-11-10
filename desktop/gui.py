@@ -12,11 +12,12 @@ from PySide6.QtWidgets import (
     QApplication, QFileDialog, QLabel, QLineEdit, QListWidget,
     QListWidgetItem, QMainWindow, QPlainTextEdit, QPushButton,
     QHBoxLayout, QVBoxLayout, QSplitter, QTabWidget, QWidget,
-    QCheckBox, QMessageBox
+    QCheckBox, QMessageBox, QComboBox
 )
 
 from src.operator_registry import read_operator_registry
 from src.model import operator_model_jobs
+from src.gadgets import Gadget, GADGETS, validate_gadget
 from desktop.preview_widget import PreviewWidget
 from desktop.preview_cache import CacheLease, clean_preview_cache
 from desktop.material_inspector import MaterialInspector
@@ -219,6 +220,14 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(self.search)
         left_layout.addWidget(self.operators)
 
+        left_layout.addWidget(QLabel("Model"))
+        self.asset_selector = QComboBox()
+        self.asset_selector.setObjectName("inspectorLayers")
+        self.asset_selector.addItem("Operator model", None)
+        self.asset_selector.currentIndexChanged.connect(self.show_asset)
+        self.asset_selector.setToolTip("Verified gadget choices are available for Rook and Sledge.")
+        left_layout.addWidget(self.asset_selector)
+
         self.preview = PreviewWidget(self)
         QApplication.instance().aboutToQuit.connect(self.preview.shutdown)
 
@@ -230,7 +239,7 @@ class MainWindow(QMainWindow):
         details_layout = QVBoxLayout(details_page)
         details_layout.setContentsMargins(10, 10, 10, 10)
         details_layout.setSpacing(8)
-        details_heading = QLabel("Default Appearance")
+        details_heading = QLabel("Selected model")
         details_heading.setObjectName("inspectorHeading")
         details_layout.addWidget(details_heading)
         details_layout.addWidget(self.details, 1)
@@ -327,6 +336,7 @@ class MainWindow(QMainWindow):
         self.install_button.setEnabled(False)
         self.open_button.setEnabled(False)
         self.index_button.setEnabled(False)
+        self.asset_selector.setEnabled(False)
         self.statusBar().showMessage("Reading operator registry...")
         self.preview_button.setEnabled(False)
         self.log.appendPlainText(f"Reading {archive}")
@@ -363,6 +373,7 @@ class MainWindow(QMainWindow):
         self.open_button.setEnabled(True)
         self.index_button.setEnabled(True)
         self.preview_button.setEnabled(True)
+        self.asset_selector.setEnabled(True)
 
         if self.close_requested:
             self.close()
@@ -378,27 +389,64 @@ class MainWindow(QMainWindow):
             item = self.operators.item(index)
             item.setHidden(query not in item.text().casefold())
 
-    def show_operator(self, item, previous=None):
+    def selected_asset(self):
+        item = self.operators.currentItem()
         if item is None:
+            return None
+        return self.asset_selector.currentData() or item.data(Qt.ItemDataRole.UserRole)
+
+    def show_operator(self, item, previous=None):
+        self.asset_selector.blockSignals(True)
+        try:
+            self.asset_selector.clear()
+            self.asset_selector.addItem("Operator model", None)
+
+            if item is not None:
+                operator = item.data(Qt.ItemDataRole.UserRole)
+                for gadget in GADGETS:
+                    if gadget.operator_uid == operator.uid:
+                        self.asset_selector.addItem(gadget.name, gadget)
+        finally:
+            self.asset_selector.blockSignals(False)
+
+        self.show_asset()
+
+    def show_asset(self, index=None):
+        asset = self.selected_asset()
+        busy = self.worker is not None or self.export_process is not None
+        self.ik_checkbox.setEnabled(not busy and not isinstance(asset, Gadget))
+
+        if asset is None:
             self.details.clear()
             self.preview.setText("Select an operator")
             return
 
-        operator = item.data(Qt.ItemDataRole.UserRole)
-        self.preview.setText(f"{operator.name}\n\nClick Load Preview.")
+        self.preview.setText(f"{asset.name}\n\nClick Load Preview.")
 
-        lines = [operator.name, f"Operator UID: {operator.uid:016X}"]
-        for label, part in (("Head", operator.head), ("Body", operator.body)):
-            lines.extend([
-                "", label,
-                f"Equipment: {part.item_uid:016X}",
-                f"Appearance: {part.appearance_uid:016X}",
-            ])
-            for index, group in enumerate(part.model_groups):
-                if group:
-                    lines.append(f"Model group {index}:")
-                    lines.extend(f"  {uid:016X}" for uid in group)
-
+        if isinstance(asset, Gadget):
+            lines = [
+                asset.name,
+                "Gadget model",
+                f"Operator UID: {asset.operator_uid:016X}",
+                f"Equipment: {asset.item_uid:016X}",
+                f"Appearance: {asset.appearance_uid:016X}",
+                f"Model UID: {asset.uid:016X}",
+                "",
+                "Preview and export use this gadget only.",
+                "Blender keeps the source gadget rig. Operator IK is disabled.",
+            ]
+        else:
+            lines = [asset.name, f"Operator UID: {asset.uid:016X}"]
+            for label, part in (("Head", asset.head), ("Body", asset.body)):
+                lines.extend([
+                    "", label,
+                    f"Equipment: {part.item_uid:016X}",
+                    f"Appearance: {part.appearance_uid:016X}",
+                ])
+                for number, group in enumerate(part.model_groups):
+                    if group:
+                        lines.append(f"Model group {number}:")
+                        lines.extend(f"  {uid:016X}" for uid in group)
         self.details.setPlainText("\n".join(lines))
 
     def export_selected(self):
@@ -425,8 +473,10 @@ class MainWindow(QMainWindow):
                 self.report_error(f"Required file not found: {path}")
                 return
 
-        operator = item.data(Qt.ItemDataRole.UserRole)
+        operator = self.selected_asset()
         try:
+            if isinstance(operator, Gadget):
+                validate_gadget(game, operator)
             parts = operator_model_jobs(operator, database)
         except (OSError, ValueError) as error:
             self.report_error(str(error))
@@ -443,7 +493,7 @@ class MainWindow(QMainWindow):
         ).strip().rstrip(".")
         if not folder_name:
             self.report_error("Operator name cannot form an export folder.")
-            return # you forgot the nyx, no folder name = no can do - shadow
+            return
         self.export_directory = Path(folder) / folder_name
         self.export_jobs = [
             (label, uid, self.export_directory / label / f"{uid:016X}")
@@ -464,7 +514,7 @@ class MainWindow(QMainWindow):
             "--database", str(database)
         ]
         self.log.appendPlainText(
-            f"Exporting {operator.name} primary head/body models to {self.export_directory}"
+            f"Exporting {operator.name} to {self.export_directory}"
         )
 
         self.export_process = QProcess(self)
@@ -482,9 +532,11 @@ class MainWindow(QMainWindow):
             self.index_button, self.load, self.browse, self.game_path,
             self.operators, self.search, self.preview_button,
             self.blender_edit, self.blender_browse, self.ik_checkbox,
-            self.portable_checkbox, self.clear_cache_button
+            self.portable_checkbox, self.clear_cache_button, self.asset_selector
         ):
             widget.setEnabled(not busy)
+
+        self.ik_checkbox.setEnabled(not busy and not isinstance(self.selected_asset(), Gadget))
 
     def start_export_part(self):
         label, uid, destination = self.export_jobs.pop(0)
@@ -532,7 +584,7 @@ class MainWindow(QMainWindow):
         else:
             self.complete_exports[self.export_operator_uid] = self.export_model_files
             self.save_completed_export(self.export_operator_uid, self.export_model_files)
-            self.finish_export(True, f"Primary head/body export complete: {self.export_directory}")
+            self.finish_export(True, f"Export complete: {self.export_directory}")
 
     def export_process_error(self, error):
         if self.export_process is None:
@@ -638,13 +690,13 @@ class MainWindow(QMainWindow):
 
         item = self.operators.currentItem()
         if item is None:
-            self.report_error("Select an exported operator first") # duh
+            self.report_error("Select an exported operator first")
             return
 
-        operator = item.data(Qt.ItemDataRole.UserRole)
+        operator = self.selected_asset()
         models = self.complete_exports.get(operator.uid)
         if not models or any(not path.is_file() for path in models):
-            self.report_error("Export this operator successfully first.")
+            self.report_error("Export the selected model successfully first.")
             return
 
         blender = self.selected_blender()
@@ -677,7 +729,8 @@ class MainWindow(QMainWindow):
         self.blender_path = blender
         self.blender_launch_script = script
         self.blender_launch_models = models
-        self.blender_launch_ik = self.ik_checkbox.isChecked()
+        self.blender_launch_gadget = isinstance(operator, Gadget)
+        self.blender_launch_ik = self.ik_checkbox.isChecked() and not self.blender_launch_gadget
         self.blender_version_output = bytearray()
 
         self.export_process = QProcess(self)
@@ -711,6 +764,7 @@ class MainWindow(QMainWindow):
             "--addons", "io_scene_r6",
             "--python", str(self.blender_launch_script),
             "--",
+            *(["--gadget"] if self.self.blender_launch_gadget else []),
             *(["--experimental-ik"] if self.blender_launch_ik else []),
             *(["--save-blend", self.blender_launch_save] if self.blender_launch_save else []),
             *[str(path) for path in self.blender_launch_models],
@@ -787,7 +841,7 @@ class MainWindow(QMainWindow):
             self.report_error("Reload operators after changing the game folder")
             return
 
-        operator = item.data(Qt.ItemDataRole.UserRole)
+        operator = self.selected_asset()
 
         try:
             self.preview_job_lease = CacheLease()
@@ -810,7 +864,7 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Preparing {operator.name} preview...")
         self.export_process.start(
             worker_executable(),
-            worker_arguments("preview", [str(game), f"{operator.uid:016X}"])
+            worker_arguments("gadget-preview" if isinstance(operator, Gadget) else "preview", [str(game), f"{operator.uid:016X}"])
         )
 
     def read_preview_output(self):

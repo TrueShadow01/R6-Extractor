@@ -71,8 +71,9 @@ def _u32(data: bytes, offset: int) -> int:
 def _u64(data: bytes, offset: int) -> int:
     return _unpack("<Q", data, offset)[0]
 
-def _read_records(archive: Path) -> dict[int, list[RegistryRecord]]:
+def _read_records(archive: Path, *, extra_types=()) -> dict[int, list[RegistryRecord]]:
     records: dict[int, list[RegistryRecord]] = {}
+    keep_types = KEEP_TYPES.union(extra_types)
 
     with map_archive(archive) as mapped:
         for container_offset in iter_container_offsets(mapped):
@@ -98,7 +99,7 @@ def _read_records(archive: Path) -> dict[int, list[RegistryRecord]]:
                     headers.append((offset, type_offset + 12, file_type, uid))
 
             for index, (offset, start, file_type, uid) in enumerate(headers):
-                if not uid or file_type not in KEEP_TYPES:
+                if not uid or file_type not in keep_types:
                     continue
 
                 end = (

@@ -619,8 +619,11 @@ def operator_model_jobs(operator, database):
     from src.database import load_asset_index
     from src.depgraph import load_depgraph
     from src.metadata import parse_file_metadata
+    from src.gadgets import Gadget
 
-    parts = (("body", operator.body), ("head", operator.head))
+    parts = (("gadget", operator),) if isinstance(operator, Gadget) else (
+        ("body", operator.body), ("head", operator.head),
+    )
 
     for label, part in parts:
         if not part.model_groups or not part.model_groups[0]:

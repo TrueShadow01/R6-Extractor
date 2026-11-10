@@ -29,6 +29,18 @@ def main():
             install(arguments[0])
             return 0
 
+        if worker == "gadget-preview":
+            from src.gadgets import get_gadet, validate_gadget
+            from desktop.preview_cache import prepare_preview
+
+            if len(arguments) != 2:
+                raise ValueError("Gadget preview requires a game folder and model UID")
+
+            gadget = get_gadet(int(arguments[1], 16))
+            validate_gadget(arguments[0], gadget)
+            prepare_preview(arguments[0], gadget.uid, operator=gadget)
+            return 0
+
         if worker == "preview":
             from desktop.preview_cache import prepare_preview
 
