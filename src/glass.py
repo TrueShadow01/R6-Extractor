@@ -4,6 +4,8 @@ import struct
 from dataclasses import replace
 
 GLASS_PROFILES = {
+    # Valkyrie Black Eye upper dome
+    (0x000000003BD13B9E, 0x00000006EA53F13A): (0.18, 0.08, 1.5),
     # Castle: black, opaque visor
     (0x0000000841DC11F9, 0x0000000A1C33B4E0): (1.0, 0.08, 1.5),
     # Shared clear lenses including Blitz, Sledge and Ace's lamp
@@ -147,6 +149,26 @@ def apply_optical_preview(material, slot):
 
     if isolated is not None:
         profile = isolated
+
+    # Black Eye: source colors with optical response
+    camera_materials = {
+        (0x000000003BD13B9E, 0x00000006EA53F13A),
+        (0x0000000040D7FCF0, 0x00000006EA53F15A),
+        (0x00000003327005AD, 0x000000073FA82522)
+    }
+    if (shader, slot.material_uid) in camera_materials:
+        material.setdefault("extras", {})["siegeMaterialApproximation"] = (
+            "Black Eye source material color. Approximate texture modulation."
+        )
+
+    if (shader, slot.material_uid) == (
+        0x0000000040D7FCF0,
+        0x00000006EA53F15A
+    ):
+        material["emissiveFactor"] = list(material["pbrMetallicRoughness"]["baseColorFactor"][:3])
+        material["extras"]["siegeMaterialApproximation"] += (
+            " Cyan Indicator uses approximate unit emission. Game Light states are not reproduced."
+        )
 
     if shader == 0x0000000099E2C950:
         profile = (0.12, 0.08, 1.5)
