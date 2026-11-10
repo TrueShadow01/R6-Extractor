@@ -980,6 +980,21 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
                 if all(math.isfinite(value) and 0.0 <= value <= 1.0 for value in candidate):
                     solid_color = candidate
 
+        # Black Eye camera: white textures are modulated by these source colors.
+        if (shader_uid, material_uid) in {
+            (0x000000003BD13B9E, 0x00000006EA53F13A),
+            (0x0000000040D7FCF0, 0x00000006EA53F15A),
+            (0x00000003327005AD, 0x000000073FA82522)
+        }:
+            if material_start + 28 > material_entry.end:
+                raise ValueError("Truncated Black Eye material color")
+
+            candidate = struct.unpack_from("<4f", payload, material_start + 12)
+            if not all(math.isfinite(value) and 0.0 <= value <= 1.0 for value in candidate):
+                raise ValueError("Invalid Black Eye material color")
+
+            solid_color = candidate
+
         # Source header color. Approximate texture modulation
         if (shader_uid == 0x0000000099E2C947 and material_uid in {
             0x0000000A8715F23D,  # Glaz bandana
