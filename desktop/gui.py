@@ -764,7 +764,7 @@ class MainWindow(QMainWindow):
             "--addons", "io_scene_r6",
             "--python", str(self.blender_launch_script),
             "--",
-            *(["--gadget"] if self.self.blender_launch_gadget else []),
+            *(["--gadget"] if self.blender_launch_gadget else []),
             *(["--experimental-ik"] if self.blender_launch_ik else []),
             *(["--save-blend", self.blender_launch_save] if self.blender_launch_save else []),
             *[str(path) for path in self.blender_launch_models],

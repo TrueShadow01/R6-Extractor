@@ -138,7 +138,7 @@ def main():
     for model in args.models:
         import_siege_model(model)
 
-    if not args.experimental_ik:
+    if not args.experimental_ik and not args.gadget:
         try:
             arm, head_name = connect_fk_head(list(bpy.context.scene.objects))
         except Exception as error:
