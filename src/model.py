@@ -515,7 +515,55 @@ def resolve_static_attachment_bindings(payload, bindings):
 
         if poses:
             resolved[geometry_uid] = replace(binding, joint_node_matrices=(poses[0],))
-    return resolve_holster_binding(payload, resolved)
+    return resolve_doc_stim_binding(payload, resolve_holster_binding(payload, resolved),)
+
+def resolve_doc_stim_binding(payload, bindings):
+    """Place Doc's stim using the pose stored in the pistol skeleton"""
+    geometry_uid = 0x0000000522EE352F
+    host_uid = 0x0000000522EE352E
+    bone_id = 0x857FE71D
+
+    binding = bindings.get(geometry_uid)
+    host = bindings.get(host_uid)
+    if binding is None or host is None or binding.joint_node_matrices:
+        return bindings
+    if binding.bone_ids != (bone_id,) or 0xB6C65665 not in host.bone_ids:
+        raise ValueError("Doc stim attachment binding changed")
+
+    from src.skeleton import read_skeleton_parents
+
+    matches = [
+        graph for graph in read_skeleton_parents(payload)
+        if graph.get(bone_id) == 0xB6C65665
+        and 0xB6C65665 in graph
+        and graph[0xB6C65665] is None
+    ]
+    if len(matches) != 1:
+        raise ValueError("Doc stim skeleton attachment changed")
+
+    signature = struct.pack("<II", 0x71EDFDE3, bone_id)
+    offset = payload.find(signature)
+    if offset < 0 or payload.find(signature, offset + 1) >= 0:
+        raise ValueError("Missing or ambiguous Doc stim skeleton pose")
+    if offset + 94 > len(payload):
+        raise ValueError("Truncated Doc stim skeleton pose")
+    if payload[offset + 8] != 2 or payload[offset + 17] != 0:
+        raise ValueError("Unsupported Doc stim parent record")
+
+    marker, zero, kind = struct.unpack_from("<III", payload, offset + 18)
+    if (marker & 0xFFFF0000) != 0xFBF80000 or zero or kind != 0x8D37C90B:
+        raise ValueError("Unsupported Doc stim pose layout")
+
+    values = struct.unpack_from("<16f", payload, offset + 30)
+    if not all(math.isfinite(value) for value in values) or values[3] != 0.0 or values[11] != 0.0 or abs(sum(value * value for value in values[4:8]) - 1.0) > 0.001:
+        raise ValueError("Invalid Doc stim skeleton transform")
+
+    matrix = _pose_to_gltf_matrix(BoneTransform(bone_id, values[:3], values[4:8]))
+    matrix = align_holster_root(payload, offset, bindings, matrix)
+
+    resolved = dict(bindings)
+    resolved[geometry_uid] = replace(binding, joint_node_matrices=(matrix,))
+    return resolved
 
 def resolve_fitted_head_frames(bindings):
     """Align inspected fitted head parts using their src bind frames"""
