@@ -526,49 +526,53 @@ def resolve_static_attachment_bindings(payload, bindings):
     return resolve_doc_stim_binding(payload, resolve_holster_binding(payload, resolved),)
 
 def resolve_doc_stim_binding(payload, bindings):
-    """Place Doc's stim using the pose stored in the pistol skeleton"""
-    geometry_uid = 0x0000000522EE352F
-    host_uid = 0x0000000522EE352E
+    """Place Doc's stim or Ash's round using the source skeleton pose"""
+    geometry_uid, host_uid = (
+        (0x000000053984EC3C, 0x000000053984ECF8)
+        if 0x000000053984EC3C in bindings
+        else (0x0000000522EE352F, 0x0000000522EE352E)
+    )
     bone_id = 0x857FE71D
+    parent_id = 0x80643B9A if geometry_uid == 0x000000053984EC3C else 0xB6C65665
 
     binding = bindings.get(geometry_uid)
     host = bindings.get(host_uid)
     if binding is None or host is None or binding.joint_node_matrices:
         return bindings
     if binding.bone_ids != (bone_id,) or 0xB6C65665 not in host.bone_ids:
-        raise ValueError("Doc stim attachment binding changed")
+        raise ValueError("Gadget projectile attachment binding changed")
 
     from src.skeleton import read_skeleton_parents
 
     matches = [
         graph for graph in read_skeleton_parents(payload)
-        if graph.get(bone_id) == 0xB6C65665
+        if graph.get(bone_id) == parent_id
+        and (parent_id == 0xB6C65665 or graph.get(parent_id) == 0xB6C65665)
         and 0xB6C65665 in graph
         and graph[0xB6C65665] is None
     ]
     if len(matches) != 1:
-        raise ValueError("Doc stim skeleton attachment changed")
+        raise ValueError("Gadget projectile skeleton attachment changed")
 
     signature = struct.pack("<II", 0x71EDFDE3, bone_id)
     offset = payload.find(signature)
     if offset < 0 or payload.find(signature, offset + 1) >= 0:
-        raise ValueError("Missing or ambiguous Doc stim skeleton pose")
+        raise ValueError("Missing or ambiguous gadget projectile pose")
     if offset + 94 > len(payload):
-        raise ValueError("Truncated Doc stim skeleton pose")
+        raise ValueError("Truncated gadget projectile pose")
     if payload[offset + 8] != 2 or payload[offset + 17] != 0:
-        raise ValueError("Unsupported Doc stim parent record")
+        raise ValueError("Unsupported gadget projectile parent record")
 
     marker, zero, kind = struct.unpack_from("<III", payload, offset + 18)
     if (marker & 0xFFFF0000) != 0xFBF80000 or zero or kind != 0x8D37C90B:
-        raise ValueError("Unsupported Doc stim pose layout")
+        raise ValueError("Unsupported gadget projectile pose layout")
 
     values = struct.unpack_from("<16f", payload, offset + 30)
     if not all(math.isfinite(value) for value in values) or values[3] != 0.0 or values[11] != 0.0 or abs(sum(value * value for value in values[4:8]) - 1.0) > 0.001:
-        raise ValueError("Invalid Doc stim skeleton transform")
+        raise ValueError("Invalid gadget projectile skeleton transform")
 
     matrix = _pose_to_gltf_matrix(BoneTransform(bone_id, values[:3], values[4:8]))
     matrix = align_holster_root(payload, offset, bindings, matrix)
-
     resolved = dict(bindings)
     resolved[geometry_uid] = replace(binding, joint_node_matrices=(matrix,))
     return resolved
@@ -1202,6 +1206,21 @@ def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: A
     output_directory.mkdir(parents=True, exist_ok=True)
 
     geometry_records = resolve_geometry_records(model_uid, children, index)
+
+    if model_uid == 0x00000064935FA57D:
+        # Runtime scan planes, pulse domes and beam, not physical gadget parts
+        effect_geometry = {
+            0x0000004B096F9DBE,
+            0x0000004CDFA0642A,
+            0x0000006529005221,
+            0x00000065290070B0,
+            0x0000006643FA9D68,
+        }
+        geometry_records = tuple(
+            record for record in geometry_records
+            if record.uid not in effect_geometry
+        )
+
     model_record = index.primary(model_uid)
     model_payload = (
         load_asset_payload(model_record)

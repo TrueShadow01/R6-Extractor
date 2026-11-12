@@ -871,6 +871,23 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
                     "Extra effect layer hidden. Live scan rendering is not reproduced."
                 )
 
+        if model_uid == 0x00000064935FA57D:
+            display_alpha = {
+                (0x0000005CE744A9E5, 0x00000003327005AD): 1.0,
+                (0x00000064C21D7647, 0x00000000E09ED870): 0.0,
+            }.get((slot_textures.material_uid, slot_textures.shader_uid))
+            if display_alpha is not None and not slot_textures.diffuse:
+                pbr["baseColorFactor"] = [0.005, 0.015, 0.03, display_alpha]
+                pbr["metallicFactor"] = 0.0
+                pbr["roughnessFactor"] = 0.3
+                material["alphaMode"] = "OPAQUE" if display_alpha else "BLEND"
+                material.pop("alphaCutoff", None)
+                material["name"] += "_Approx_Static_Display"
+                material.setdefault("extras", {})["siegeMaterialApproximation"] = (
+                    "Thatcher static display approximation: blank dark screen. "
+                    "Live scan overlay and runtime scan effects are omitted."
+                )
+
         apply_optical_preview(material, slot_textures)
         if "siegeGlassPreviewV1" in material.get("extras", {}) and slot_textures.diffuse:
             # Atlas alpha may encode selectors rather than  transparency

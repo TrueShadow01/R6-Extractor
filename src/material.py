@@ -1083,6 +1083,24 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
             part_materials.append(())
             continue
 
+        # Ash's launcher uses a shared placeholder in its actual slot table
+        # Entity overrides occur after the mesh entries in this package
+        if geometry_uid in (0x000000053984EC3C, 0x000000053984ECF8) and parse_file_metadata(payload).uid == 0x000000009B2CAF2E:
+            start = mesh_entry.data_offset
+            bone_count = struct.unpack_from("<I", payload, start + 8)[0]
+            table = start + 21 + bone_count * 80 + 8
+            expected_count = 4 if geometry_uid == 0x000000053984EC3C else 1
+            if table + 4 + expected_count * 8 > mesh_entry.end:
+                raise ValueError("Truncated Ash launcher material slots")
+            count = struct.unpack_from("<I", payload, table)[0]
+            slots = struct.unpack_from(f"{expected_count}Q", payload, table + 4)
+            override = struct.pack("<IQQ", 0x73F86CAC, 0x00000005F82132EC, 0x00000000A2F22E46)
+            source = resolved_materials.get(0x00000000A2F22E46)
+            if count != expected_count or slots != (0x00000005F82132EC,) * expected_count or payload.count(override) != 1 or source is None or not source.diffuse_uids:
+                raise ValueError("Ash launcher material mapping changed")
+            part_materials.append((source,) * expected_count)
+            continue
+
         mesh_blob = payload[mesh_entry.offset:mesh_entry.end]
 
         base_material_uids = referenced_uids(mesh_blob, material_entries.keys() | material_overrides.keys(), preserve_duplicates=True)

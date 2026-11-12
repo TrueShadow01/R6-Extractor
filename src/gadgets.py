@@ -12,6 +12,7 @@ class Gadget:
     operator_uid: int
     item_uid: int
     appearance_uid: int
+    weapon_uid: int | None = None
 
     @property
     def model_groups(self):
@@ -33,6 +34,8 @@ GADGETS = (
     Gadget(0x000000009B2CAEF8, "Twitch - Shock Drone", 0x00000037802D16D5, 0x00000037802D20F9, 0x00000041EBBDCA29),
     Gadget(0x0000000106FC86BF, "Doc - Stim Pistol", 0x00000037802D16AA, 0x000000483B8E9E92, 0x000000483B8E9E88),
     Gadget(0x0000002A4CEB7295, "IQ - Scanner", 0x00000037802D16B5, 0x00000037802D1BDB, 0x0000002A4CEB72A0),
+    Gadget(0x000000009B2CAF2E, "Ash - Breaching Round Launcher", 0x00000037802D16A1, 0x000000483B8E5C27, 0x000000483B8E5C15, weapon_uid=0x00000037802CC878),
+    Gadget(0x00000064935FA57D, "Thatcher - E.G.S. Disruptor", 0x00000037802D16D3, 0x000000651F0E871D, 0x0000006328827031, weapon_uid=0x00000064935FA584),
 )
 
 def get_gadet(uid):
@@ -42,11 +45,11 @@ def get_gadet(uid):
     raise ValueError(f"Unsupported gadget model {uid:016X}")
 
 def validate_gadget(game, gadget):
-    """Reject pilot mapping if the installed game no longer selects it"""
+    """Reject mappings that no longer match the installed equipment records."""
     if get_gadet(gadget.uid) != gadget:
         raise ValueError("Gadget selection does not match the supported catalogue")
 
-    records = registry._read_records(Path(game) / "datapc64.forge", extra_types=(0x963A496D,))
+    records = registry._read_records(Path(game) / "datapc64.forge", extra_types=(0x963A496D, 0x31330C03, 0x7FF0E4DF, 0x1C5C0E2D),)
     operator = registry._record(records, gadget.operator_uid, registry.OPERATOR_TYPE)
     dependency_count = registry._u32(operator.data, 4)
     if dependency_count > 4096:
@@ -64,6 +67,33 @@ def validate_gadget(game, gadget):
 
     appearance = registry._record(records, gadget.appearance_uid, registry.APPEARANCE_TYPE)
 
-    # Inspected visual model block. Reference at 66 is not a selectable state
-    if appearance.data[29:34] != bytes.fromhex("74251f0500") or gadget.uid not in tuple(registry._u64(appearance.data, offset) for offset in (34, 42, 50, 58)):
-        raise ValueError("Gadget model changed. This mapping needs rechecking")
+    if gadget.weapon_uid is not None:
+        # These equipment appearances select gameplay entites not meshes.
+        if appearance.data[29:34] != bytes.fromhex("74251f0500") or any(registry._u64(appearance.data, n) for n in (34, 42, 50, 58)):
+            raise ValueError("Weapon gadget equipment appearance changed")
+
+        skin_offset = 8 + count * 8 + 32 + 37
+        if item.data[skin_offset:skin_offset + 4] != registry.SLOT_TAG or registry._unpack("<B", item.data, skin_offset + 12)[0] != 1:
+            raise ValueError("Weapon gadget skin slot changed")
+
+        skin = registry._record(records, registry._u64(item.data, skin_offset + 4), 0x31330C03)
+        if len(skin.data) != 130 or registry._u32(skin.data, 4) != 0:
+            raise ValueError("Weapon gadget skin relationship changed")
+
+        finish = registry._record(records, registry._u64(skin.data, 113), 0x7FF0E4DF)
+        finish_count = registry._u32(finish.data, 4)
+        if finish_count not in (0, 1) or len(finish.data) != 114 + finish_count * 8 or registry._u64(finish.data, 97 + finish_count * 8) != gadget.weapon_uid:
+            raise ValueError("Weapon gadget finish relationship changed")
+
+        weapon = registry._record(records, gadget.weapon_uid, 0x1C5C0E2D)
+        if registry._u32(weapon.data, 4) != 1:
+            raise ValueError("Weapon gadget appearance layout changed")
+
+        appearance = registry._record(records, registry._u64(weapon.data, 8), registry.APPEARANCE_TYPE)
+        valid_layouts = (bytes.fromhex("74251f0500"), bytes.fromhex("74251f0501"))
+    else:
+        valid_layouts = (bytes.fromhex("74251f0500"),)
+
+    # Reference 66 is an entity reference not anotehr selectable mesh state
+    if appearance.data[29:34] not in valid_layouts or gadget.uid not in tuple(registry._u64(appearance.data, n) for n in (34, 42, 50, 58)):
+        raise ValueError("Gadget model changed. This mapping needs rechecking.")
