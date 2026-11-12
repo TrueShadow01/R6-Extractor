@@ -852,6 +852,25 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
         if extras:
             material["extras"] = extras
 
+        # IQ's live display has no baked texture, using labelled static fallback
+        if model_uid == 0x0000002A4CEB7295:
+            display_alpha = {
+                (0x00000002EA41517D, 0x00000000BE258F7C): 1.0,
+                (0x00000053328BB931, 0x00000000E09ED870): 0.0,
+            }.get((slot_textures.material_uid, slot_textures.shader_uid))
+
+            if display_alpha is not None and not slot_textures.diffuse:
+                pbr["baseColorFactor"] = [0.005, 0.015, 0.03, display_alpha]
+                pbr["metallicFactor"] = 0.0
+                pbr["roughnessFactor"] = 0.3
+                material["alphaMode"] = "OPAQUE" if display_alpha else "BLEND"
+                material.pop("alphaCutoff", None)
+                material["name"] += "_Approx_Static_Display"
+                material.setdefault("extras", {})["siegeMaterialApproximation"] = (
+                    "IQ static display approximation: blank dark screen. "
+                    "Extra effect layer hidden. Live scan rendering is not reproduced."
+                )
+
         apply_optical_preview(material, slot_textures)
         if "siegeGlassPreviewV1" in material.get("extras", {}) and slot_textures.diffuse:
             # Atlas alpha may encode selectors rather than  transparency

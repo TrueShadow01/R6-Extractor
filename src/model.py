@@ -359,8 +359,9 @@ def align_holster_root(payload, offset, bindings, matrix):
     ]
     if not hosts:
         return matrix
-    if len(hosts) != 1:
-        raise ValueError("Ambiguous holster body root")
+    # Several meshes can share the same root. Only differing poses are ambiguous
+    if any(not all(math.isfinite(value) for value in pose) or any(abs(a - b) > 1e-5 for a, b in zip(hosts[0], pose)) for pose in hosts):
+        raise ValueError("Conflicting holster body root poses")
 
     if offset + 86 > len(payload) or payload[offset + 9] != 0:
         raise ValueError("Truncated holster root pose")
@@ -459,6 +460,13 @@ def resolve_static_attachment_bindings(payload, bindings):
         if binding is None or len(binding.bone_ids) != 1:
             continue
         if binding.joint_node_matrices:
+            continue
+
+        # IQ's display overlay already shares the hinged screen's bind frame
+        if geometry_uid == 0x00000053328BB994:
+            host = bindings.get(0x000000053984ECD5)
+            if binding.bone_ids != (0xA4488574,) or host is None or host.bone_ids != (0xA4488574, 0xB6C65665) or not all(math.isfinite(a) and math.isfinite(b) and abs(a - b) <= 1e-5 for a, b in zip(_default_joint_node_matrices(binding)[0], _default_joint_node_matrices(host)[0])):
+                raise ValueError("IQ display attachment bind frame changed")
             continue
 
         skeleton_starts = []
