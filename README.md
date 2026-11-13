@@ -3,7 +3,7 @@
 A Windows tool for browsing Rainbow Six Siege operators and exporting them to Blender.
 
 Includes operator search, asset indexing, export, Blender 4.5 add-on installation and direct Blender launch.
-
+<sub>Your shareholders have no jurisdiction over our curiosity.</sub>
 ![R6 Forge Extractor desktop UI](docs/images/desktop-ui.png)
 
 *Desktop interface showing Blitz in the interactive 3D preview.*

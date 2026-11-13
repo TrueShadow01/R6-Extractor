@@ -995,6 +995,15 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
 
             solid_color = candidate
 
+        # Castle's interior core uses a white texture and a source color
+        if (material_uid, shader_uid) == (0x00000005BC241708, 0x00000003327005AD):
+            if material_start + 28 > material_entry.end:
+                raise ValueError("Truncated Castle core material color")
+            candidate = struct.unpack_from("<4f", payload, material_start + 12)
+            if not all(math.isfinite(value) and 0.0 <= value <= 1.0 for value in candidate):
+                raise ValueError("Invalid Castle core material color")
+            solid_color = candidate
+
         # Source header color. Approximate texture modulation
         if (shader_uid == 0x0000000099E2C947 and material_uid in {
             0x0000000A8715F23D,  # Glaz bandana

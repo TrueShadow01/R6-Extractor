@@ -36,6 +36,7 @@ GADGETS = (
     Gadget(0x0000002A4CEB7295, "IQ - Scanner", 0x00000037802D16B5, 0x00000037802D1BDB, 0x0000002A4CEB72A0),
     Gadget(0x000000009B2CAF2E, "Ash - Breaching Round Launcher", 0x00000037802D16A1, 0x000000483B8E5C27, 0x000000483B8E5C15, weapon_uid=0x00000037802CC878),
     Gadget(0x00000064935FA57D, "Thatcher - E.G.S. Disruptor", 0x00000037802D16D3, 0x000000651F0E871D, 0x0000006328827031, weapon_uid=0x00000064935FA584),
+    Gadget(0x0000000106FC47E2, "Castle - Armor Panel (intact)", 0x00000037802D16A7, 0x000000548AE78929, 0x00000054206C58AC)
 )
 
 def get_gadet(uid):
@@ -91,6 +92,8 @@ def validate_gadget(game, gadget):
 
         appearance = registry._record(records, registry._u64(weapon.data, 8), registry.APPEARANCE_TYPE)
         valid_layouts = (bytes.fromhex("74251f0500"), bytes.fromhex("74251f0501"))
+    elif (gadget.operator_uid, gadget.item_uid, gadget.appearance_uid) == (0x00000037802D16A7, 0x000000548AE78929, 0x00000054206C58AC):
+        valid_layouts = (bytes.fromhex("74251f0501"),)
     else:
         valid_layouts = (bytes.fromhex("74251f0500"),)
 

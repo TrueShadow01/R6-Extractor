@@ -1207,6 +1207,15 @@ def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: A
 
     geometry_records = resolve_geometry_records(model_uid, children, index)
 
+    if model_uid == 0x0000000106FC47E2:
+        # package also contains debris and duplicate split geometry
+        geometry_records = tuple(
+            record for record in geometry_records
+            if record.uid == 0x00000005545C2035
+        )
+        if len(geometry_records) != 1:
+            raise ValueError("Castle intact barricade geometry changed")
+
     if model_uid == 0x00000064935FA57D:
         # Runtime scan planes, pulse domes and beam, not physical gadget parts
         effect_geometry = {
@@ -1264,6 +1273,19 @@ def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: A
 
     parts = decode_mesh_parts(geometry_records, mesh_bindings)
     texture_uids = resolve_texture_uids(model_uid, children, index)
+
+    if model_uid == 0x0000000106FC47E2:
+        # decode only textures used by selected intact mesh
+        selected_materials = resolve_material_texture_sets(model_payload, texture_uids, (record.uid for record in geometry_records),)
+        texture_uids = tuple(sorted({
+            texture_uid
+            for slots in selected_materials
+            for slot in slots
+            for selector in slot.selectors
+            for texture_uid in selector.texture_uids
+        }))
+        if not texture_uids:
+            raise ValueError("Castle intact barricade textures are missing")
 
     (
         decoded_textures,
