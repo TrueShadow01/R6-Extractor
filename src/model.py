@@ -1207,6 +1207,23 @@ def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: A
 
     geometry_records = resolve_geometry_records(model_uid, children, index)
 
+    selected_gadget_parts = {
+        # Close Candela. Exclude alternate shells and shared debris.
+        0x0000000ADC64DD6D: {0x0000000B2DF88143},
+        # Assembled Launcher. Exclude loose ammunition and effect planes.
+        0x000000096ED81F00: {
+            0x0000000919A892A3,
+            0x00000008E67F74C2
+        },
+    }.get(model_uid)
+    if selected_gadget_parts is not None:
+        geometry_records = tuple(
+            record for record in geometry_records
+            if record.uid in selected_gadget_parts
+        )
+        if {record.uid for record in geometry_records} != selected_gadget_parts:
+            raise ValueError(f"Gadget geometry changed for {model_uid:016X}")
+
     if model_uid == 0x0000000106FC47E2:
         # package also contains debris and duplicate split geometry
         geometry_records = tuple(
@@ -1274,7 +1291,11 @@ def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: A
     parts = decode_mesh_parts(geometry_records, mesh_bindings)
     texture_uids = resolve_texture_uids(model_uid, children, index)
 
-    if model_uid == 0x0000000106FC47E2:
+    if model_uid in (
+        0x0000000106FC47E2,
+        0x0000000ADC64DD6D,
+        0x000000096ED81F00,
+    ):
         # decode only textures used by selected intact mesh
         selected_materials = resolve_material_texture_sets(model_payload, texture_uids, (record.uid for record in geometry_records),)
         texture_uids = tuple(sorted({
@@ -1285,7 +1306,7 @@ def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: A
             for texture_uid in selector.texture_uids
         }))
         if not texture_uids:
-            raise ValueError("Castle intact barricade textures are missing")
+            raise ValueError("Selected gadget textures are missing")
 
     (
         decoded_textures,

@@ -36,7 +36,13 @@ GADGETS = (
     Gadget(0x0000002A4CEB7295, "IQ - Scanner", 0x00000037802D16B5, 0x00000037802D1BDB, 0x0000002A4CEB72A0),
     Gadget(0x000000009B2CAF2E, "Ash - Breaching Round Launcher", 0x00000037802D16A1, 0x000000483B8E5C27, 0x000000483B8E5C15, weapon_uid=0x00000037802CC878),
     Gadget(0x00000064935FA57D, "Thatcher - E.G.S. Disruptor", 0x00000037802D16D3, 0x000000651F0E871D, 0x0000006328827031, weapon_uid=0x00000064935FA584),
-    Gadget(0x0000000106FC47E2, "Castle - Armor Panel (intact)", 0x00000037802D16A7, 0x000000548AE78929, 0x00000054206C58AC)
+    Gadget(0x0000000106FC47E2, "Castle - Armor Panel (intact)", 0x00000037802D16A7, 0x000000548AE78929, 0x00000054206C58AC),
+    Gadget(0x000000009B2CAEFC, "Thermite - Exothermic Charge", 0x00000037802D16D4, 0x00000037802D20B9, 0x00000038FA6B1AFA),
+    Gadget(0x0000000AA6A04860, "Lesion - Gu Mine", 0x00000037802D16BA, 0x000000512B6EFE33, 0x000000512B6EFDE6),
+    Gadget(0x0000000ADC64DD6D, "Ying - Candela (closed)", 0x00000037802D16D9, 0x000000529BBF458E, 0x000000529BBF61C4),
+    Gadget(0x000000088B89E1C3, "Ela - Grzmot Mine", 0x00000037802D16AD, 0x00000037802D1A46, 0x000000395EBC18B0),
+    Gadget(0x00000009615E0527, "Echo - Yokai Drone", 0x00000037802D16AC, 0x00000037802D1A12, 0x0000005921DEB03A),
+    Gadget(0x000000096ED81F00, "Hibana - X-KAIROS Launcher",  0x00000037802D16B4, 0x000000483B8EB6C5, 0x000000483B8EB6B3),
 )
 
 def get_gadet(uid):
@@ -92,7 +98,11 @@ def validate_gadget(game, gadget):
 
         appearance = registry._record(records, registry._u64(weapon.data, 8), registry.APPEARANCE_TYPE)
         valid_layouts = (bytes.fromhex("74251f0500"), bytes.fromhex("74251f0501"))
-    elif (gadget.operator_uid, gadget.item_uid, gadget.appearance_uid) == (0x00000037802D16A7, 0x000000548AE78929, 0x00000054206C58AC):
+    elif (gadget.operator_uid, gadget.item_uid, gadget.appearance_uid) in {
+        (0x00000037802D16A7, 0x000000548AE78929, 0x00000054206C58AC),
+        (0x00000037802D16D9, 0x000000529BBF458E, 0x000000529BBF61C4),
+        (0x00000037802D16AC, 0x00000037802D1A12, 0x0000005921DEB03A),
+    }:
         valid_layouts = (bytes.fromhex("74251f0501"),)
     else:
         valid_layouts = (bytes.fromhex("74251f0500"),)
