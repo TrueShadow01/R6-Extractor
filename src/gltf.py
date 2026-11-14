@@ -888,7 +888,102 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
                     "Live scan overlay and runtime scan effects are omitted."
                 )
 
+        # Runtime displays are explicitly labelled static approximations
+        display_alpha = {
+            0x24F948E738: {
+                (0x257CB37667, None): 0.0,
+            },
+            0x547BC75B93: {
+                (0xBE25903E, 0xE3683314): 1.0,
+                (0x5842481E97, 0xE09ED870): 0.0,
+            },
+            0x64D62E744E: {
+                (0x5CE744A9E5, 0x3327005AD): 1.0,
+            },
+            0x13D0BCD6A8: {
+                (0x67683E37D0, 0xE09ED870): 0.0,
+            },
+            0x67B7BE27EC: {
+                (0x694AFF0888, 0x4299B60FE3): 0.0,
+                (0x6A22BCB5B9, 0x4299B60FE3): 0.0,
+                (0x6A22BCB5AB, 0x4299B60FE3): 0.0,
+            },
+        }.get(model_uid, {}).get((slot_textures.material_uid, slot_textures.shader_uid))
+
+        if display_alpha is not None and not slot_textures.diffuse:
+            pbr["baseColorFactor"] = [0.005, 0.015, 0.03, display_alpha]
+            pbr["metallicFactor"] = 0.0
+            pbr["roughnessFactor"] = 0.3
+            material["alphaMode"] = "OPAQUE" if display_alpha else "BLEND"
+            material.pop("alphaCutoff", None)
+            material["name"] += "_Approx_Static_Display"
+            material.setdefault("extras", {})["siegeMaterialApproximation"] = (
+                "Static gadget display approximation. Blank screen or hidden "
+                "runtime overlay. Live readings and animations are not reproduced."
+            )
+
+        # Scratch decals, not the shield's transparent pane
+        if model_uid in {
+                0x3F3936A334, 0x46B1161F22,
+                0x60C4EE7E3B, 0x5DB5BC2B2A,
+            } and (slot_textures.material_uid, slot_textures.shader_uid) == (0x6A9F01154, 0x3BD13B9E) and slot_textures.diffuse:
+            material["alphaMode"] = "BLEND"
+            material.pop("alphaCutoff", None)
+
+        shield_note = None
+        pane_uid = {
+            0x5DB5BC2B2A: 0x2B22533CE,
+            0x60C4EE7E3B: 0x2B225339E,
+        }.get(model_uid)
+
+        if pane_uid is not None:
+            damage_materials = {
+                0x2B225339E, 0x2B22533AA, 0x2B22533B6,
+                0x2B22533C2, 0x2B22533CE,
+            }
+
+            if slot_textures.shader_uid == 0x83A0CD9B3 and slot_textures.material_uid in damage_materials:
+                shield_note = (
+                    "Static undamaged shield approximation. Source glass texture "
+                    "format is unsupported. Neutral tinted pane. Overlapping "
+                    "damage states hidden."
+                )
+                if slot_textures.material_uid == pane_uid:
+                    pbr["baseColorFactor"] = [0.65, 0.8, 0.88, 0.18]
+                    slot_textures = replace(
+                        slot_textures,
+                        shader_uniforms=(*slot_textures.shader_uniforms, ("ExperimentalGlassLensV1", (0.18, 0.08, 1.5)),),
+                    )
+                else:
+                    pbr["baseColorFactor"][3] = 0.0
+                    material["alphaMode"] = "BLEND"
+                    material.pop("alphaCutoff", None)
+                material["name"] += "_Approx_Undamaged_Shield"
+            elif model_uid == 0x5DB5BC2B2A and (slot_textures.material_uid, slot_textures.shader_uid) == (0x65669876F, 0x3BD13B9E):
+                pbr["baseColorFactor"][3] = 0.0
+                material["alphaMode"] = "BLEND"
+                material.pop("alphaCutoff", None)
+                shield_note = (
+                    "Static undamaged shield approximation. Impact overlay hidden."
+                )
+
         apply_optical_preview(material, slot_textures)
+
+        if model_uid == 0x24F948E738 and slot_textures.shader_uid is None and slot_textures.material_uid in {0x36D604A6, 0x257CB37667}:
+            note = (
+                "Source sight definitions unavailable. Neutral thin-glass lens "
+                "approximation."
+            )
+            material["name"] += "_Approx_Sight"
+            material.setdefault("extras", {})["siegeMaterialApproximation"] = note
+            if slot_textures.material_uid == 0x36D604A6:
+                material["extras"]["siegeOpticalApproximation"] = note
+
+        if shield_note is not None:
+            material.setdefault("extras", {})["siegeMaterialApproximation"] = shield_note
+            if "siegeGlassPreviewV1" in material["extras"]:
+                material["extras"]["siegeOpticalApproximation"] = shield_note
+
         if "siegeGlassPreviewV1" in material.get("extras", {}) and slot_textures.diffuse:
             # Atlas alpha may encode selectors rather than  transparency
             # Preserve the original texture for the other material slots
