@@ -4,6 +4,11 @@ import struct
 from dataclasses import replace
 
 GLASS_PROFILES = {
+    # Inspected shield panes
+    (0x3327005AD, 0x731C35563): (0.22, 0.08, 1.5),
+    (0x3BD13B9E, 0x56572D7F93): (0.22, 0.08, 1.5),
+    # Mozzie's external sight definition is unavailable
+    (None, 0x36D604A6): (0.22, 0.08, 1.5),
     # Valkyrie Black Eye upper dome
     (0x000000003BD13B9E, 0x00000006EA53F13A): (0.18, 0.08, 1.5),
     # Castle: black, opaque visor
