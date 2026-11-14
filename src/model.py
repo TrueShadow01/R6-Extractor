@@ -526,55 +526,62 @@ def resolve_static_attachment_bindings(payload, bindings):
     return resolve_doc_stim_binding(payload, resolve_holster_binding(payload, resolved),)
 
 def resolve_doc_stim_binding(payload, bindings):
-    """Place Doc's stim or Ash's round using the source skeleton pose"""
-    geometry_uid, host_uid = (
-        (0x000000053984EC3C, 0x000000053984ECF8)
-        if 0x000000053984EC3C in bindings
-        else (0x0000000522EE352F, 0x0000000522EE352E)
-    )
-    bone_id = 0x857FE71D
-    parent_id = 0x80643B9A if geometry_uid == 0x000000053984EC3C else 0xB6C65665
-
-    binding = bindings.get(geometry_uid)
-    host = bindings.get(host_uid)
-    if binding is None or host is None or binding.joint_node_matrices:
-        return bindings
-    if binding.bone_ids != (bone_id,) or 0xB6C65665 not in host.bone_ids:
-        raise ValueError("Gadget projectile attachment binding changed")
-
+    """Place inspected gadget ammunition using its package-owned skeleton"""
     from src.skeleton import read_skeleton_parents
 
-    matches = [
-        graph for graph in read_skeleton_parents(payload)
-        if graph.get(bone_id) == parent_id
-        and (parent_id == 0xB6C65665 or graph.get(parent_id) == 0xB6C65665)
-        and 0xB6C65665 in graph
-        and graph[0xB6C65665] is None
-    ]
-    if len(matches) != 1:
-        raise ValueError("Gadget projectile skeleton attachment changed")
-
-    signature = struct.pack("<II", 0x71EDFDE3, bone_id)
-    offset = payload.find(signature)
-    if offset < 0 or payload.find(signature, offset + 1) >= 0:
-        raise ValueError("Missing or ambiguous gadget projectile pose")
-    if offset + 94 > len(payload):
-        raise ValueError("Truncated gadget projectile pose")
-    if payload[offset + 8] != 2 or payload[offset + 17] != 0:
-        raise ValueError("Unsupported gadget projectile parent record")
-
-    marker, zero, kind = struct.unpack_from("<III", payload, offset + 18)
-    if (marker & 0xFFFF0000) != 0xFBF80000 or zero or kind != 0x8D37C90B:
-        raise ValueError("Unsupported gadget projectile pose layout")
-
-    values = struct.unpack_from("<16f", payload, offset + 30)
-    if not all(math.isfinite(value) for value in values) or values[3] != 0.0 or values[11] != 0.0 or abs(sum(value * value for value in values[4:8]) - 1.0) > 0.001:
-        raise ValueError("Invalid gadget projectile skeleton transform")
-
-    matrix = _pose_to_gltf_matrix(BoneTransform(bone_id, values[:3], values[4:8]))
-    matrix = align_holster_root(payload, offset, bindings, matrix)
+    root_id = 0xB6C65665
+    attachments = (
+        # Guest geometry, host geometry, bone, expected parent chain
+        (0x053984EC3C, 0x053984ECF8, 0x857FE71D, (0x80643B9A, root_id)),
+        (0x0522EE352F, 0x0522EE352E, 0x857FE71D, (root_id,)),
+        (0x053984EC3C, 0x0E6DD56BED, 0x857FE71D, (root_id,)),
+        (0x4164448959, 0x3F6D411222, 0x1F343CDB, (root_id,)),
+        (0x690524BB81, 0x6885BA73FA, 0x2F83C15C, (0x05C98727, 0x3077B0AA, root_id)),
+        (0x690524BB88, 0x6885BA73FA, 0xB68A90E6, (0x05C98727, 0x3077B0AA, root_id)),
+    )
     resolved = dict(bindings)
-    resolved[geometry_uid] = replace(binding, joint_node_matrices=(matrix,))
+    graphs = None
+
+    for geometry_uid, host_uid, bone_id, parents in attachments:
+        binding = bindings.get(geometry_uid)
+        host = binding.get(host_uid)
+        if binding is None or host is None or binding.joint_node_matrices:
+            continue
+        if binding.bone_ids != (bone_id,) or root_id not in host.bone_ids:
+            raise ValueError("Gadget projectile attachment binding changed")
+
+        if graphs is None:
+            graphs = read_skeleton_parents(payload)
+
+        chain = (bone_id, *parents)
+        matches = [
+            graph for graph in graphs
+            if root_id in graph and graph[root_id] is None
+            and all(graph.get(child) == parent for child, parent in zip(chain, chain[1:]))
+        ]
+        if len(matches) != 1:
+            raise ValueError("Gadget projectile skeleton attachment changed")
+
+        signature = struct.pack("<II", 0x71EDFDE3, bone_id)
+        offset = payload.find(signature)
+        if offset < 0 or payload.find(signature, offset + 1) >= 0:
+            raise ValueError("Missing or ambiguous gadget projectile pose")
+        if offset + 94 > len(payload):
+            raise ValueError("Truncated gadget projectile pose")
+        if payload[offset + 8] != 2 or payload[offset + 17] != 0:
+            raise ValueError("Unsupported gadget projectile parent record")
+
+        marker, zero, kind = struct.unpack_from("<III", payload, offset + 18)
+        if (marker & 0xFFFF0000) != 0xFBF80000 or zero or kind != 0x8D37C90B:
+            raise ValueError("Unsupported gadget projectile pose layout")
+
+        values = struct.unpack_from("<16f", payload, offset + 30)
+        if not all(math.isfinite(value) for value in values) or values[3] != 0.0 or values[11] != 0.0 or abs(sum(value * value for value in values[4:8]) - 1.0) > 0.001:
+            raise ValueError("Invalid gadget projectile skeleton transform")
+
+        matrix = _pose_to_gltf_matrix(BoneTransform(bone_id, values[:3], values[4:8]))
+        matrix = align_holster_root(payload, offset, bindings, matrix)
+        resolved[geometry_uid] = replace(binding, joint_node_matrices=(matrix,))
     return resolved
 
 def resolve_fitted_head_frames(bindings):
