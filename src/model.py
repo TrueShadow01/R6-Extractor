@@ -544,7 +544,7 @@ def resolve_doc_stim_binding(payload, bindings):
 
     for geometry_uid, host_uid, bone_id, parents in attachments:
         binding = bindings.get(geometry_uid)
-        host = binding.get(host_uid)
+        host = bindings.get(host_uid)
         if binding is None or host is None or binding.joint_node_matrices:
             continue
         if binding.bone_ids != (bone_id,) or root_id not in host.bone_ids:
@@ -552,7 +552,6 @@ def resolve_doc_stim_binding(payload, bindings):
 
         if graphs is None:
             graphs = read_skeleton_parents(payload)
-
         chain = (bone_id, *parents)
         matches = [
             graph for graph in graphs
@@ -1206,6 +1205,70 @@ def resolve_export_material_textures(texture_sets: Iterable[MaterialTextureSet],
         for texture_set in texture_sets
     )
 
+def resolve_gridlock_bindings(model_uid, payload, bindings):
+    """Assemble Trax stack using its inspected global skeleton pose"""
+    if model_uid != 0x27EFAE16B8:
+        return bindings
+
+    expected = {
+        0x27403BEC74: (0xEC5BF5EC, 0x723F604F, 0x053850D9, 0x9C310163),
+        0x27403BF336: (0x90FF584A,),
+        0x27403BF33D: (0xE7F868DC,),
+        0x27403BF344: (0x7EF13966,),
+        0x27403BF34B: (0x09F609F0,),
+        0x27403BF352: (0x97929C53,),
+        0x27403BFACA: (0xE095ACC5,),
+        0x27403BFAD1: (0x799CFD7F,),
+        0x28C3960081: (0xDA215DB7, 0x4445C814, 0x3342F882, 0xAA4BA938),
+        0x28C396008C: (0x3B96A7C4,),
+    }
+    if set(bindings) != set(expected) or any(bindings[geometry].bone_ids != bones for geometry, bones in expected.items()):
+        raise ValueError("Gridlock source mesh bindings changed")
+
+    from src.skeleton import read_skeleton_parents
+
+    graphs = read_skeleton_parents(payload)
+    if len(graphs) != 1:
+        raise ValueError("Gridlock source skeleton is missing or ambiguous")
+    graph = graphs[0]
+    if graph.get(0xB6C65665, -1) is not None or graph.get(0x22E53C03) != 0xB6C65665 or graph.get(0xE26227A3) != 0x22E53C03:
+        raise ValueError("Gridlock source skeleton ancestry changed")
+
+    resolved = dict(bindings)
+    for geometry, bones in expected.items():
+        parent = 0xE26227A3 if geometry == 0x27403BEC74 else 0x22E53C03
+        matrices = []
+
+        for bone in bones:
+            if graph.get(bone) != parent:
+                raise ValueError("Gridlock source bone ancestry changed")
+
+            signature = struct.pack("<II", 0x71EDFDE3, bone)
+            offset = payload.find(signature)
+            if offset < 0 or payload.find(signature, offset + 1) >= 0:
+                raise ValueError("Missing or ambiguous Gridlock global pose")
+            if offset + 94 > len(payload):
+                raise ValueError("Truncated Gridlock global pose")
+            if payload[offset + 8] != 2 or payload[offset + 17] != 0:
+                raise ValueError("Unsupported Gridlock pose parent record")
+
+            marker, zero, kind = struct.unpack_from("<III", payload, offset + 18)
+            if (marker & 0xFFFF0000) != 0xFBF80000 or zero or kind != 0x8D37C90B:
+                raise ValueError("Unsupported Gridlock global pose layout")
+
+            values = struct.unpack_from("<16f", payload, offset + 30)
+            if not all(math.isfinite(value) for value in values) or values[3] != 0.0 or values[11] != 0.0 or abs(sum(value * value for value in values[4:8]) - 1.0) > 0.001:
+                raise ValueError("Invalid Gridlock global pose")
+
+            matrices.append(_pose_to_gltf_matrix(BoneTransform(bone, values[:3], values[4:8])))
+
+        binding = bindings[geometry]
+        if geometry == 0x28C3960081 and any(abs(actual - original) > 0.0001 for matrix, original_matrix in zip(matrices, _default_joint_node_matrices(binding)) for actual, original in zip(matrix, original_matrix)):
+            raise ValueError("Gridlock base pose no longer matches its bind frame")
+
+        resolved[geometry] = replace(binding, joint_node_matrices=tuple(matrices))
+    return resolved
+
 def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: AssetIndex, output_directory: str | Path) -> ModelExportResult:
     """Export every geometry child and linked decodable texture"""
 
@@ -1213,14 +1276,36 @@ def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: A
     output_directory.mkdir(parents=True, exist_ok=True)
 
     geometry_records = resolve_geometry_records(model_uid, children, index)
-
     selected_gadget_parts = {
-        # Close Candela. Exclude alternate shells and shared debris.
-        0x0000000ADC64DD6D: {0x0000000B2DF88143},
-        # Assembled Launcher. Exclude loose ammunition and effect planes.
-        0x000000096ED81F00: {
-            0x0000000919A892A3,
-            0x00000008E67F74C2
+        # Existing selections
+        0xADC64DD6D: {0xB2DF88143},
+        0x96ED81F00: {0x919A892A3, 0x8E67F74C2},
+
+        # Physical assemblies omit alternate states, debris and runtime effects.
+        0x30F8369D2C: {0x2F353E1144}, # Amaru
+        0x2FF67F5827: {0x840698B59}, # Capitao
+        0x62BFAA96B1: {0x629C1EA985}, # Denari
+        0x13D0BCD6A8: {0x12FF7CAA4B}, # Dokkaebi
+        0x59A6BD7EA9: {0x5909BEFB88}, # Grim
+        0x30E706D5DD: {0x109D47E5E}, # Glaz
+        0x1F7D4C7B04: {0x1F9E6BA562}, # Maverick
+        0x24F948E73E: {0x2428EF0A21}, # Mozzie Pest
+        0x2E78D2C22E: {0x21A362D171, 0x21A362D180}, # Nomad
+        0x55DC2F2157: {0x5514C1781B}, # Osa
+        0x547BC75B93: {0x53984ECB0, 0x53984ECAF}, # Pulse
+        0x6047CFE767: {0x60E0180978}, # Rauora
+        0x64D62E744E: {0x652C34E0A6}, # Solid Snake
+        0x5A363A3B24: {0x5A458A033E}, # Solis
+        0x38A4AB07DC: {0x3B877D0A80}, # Tachanka
+        0x532A0CC9AF: {0x533BA798CC, 0x54D9F7AA17}, # Thunderbird
+        0x548AE6FACB: {0x6655068E0A}, # Vigil
+        0x40705E87F6: {0x3F6D411222, 0x4164448959}, # Zero
+        0xE7E584CB5: {0xE6DD56BED, 0x53984EC3C}, # Zofia
+        0x67B7BE27EC: {
+            0x6885BA73FA,
+            0x6885BA7403,
+            0x690524BB81,
+            0x690524BB88,
         },
     }.get(model_uid)
     if selected_gadget_parts is not None:
@@ -1261,10 +1346,19 @@ def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: A
         else None
     )
     mesh_bindings = (
-        resolve_static_face_bindings(resolve_attachment_frames(resolve_static_attachment_bindings(model_payload, read_mesh_bindings(model_payload))), model_payload)
+        read_mesh_bindings(model_payload)
         if model_payload is not None
         else {}
     )
+    if selected_gadget_parts is not None:
+        mesh_bindings = {
+            uid: binding
+            for uid, binding in mesh_bindings.items()
+            if uid in selected_gadget_parts
+        }
+
+    if model_payload is not None:
+        mesh_bindings = resolve_static_face_bindings(resolve_attachment_frames(resolve_static_attachment_bindings(model_payload, mesh_bindings)), model_payload)
 
     if model_uid == 0x156B734234:
         body_record = index.primary(0x156B73543D)
@@ -1289,16 +1383,18 @@ def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: A
         if any(max(abs(a - b) for a, b in zip(correction, _gltf_multiply(body_by_bone[bone_id], invert_gltf_matrix(helmet_by_bone[bone_id])))) > 1e-4 for bone_id in common):
             raise ValueError("Tachanka body and helmet attachment frames disagree")
 
-        # Keep the assembled face, eyes and helmet together - Aiden
+        # Keep the assembled face, eyes and helmet together
         mesh_bindings = {
             uid: replace(binding, joint_node_matrices=tuple(_gltf_multiply(correction, matrix) for matrix in _default_joint_node_matrices(binding)))
             for uid, binding in  mesh_bindings.items()
         }
 
+    mesh_bindings = resolve_gridlock_bindings(model_uid, model_payload, mesh_bindings)
+
     parts = decode_mesh_parts(geometry_records, mesh_bindings)
     texture_uids = resolve_texture_uids(model_uid, children, index)
 
-    if model_uid in (
+    if selected_gadget_parts is not None or model_uid in (
         0x0000000106FC47E2,
         0x0000000ADC64DD6D,
         0x000000096ED81F00,
