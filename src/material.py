@@ -1017,6 +1017,38 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
                 raise ValueError("Invalid Candela indicator color")
             solid_color = candidate
 
+        # Inspected gadget colors. 2 textured exceptions use white masks
+        if (not roles.get(DIFFUSE_ROLE) or (shader_uid, material_uid) in {
+            (0x1397A3EEB7, 0x2D1BEFAC46),
+            (0x959B5D7CD, 0xBA5A08957),
+        }) and (shader_uid, material_uid) in {
+            (0x3327005AD, 0x5B96E63987),
+            (0x3327005AD, 0x731C35563),
+            (0x3327005AD, 0x5CE744A9E5),
+            (0x3327005AD, 0x25B13DCCC1),
+            (0x3327005AD, 0x2591BE9437),
+            (0x3327005AD, 0x316F5CF0D0),
+            (0x3327005AD, 0x5C82A0B701),
+            (0x3327005AD, 0x2591BC2AA2),
+            (0x3327005AD, 0x1FE0103D4B),
+            (0x3327005AD, 0x25B13DCDDD),
+            (0x40D7FCF0, 0x18A4B0B612),
+            (0x40D7FCF0, 0x18A4B0B61E),
+            (0x40D7FCF0, 0x2B2488E8E7),
+            (0x1397A3EEB7, 0x2DE308A6A1),
+            (0x1397A3EEB7, 0x2D1BEFAC46),
+            (0x1397A3EEB7, 0x2E84C7F63A),
+            (0x1397A3EEB7, 0x2EEE2AD9A6),
+            (0x14BCCBDB, 0x33BAEC4606),
+            (0x959B5D7CD, 0xBA5A08957),
+        }:
+            if material_start + 28 > material_entry.end:
+                raise ValueError("Truncated gadget material color")
+            candidate = struct.unpack_from("<4f", payload, material_start + 12)
+            if not all(math.isfinite(value) and 0.0 <= value <= 1.0 for value in candidate):
+                raise ValueError("Invalid gadget material color")
+            solid_color = candidate
+
         # Source header color. Approximate texture modulation
         if (shader_uid == 0x0000000099E2C947 and material_uid in {
             0x0000000A8715F23D,  # Glaz bandana
@@ -1103,6 +1135,84 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
 
         if mesh_entry is None:
             part_materials.append(())
+            continue
+
+        if geometry_uid == 0x5514C1781B and parse_file_metadata(payload).uid == 0x55DC2F2157:
+            # Alternate state overrides must not turn the intact form into glass
+            expected = (
+                0x50C666F569, 0x56572D7F93, 0x54469B20F4, 0x54469B20C5,
+                0x54469B21D4, 0x5481EA7080, 0x5481EA7081, 0x5481EA7086,
+                0x5481EA7084, 0x5481EA7083, 0x5481EA7085, 0x54FE600A5D,
+            )
+            matching_tables = []
+            for candidate_entry in mesh_entries:
+                start = candidate_entry.data_offset
+                if start + 12 > candidate_entry.end:
+                    continue
+                bone_count = struct.unpack_from("<I", payload, start + 8)[0]
+                geometry_offset = start + 21 + bone_count * 80
+                table = geometry_offset + 8
+                if table + 4 > candidate_entry.end:
+                    continue
+                if struct.unpack_from("<Q", payload, geometry_offset)[0] != geometry_uid:
+                    continue
+                if table + 4 + len(expected) * 8 > candidate_entry.end:
+                    raise ValueError("Truncated Osa material slots")
+                count = struct.unpack_from("<I", payload, table)[0]
+                slots = struct.unpack_from(f"<{len(expected)}Q", payload, table + 4)
+                if count != len(expected) or slots != expected:
+                    raise ValueError("Osa intact material slots changed")
+                matching_tables.append(slots)
+
+            if len(matching_tables != 1):
+                raise ValueError("Missing or ambiguous Osa intact mesh")
+
+            slots = []
+            for material_uid in expected:
+                source = resolved_materials.get(material_uid)
+                if source is None:
+                    raise ValueError("Missing Osa intact material")
+                if material_uid in {0x54469B20F4, 0x54469B20C5, 0x54469B21D4}:
+                    identity = struct.pack("<IQQ", 0x73F86CAC, material_uid, material_uid)
+                    entry = material_entries.get(material_uid)
+                    if payload.count(identity) != 1 or entry is None or source.shader_uid != 0x3327005AD or source.diffuse_uids or entry.data_offset + 28 > entry.end:
+                        raise ValueError("Osa intact frame material changed")
+                    color = struct.unpack_from("<4f", payload, entry.data_offset + 12)
+                    if not all(math.isfinite(value) and 0.0 <= value <= 1.0 for value in color):
+                        raise ValueError("Invalid Osa frame material color")
+                    source = replace(source, solid_color=color)
+                slots.append(source)
+
+            part_materials.append(tuple(slots))
+            continue
+
+        if geometry_uid == 0x278FADDBCA and parse_file_metadata(payload).uid == 0x24F948E738:
+            # Preserve external sight slots instead of silently dropping them
+            start = mesh_entry.data_offset
+            if start + 12 > mesh_entry.end:
+                raise ValueError("Truncated Mozzie launcher mesh")
+
+            bone_count = struct.unpack_from("<I", payload, start + 8)[0]
+            geometry_offset = start + 21 + bone_count * 80
+            table = geometry_offset + 8
+
+            expected = (
+                0x289DC8ED8C, 0x3CEBBFD78B, 0x2B2488E8E7,
+                0x36D604A6, 0x257CB37667,
+            )
+            if table + 4 + 8 * len(expected) > mesh_entry.end:
+                raise ValueError("Truncated Mozzie launcher material slots")
+            if struct.unpack_from("<Q", payload, geometry_offset)[0] != geometry_uid or struct.unpack_from("<I", payload, table)[0] != len(expected) or struct.unpack_from("<5Q", payload, table + 4) != expected:
+                raise ValueError("Mozzie launcher material slots changed")
+
+            slots = tuple(
+                resolved_materials.get(material_overrides.get(uid, uid))
+                for uid in expected[:3]
+            )
+            if any(slot is None for slot in slots) or tuple(slot.material_uid for slot in slots) != ( 0x278FAE0CD6, 0x278FAEC203, 0x2B2488E8E7)or any(uid in resolved_materials or uid in material_overrides for uid in expected[3:]):
+                raise ValueError("Mozzie launcher material definitions changed")
+
+            part_materials.append((*slots, MaterialTextureSet(material_uid=expected[3]), MaterialTextureSet(material_uid=expected[4])))
             continue
 
         # Ash's launcher uses a shared placeholder in its actual slot table
