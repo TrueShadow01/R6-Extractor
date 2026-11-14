@@ -58,8 +58,17 @@ def save_portable_blend(destination, args):
         "Siege materials approximate the game appearance.",
     ]
     for material in bpy.data.materials:
-        note = material.get("siegeGlassPreviewNote")
-        if note:
+        notes = []
+        for key in (
+            "siegeMaterialApproximation",
+            "siegeOpticalApproximation",
+            "siegeGlassPreviewNote",
+        ):
+            note = material.get(key)
+            if isinstance(note, str) and note and note not in notes:
+                notes.append(note)
+
+        for note in notes:
             lines.append(f"{material.name}: {note}")
         if material.use_nodes and material.node_tree.nodes.get("Siege Experimental Hair"):
             lines.append(f"{material.name}: Experimental Hair approximation.")

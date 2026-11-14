@@ -531,6 +531,8 @@ def resolve_doc_stim_binding(payload, bindings):
 
     root_id = 0xB6C65665
     attachments = (
+        # Mozzie loaded round, using its recorded source skeleton pose
+        (0x278FADDBAE, 0x278FADDBCA, 0x50693F0B, (root_id,)),
         # Guest geometry, host geometry, bone, expected parent chain
         (0x053984EC3C, 0x053984ECF8, 0x857FE71D, (0x80643B9A, root_id)),
         (0x0522EE352F, 0x0522EE352E, 0x857FE71D, (root_id,)),
@@ -1277,11 +1279,14 @@ def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: A
 
     geometry_records = resolve_geometry_records(model_uid, children, index)
     selected_gadget_parts = {
+        # Frost intact open trap, exclude overlapping damaged version and debris
+        0x3C8F4197B2: {0x5C22D58AE},
+
         # Existing selections
         0xADC64DD6D: {0xB2DF88143},
         0x96ED81F00: {0x919A892A3, 0x8E67F74C2},
 
-        # Physical assemblies omit alternate states, debris and runtime effects.
+        # Physical assemblies omit alternate states, debris and runtime effects
         0x30F8369D2C: {0x2F353E1144}, # Amaru
         0x2FF67F5827: {0x840698B59}, # Capitao
         0x62BFAA96B1: {0x629C1EA985}, # Denari

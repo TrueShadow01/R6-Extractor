@@ -1164,7 +1164,7 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
                     raise ValueError("Osa intact material slots changed")
                 matching_tables.append(slots)
 
-            if len(matching_tables != 1):
+            if len(matching_tables) != 1:
                 raise ValueError("Missing or ambiguous Osa intact mesh")
 
             slots = []

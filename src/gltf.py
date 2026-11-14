@@ -743,8 +743,18 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
                 "index": add_texture(slot_textures.diffuse)
             }
 
-            if model_uid == 0x67B7BE27EC and slot_textures.material_uid == 0x6885BA3B92 and slot_textures.shader_uid == 0x3327005AD:
-                # Noor's launcher body and rounds are opaque
+            if (
+                model_uid,
+                slot_textures.material_uid,
+                slot_textures.shader_uid,
+            ) in {
+                (0x67B7BE27EC, 0x6885BA3B92, 0x3327005AD), # Noor
+                (0x46B1161F22, 0x671B677CF, 0x3327005AD), # Blitz
+                (0x3F3936A334, 0xA251826E, 0x3327005AD), # Montagne
+                (0x59A6BD7EA9, 0x5909BEFCD3, 0x3327005AD), # Grim
+                (0x5E8C093B6C, 0x5E1104D61B, 0x3327005AD), # Deimos
+            }:
+                # These physical surfaces are opaque
                 # Their diffuse alpha is not cutout coverage
                 alpha_mask = False
             elif slot_textures.shader_uid in ALPHA_MASK_SHADER_UIDS:
