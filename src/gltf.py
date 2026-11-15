@@ -922,6 +922,12 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
                 (0x6A22BCB5B9, 0x4299B60FE3): 0.0,
                 (0x6A22BCB5AB, 0x4299B60FE3): 0.0,
             },
+            0x5A363A3B24: {
+                (0x5A542B77DB, 0xE09ED870): 1.0,
+            },
+            0x532A0CC9AF: {
+                (0x542BDF6BFF, 0x1E972CCA2D): 0.0,
+            },
         }.get(model_uid, {}).get((slot_textures.material_uid, slot_textures.shader_uid))
 
         if display_alpha is not None and not slot_textures.diffuse:
@@ -934,6 +940,13 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
             material.setdefault("extras", {})["siegeMaterialApproximation"] = (
                 "Static gadget display approximation. Blank screen or hidden "
                 "runtime overlay. Live readings and animations are not reproduced."
+            )
+
+        if model_uid == 0x532A0CC9AF:
+            material["extras"]["siegeMaterialApproximation"] = (
+                "Kona Station static approximation. The Runtime healing "
+                "cross projection is hidden. Live projection and "
+                "animation is not reproduced."
             )
 
         # Scratch decals, not the shield's transparent pane
