@@ -1022,6 +1022,23 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
                 "approximated. Overlapping damage states hidden."
             )
 
+        if model_uid == 0x55DC2F2157 and slot_textures.shader_uid == 0x3327005AD and slot_textures.material_uid in {
+            0x54469B20F4, 0x54469B20C5, 0x54469B21D4,
+        }:
+            slot_textures = replace(
+                slot_textures,
+                shader_uniforms=(
+                    *slot_textures.shader_uniforms,
+                    ("ExperimentalGlassLensV1", (0.22, 0.08, 1.5)),
+                ),
+            )
+            material["name"] += "_Approx_Tinted_Shield_Glass"
+            shield_note = (
+                "Osa shield glass approximation. Source green tint retained. "
+                "Coverage, Roughness and IOR approximated. Runtime damage "
+                "progression is not reproduced."
+            )
+
         apply_optical_preview(material, slot_textures)
 
         if model_uid == 0x24F948E738 and slot_textures.shader_uid is None and slot_textures.material_uid in {0x36D604A6, 0x257CB37667}:
