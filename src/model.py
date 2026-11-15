@@ -1436,6 +1436,18 @@ def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: A
 
             for part, texture_set in zip(parts, part_texture_sets):
                 local_material_ids = tuple(dict.fromkeys(island.material_id for island in part.islands))
+
+                # Verified numeric slot order for these specific geometries
+                expected_order = {
+                    (0x24F948E738, 0x278FADDBCA): (0, 1, 2, 4, 3),
+                    (0x55DC2F2157, 0x5514C1781B): (3, 4, 0, 1, 2, 5, 6, 7, 8, 9, 10, 11),
+                }.get((model_uid, part.uid))
+
+                if expected_order is not None:
+                    if local_material_ids != expected_order or len(texture_set) != len(expected_order):
+                        raise ValueError(f"Gadget material slots changed for {model_uid:016X}/{part.uid:016X}")
+                    local_material_ids = tuple(sorted(local_material_ids))
+
                 local_material_count = max(local_material_ids, default=-1) + 1
 
                 slot_sets = [
