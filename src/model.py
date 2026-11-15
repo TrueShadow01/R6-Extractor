@@ -1283,9 +1283,9 @@ def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: A
         0x3C8F4197B2: {0x5C22D58AE},
 
         # Existing selections
-        0xADC64DD6D: {0xB2DF88143},
+        0xADC64DD6D: {0xBE89714C4, 0xBE89714DC}, # Ying closed Candela
         0x96ED81F00: {0x919A892A3, 0x8E67F74C2},
-        0x96ED81E97: {0x959B5CD79},  # Hibana deployed X-KAIROS pellet
+        0x96ED81E97: {0x959B5CD79}, # Hibana deployed X-KAIROS pellet
 
         # Physical assemblies omit alternate states, debris and runtime effects
         0x30F8369D2C: {0x2F353E1144}, # Amaru
