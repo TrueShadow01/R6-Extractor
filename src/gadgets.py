@@ -45,6 +45,7 @@ GADGETS = (
     Gadget(0x000000088B89E1C3, "Ela - Grzmot Mine", 0x00000037802D16AD, 0x00000037802D1A46, 0x000000395EBC18B0),
     Gadget(0x00000009615E0527, "Echo - Yokai Drone", 0x00000037802D16AC, 0x00000037802D1A12, 0x0000005921DEB03A),
     Gadget(0x000000096ED81F00, "Hibana - X-KAIROS Launcher",  0x00000037802D16B4, 0x000000483B8EB6C5, 0x000000483B8EB6B3),
+    Gadget(0x96ED81E97, "Hibana - X-KAIROS pellet (deployed)", 0x37802D16B4, 0x483B8EB6C5, 0x483B8EB6B3),
     Gadget(0x3B6B1B8499, "Ace - S.E.L.M.A.", 0x3D42207D45, 0x3D4220A13A, 0x3B6B1B84AC),
     Gadget(0x108F8574A5, "Alibi - Prisma projector", 0x37802D169F, 0x512B6F1306, 0x512B6F0844),
     Gadget(0x30F8369D2C, "Amaru - Garra launcher", 0x37802D16A0, 0x55192E0104, 0x4995CFC2A6),
@@ -110,7 +111,7 @@ def validate_gadget(game, gadget):
     if get_gadet(gadget.uid) != gadget:
         raise ValueError("Gadget selection does not match the supported catalogue")
 
-    records = registry._read_records(Path(game) / "datapc64.forge", extra_types=(0x963A496D, 0x31330C03, 0x7FF0E4DF, 0x1C5C0E2D),)
+    records = registry._read_records(Path(game) / "datapc64.forge", extra_types=(0x963A496D, 0x31330C03, 0x7FF0E4DF, 0x1C5C0E2D, 0xB75B4226),)
     operator = registry._record(records, gadget.operator_uid, registry.OPERATOR_TYPE)
     dependency_count = registry._u32(operator.data, 4)
     if dependency_count > 4096:
@@ -129,6 +130,17 @@ def validate_gadget(game, gadget):
         raise ValueError("Gadget appearance changed. This mapping needs rechecking")
 
     appearance = registry._record(records, gadget.appearance_uid, registry.APPEARANCE_TYPE)
+
+    if gadget.uid == 0x96ED81E97:
+        if appearance.data[29:34] != bytes.fromhex("74251f0500") or tuple(registry._u64(appearance.data, n) for n in (34, 42, 50, 58)) != (0, 0x96ED81F00, 0, 0):
+            raise ValueError("Hibana launcher appearance changed")
+
+        projectile = registry._record(records, 0x5B38C96BB5, 0xB75B4226)
+
+        if registry._u32(projectile.data, 4) != 2 or registry._u64(projectile.data, 8) != 0x5B38C96BB6:
+            raise ValueError("Hibana pellet appearance changed")
+
+        appearance = registry._record(records, 0x5B38C96BB6, registry.APPEARANCE_TYPE)
 
     if gadget.weapon_uid is not None:
         # These equipment appearances select gameplay entites not meshes.
