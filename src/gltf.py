@@ -959,7 +959,7 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
 
         shield_note = None
         pane_uid = {
-            0x5DB5BC2B2A: 0x2B22533CE,
+            0x5DB5BC2B2A: 0x62FCA06100,
             0x60C4EE7E3B: 0x2B225339E,
         }.get(model_uid)
 
@@ -993,6 +993,34 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
                 shield_note = (
                     "Static undamaged shield approximation. Impact overlay hidden."
                 )
+
+        if model_uid == 0x55DC2F2157 and slot_textures.shader_uid == 0x83A0CD9B3 and slot_textures.material_uid in {
+            0x5481EA7080, 0x5481EA7081, 0x5481EA7086,
+            0x5481EA7084, 0x5481EA7083, 0x5481EA7085,
+        }:
+            pbr["baseColorFactor"][3] = 0.0
+            material["alphaMode"] = "BLEND"
+            material.pop("alphaCutoff", None)
+            material["name"] += "_Approx_Undamaged_Shield"
+            shield_note = (
+                "Static undamaged Osa shield approximation. Overlapping "
+                "damage layers hidden. Runtime damage progression is not reproduced."
+            )
+
+        if model_uid == 0x5DB5BC2B2A and (slot_textures.material_uid, slot_textures.shader_uid) == (0x62FCA06100, 0x3BD13B9E):
+            slot_textures = replace(
+                slot_textures,
+                shader_uniforms=(
+                    *slot_textures.shader_uniforms,
+                    ("ExperimentalGlassLensV1", (0.18, 0.08, 1.5)),
+                ),
+            )
+            material["name"] += "_Approx_Undamaged_Shield"
+            shield_note = (
+                "Static undamaged Blackbeard shield approximation. "
+                "Source pane tint retained. Coverage, Rougenss and IOR "
+                "approximated. Overlapping damage states hidden."
+            )
 
         apply_optical_preview(material, slot_textures)
 
