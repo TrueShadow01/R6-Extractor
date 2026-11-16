@@ -118,7 +118,7 @@ def validate_gadget(game, gadget):
     if get_gadet(gadget.uid) != gadget:
         raise ValueError("Gadget selection does not match the supported catalogue")
 
-    records = registry._read_records(Path(game) / "datapc64.forge", extra_types=(0x963A496D, 0x31330C03, 0x7FF0E4DF, 0x1C5C0E2D, 0xB75B4226),)
+    records = registry._read_records(Path(game) / "datapc64.forge", extra_types=(0x963A496D, 0x31330C03, 0x7FF0E4DF, 0x1C5C0E2D, 0xB75B4226, 0x116951D7),)
     operator = registry._record(records, gadget.operator_uid, registry.OPERATOR_TYPE)
     dependency_count = registry._u32(operator.data, 4)
     if dependency_count > 4096:
@@ -183,6 +183,31 @@ def validate_gadget(game, gadget):
     else:
         valid_layouts = (bytes.fromhex("74251f0500"),)
 
-    # Reference 66 is an entity reference not anotehr selectable mesh state
-    if appearance.data[29:34] not in valid_layouts or gadget.uid not in tuple(registry._u64(appearance.data, n) for n in (34, 42, 50, 58)):
-        raise ValueError("Gadget model changed. This mapping needs rechecking.")
+    projectile_source = {
+        # launcher, projectile item, item type, dependency count, appearance, layout
+        0x106FD4831: (0x9B2CAF2E, 0x5B38C8BCB2, 0xB75B4226, 2, 0x5B38C8BCBD, 0),
+        0x233A0B4871: (0x2FF67F5827, 0x5B38C91AA3, 0xB75B4226, 2, 0x5B38C91AA5, 0),
+        0x2FF67F4533: (0x2FF67F5827, 0x5B38C921AF, 0xB75B4226, 2, 0x5B38C921AE, 0),
+        0x38F88B7544: (0x38A4AB07DC, 0x5B38C98A56, 0xB75B4226, 2, 0x5B38C98A57, 0),
+        0xDEAEB76B3: (0xE7E584CB5, 0x4897532D76, 0xB75B4226, 2, 0xE7E584333, 0),
+        0x8433CF697: (0xE7E584CB5, 0x5B52EDB0E7, 0xB75B4226, 2, 0xE7E584311, 1),
+        0x69837CC04E: (0x67B7BE27EC, 0x69837CC00E, 0x116951D7, 1, 0x69837CC03D, 0),
+    }.get(gadget.uid)
+
+    expected_model = projectile_source[0] if projectile_source else gadget.uid
+    if appearance.data[29:34] not in valid_layouts or expected_model not in tuple(
+        registry._u64(appearance.data, n) for n in (34, 42, 50, 58)
+    ):
+        raise ValueError("Gadget model changed. This mapping needs rechecking")
+
+    if projectile_source is not None:
+        _, projectile_uid, projectile_type, expected_count, appearance_uid, layout = projectile_source
+        projectile = registry._record(records, projectile_uid, projectile_type)
+        if registry._u32(projectile.data, 4) != expected_count or registry._u64(projectile.data, 8) != appearance_uid:
+            raise ValueError("Projectile appearance changed. This mapping needs rechecking")
+
+        appearance = registry._record(records, appearance_uid, registry.APPEARANCE_TYPE)
+        if appearance.data[29:34] != bytes.fromhex("74251f05") + bytes((layout,)) or gadget.uid not in tuple(
+            registry._u64(appearance.data, n) for n in (34, 42, 50, 58)
+        ):
+            raise ValueError("Projectile model changed. This mapping needs rechecking")
