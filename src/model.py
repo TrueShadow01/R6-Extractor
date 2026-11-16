@@ -1279,6 +1279,8 @@ def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: A
 
     geometry_records = resolve_geometry_records(model_uid, children, index)
     selected_gadget_parts = {
+        0x573DBEB520: {0x54B739A877, 0x5747C1552C}, # Thorn body and safety pin
+
         # Frost intact open trap, exclude overlapping damaged version and debris
         0x3C8F4197B2: {0x5C22D58AE},
 
