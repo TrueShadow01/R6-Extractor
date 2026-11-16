@@ -1039,6 +1039,16 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
                 "progression is not reproduced."
             )
 
+        if model_uid == 0x573DBEB520 and (slot_textures.material_uid, slot_textures.shader_uid) == (0x557222D2AA, 0xE09ED870):
+            pbr["baseColorFactor"][3] = 0.0
+            material["alphaMode"] = "BLEND"
+            material.pop("alphaCutoff", None)
+            material["name"] += "_Approx_Inactive_Overlay"
+            material.setdefault("extras", {})["siegeMaterialApproximation"] = (
+                "Static inactive Razorbloom approximation. Runtime activation "
+                "overlay hidden. Activation lighting is not reproduced."
+            )
+
         apply_optical_preview(material, slot_textures)
 
         if model_uid == 0x24F948E738 and slot_textures.shader_uid is None and slot_textures.material_uid in {0x36D604A6, 0x257CB37667}:
