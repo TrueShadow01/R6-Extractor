@@ -98,6 +98,13 @@ GADGETS = (
     Gadget(0x2D2B42ECE6, "Warden - Glance watch (component)", 0x37802D16D8, 0x37802D21B4, 0x2C06F6BB9D),
     Gadget(0x40705E87F6, "Zero - Argus launcher", 0x40705E6CA7, 0x483B8EC43B, 0x483B8EC42C),
     Gadget(0xE7E584CB5, "Zofia - KS79 Lifeline", 0x37802D16DA, 0x483B8ECA96, 0x483B8ECA84),
+    Gadget(0x106FD4831, "Ash - Breaching round", 0x37802D16A1, 0x483B8E5C27, 0x483B8E5C15, weapon_uid=0x37802CC878),
+    Gadget(0x233A0B4871, "Capitao - Asphyxiating bolt", 0x37802D16A6, 0x483B8E7F2B, 0x483B8E7F18),
+    Gadget(0x2FF67F4533, "Capitao - Smoke bolt", 0x37802D16A6, 0x483B8E7F2B, 0x483B8E7F18),
+    Gadget(0x38F88B7544, "Tachanka - Shumikha round", 0x37802D16D2, 0x483B8ECA4C, 0x483B8ECA3B),
+    Gadget(0xDEAEB76B3, "Zofia - Impact round", 0x37802D16DA, 0x483B8ECA96, 0x483B8ECA84),
+    Gadget(0x8433CF697, "Zofia - Concussion round", 0x37802D16DA, 0x483B8ECA96, 0x483B8ECA84),
+    Gadget(0x69837CC04E, "Noor - Projectile", 0x679C49B955, 0x67B7BE9A52, 0x67B7BE2850),
 )
 
 def get_gadet(uid):
