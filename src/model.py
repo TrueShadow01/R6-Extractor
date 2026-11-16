@@ -1249,10 +1249,10 @@ def read_gadget_animation_endpoint(payload, clip_uid, allow_event=False):
         width = 4 if kind == 2 else 3
         indexed = 1 < keys < frames
         index_bytes = frames if indexed else 0
-        alignment = 15 if kind == 2 else 4
+        alignment = 16 if kind == 2 else 4
         expected_size = (
             16
-            + (((frames * alignment - 1) & -alignment) if indexed else 0)
+            + (((frames + alignment - 1) & -alignment) if indexed else 0)
             + keys * width * 4
         )
         if size != expected_size or (indexed and keys > 256):
