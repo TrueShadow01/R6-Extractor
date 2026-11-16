@@ -1308,7 +1308,7 @@ def resolve_gadget_state_bindings(model_uid, payload, bindings):
         raise ValueError("Missing or ambiguous gadget state skeleton")
     graph = graphs[0]
     roots = [bone for bone, parent in graph.items() if parent is None]
-    if len(roots) != 1 or set(channels) - set(graphs) - {0}:
+    if len(roots) != 1 or set(channels) - set(graph) - {0}:
         raise ValueError("Gadget animation skeleton changed")
     root = roots[0]
 
