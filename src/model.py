@@ -1321,6 +1321,7 @@ def resolve_gadget_state_bindings(model_uid, payload, bindings):
         while offset >= 0:
             if offset + 9 <= len(payload) and payload[offset + 8] == kind:
                 candidates.append(offset)
+            offset = payload.find(signature, offset + 1)
         if len(candidates) != 1:
             raise ValueError("Missing or ambiguous gadget state bone")
 
