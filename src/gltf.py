@@ -749,6 +749,7 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
                 slot_textures.shader_uid,
             ) in {
                 (0x67B7BE27EC, 0x6885BA3B92, 0x3327005AD), # Noor
+                (0x69837CC04E, 0x6885BA3B92, 0x3327005AD), # Noor projectile
                 (0x46B1161F22, 0x671B677CF, 0x3327005AD), # Blitz
                 (0x3F3936A334, 0xA251826E, 0x3327005AD), # Montagne
                 (0x59A6BD7EA9, 0x5909BEFCD3, 0x3327005AD), # Grim
@@ -1048,6 +1049,16 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
             material.setdefault("extras", {})["siegeMaterialApproximation"] = (
                 "Static inactive Razorbloom approximation. Runtime activation "
                 "overlay hidden. Activation lighting is not reproduced."
+            )
+
+        if (model_uid, slot_textures.material_uid, slot_textures.shader_uid) in {
+            (0x233A0B4871, 0x8ABBDCFD2, 0x3327005AD),
+            (0x2FF67F4533, 0x8ABBDCFBF, 0x3327005AD),
+        }:
+            material["name"] += "_Approx_Bolt_UV"
+            material.setdefault("extras", {})["siegeMaterialApproximation"] = (
+                "Capitao bolt UV approximation. Source textures use a vertical "
+                "UV flip. The exact game UV transformation has not been recovered."
             )
 
         apply_optical_preview(material, slot_textures)
