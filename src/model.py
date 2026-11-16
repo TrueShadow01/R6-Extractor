@@ -1207,6 +1207,192 @@ def resolve_export_material_textures(texture_sets: Iterable[MaterialTextureSet],
         for texture_set in texture_sets
     )
 
+def read_gadget_animation_endpoint(payload, clip_uid, allow_event=False):
+    """Read the final skeletal samples of the inspected gadget clips"""
+    signature = struct.pack("<IQI", 0x47B2697D, clip_uid, 0x47B2697D)
+    offset = payload.find(signature)
+    if offset < 0 or payload.find(signature, offset + 1) >= 0:
+        raise ValueError("Missing or ambiguous gadget animation")
+
+    marker = struct.pack("<I", 0x6FC3B59D)
+    first = payload.find(marker, offset + 12)
+    if first < offset + 24:
+        raise ValueError("Missing gadget animation channel directory")
+
+    count = struct.unpack_from("<I", payload, first - 12)[0]
+    if not 1 <= count <= 256:
+        raise ValueError("Invalid gadget animation channel count")
+
+    bones = []
+    for index in range(count):
+        entry = first + index * 16
+        if payload[entry:entry + 4] != marker or entry + 16 > len(payload):
+            raise ValueError("Gadget animation channel directory changed")
+        bones.append(struct.unpack_from("<I", payload, entry + 4)[0])
+
+    cursor = first + (count - 1) * 16 + 51
+    channels = {}
+    for track_index, bone in enumerate(bones):
+        if cursor + 13 > len(payload):
+            raise ValueError("Truncated gadget animation track")
+        kind = payload[cursor]
+        size, frames, keys = struct.unpack_from("<III", payload, cursor + 1)
+
+        # Zero ends with a gameplay event channel not a skeletal transform
+        if allow_event and bone == 0xFFFFFFD0 and kind == 15 and track_index == len(bones) - 1:
+            if (size, frames, keys) != (13, 5, 5):
+                raise ValueError("Zero animation even layout changed")
+            break
+
+        if kind not in (2, 5) or not 1 <= keys <= frames <= 65535:
+            raise ValueError("Unsupported gadget animation track")
+        width = 4 if kind == 2 else 3
+        indexed = 1 < keys < frames
+        index_bytes = frames if indexed else 0
+        alignment = 15 if kind == 2 else 4
+        expected_size = (
+            16
+            + (((frames * alignment - 1) & -alignment) if indexed else 0)
+            + keys * width * 4
+        )
+        if size != expected_size or (indexed and keys > 256):
+            raise ValueError("Unsupported gadget animation track encoding")
+
+        values_start = cursor + 13 + index_bytes
+        end = values_start + keys * width * 4
+        if end > len(payload):
+            raise ValueError("Truncated gadget animation samples")
+        key = payload[cursor + 13 + frames - 1] if indexed else keys - 1
+        if key >= keys:
+            raise ValueError("Invalid gadget animation key index")
+
+        values = struct.unpack_from(
+            "<" + str(width) + "f",
+            payload,
+            values_start + key * width * 4
+        )
+        if not all(math.isfinite(x) for x in values) or (kind == 2 and abs(sum(x * x for x in values) - 1.0) > 0.001):
+            raise ValueError("Invalid gadget animation endpoint")
+        if kind in channels.setdefault(bone, {}):
+            raise ValueError("Duplicate gadget animation bone channel")
+
+        channels[bone][kind] = values
+        cursor = end
+    return channels
+
+def resolve_gadget_state_bindings(model_uid, payload, bindings):
+    """Apply verified source animation endpoints to alternate gadget states"""
+    state = {
+        0x40705E87F8: (0x42ED5203F2, {0x3D9BF75BAC}),
+        0x27EFAE1DD9: (0x28A87C1A0F, {0x23AEC3C7AD}),
+        0x2E78D1D7D0: (0xCFD4AB08, {0x53984ECCB, 0x7FE537C85}),
+        0x6175F5EF50: (0x6191BBAF54, {0x6146089EDC}),
+        0x6175F5EF52: (0x6191BB24AF, {0x6146089EDC}),
+    }.get(model_uid)
+    if state is None:
+        return bindings
+
+    clip_uid, expected_geometry = state
+    if set(bindings) != expected_geometry:
+        raise ValueError("Gadget state geometry changed")
+    channels = read_gadget_animation_endpoint(payload, clip_uid, allow_event=model_uid == 0x40705E87F8)
+
+    from src.skeleton import read_skeleton_parents
+
+    used = {bone for binding in bindings.values() for bone in binding.bone_ids}
+    graphs = [
+        graph for graph in read_skeleton_parents(payload)
+        if used.issubset(graph)
+    ]
+    if len(graphs) != 1:
+        raise ValueError("Missing or ambiguous gadget state skeleton")
+    graph = graphs[0]
+    roots = [bone for bone, parent in graph.items() if parent is None]
+    if len(roots) != 1 or set(channels) - set(graphs) - {0}:
+        raise ValueError("Gadget animation skeleton changed")
+    root = roots[0]
+
+    source = {}
+    for bone, parent in graph.items():
+        signature = struct.pack("<II", 0x71EDFDE3, bone)
+        kind = 3 if parent is None else 2
+        candidates = []
+        offset = payload.find(signature)
+        while offset >= 0:
+            if offset + 9 <= len(payload) and payload[offset + 8] == kind:
+                candidates.append(offset)
+        if len(candidates) != 1:
+            raise ValueError("Missing or ambiguous gadget state bone")
+
+        offset = candidates[0]
+        pose_offset = offset + (22 if kind == 3 else 30)
+        if pose_offset + 64 > len(payload) or payload[offset + 8] != kind:
+            raise ValueError("Gadget state bone layout changed")
+        tag, zero, pose_type = struct.unpack_from("<III", payload, pose_offset - 12)
+        if (tag & 0xFFFF0000) != 0xFBF80000 or zero or pose_type != 0x8D37C90B:
+            raise ValueError("Unsupported gadget state bone pose")
+
+        values = struct.unpack_from("<16f", payload, pose_offset)
+        if not all(math.isfinite(x) for x in values) or (abs(sum(x * x for x in values[4:8]) - 1.0) > 0.001):
+            raise ValueError("Invalid gadget state bone pose")
+        source[bone] = _pose_to_gltf_matrix(BoneTransform(bone, values[:3], values[4:8]))
+
+    local = {}
+    for bone, parent in graph.items():
+        matrix = source[bone] if parent is None else _gltf_multiply(invert_gltf_matrix(source[parent]), source[bone])
+        channel = channels.get(bone, {})
+        translation = channel.get(5, (matrix[12], -matrix[14], matrix[13]))
+        if 2 in channel:
+            matrix = _pose_to_gltf_matrix(BoneTransform(bone, translation, channel[2]))
+        elif 5 in channel:
+            matrix = (
+                *matrix[:12],
+                translation[0], translation[2], -translation[1], 1.0
+            )
+        local[bone] = matrix
+
+    posed = {}
+    visiting = set()
+
+    def compose(bone):
+        if bone not in posed:
+            if bone in visiting:
+                raise ValueError("Cyclic gadget state skeleton")
+            visiting.add(bone)
+            parent = graph[bone]
+            posed[bone] = local[bone] if parent is None else _gltf_multiply(compose(parent), local[bone])
+            visiting.remove(bone)
+        return posed[bone]
+
+    root_matrices = [
+        matrix for binding in bindings.values()
+        for bone, matrix in zip(binding.bone_ids, _default_joint_node_matrices(binding))
+        if bone == root
+    ]
+    if model_uid == 0x27EFAE1DD9 and not root_matrices:
+        root_matrices = [source[root]]
+    if not root_matrices or any(any(abs(a - b) > 0.0001 for a, b in zip(root_matrices[0], matrix)) for matrix in root_matrices):
+        raise ValueError("Missing or conflicting gadget root bind pose")
+
+    align = _gltf_multiply(root_matrices[0], invert_gltf_matrix(source[root]))
+    if model_uid in {0x6175F5EF50, 0x6175F5EF52}:
+        # Display doorway panels upright. Gameplay placement is supplied at runtime
+        upright = (
+            1.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            0.0, -1.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 1.0,
+        )
+        align = _gltf_multiply(upright, align)
+
+    return {
+        uid: replace(binding, joint_node_matrices=tuple(
+            _gltf_multiply(align, compose(bone))
+            for bone in binding.bone_ids
+        ))
+        for uid, binding in bindings.items()
+    }
+
 def resolve_gridlock_bindings(model_uid, payload, bindings):
     """Assemble Trax stack using its inspected global skeleton pose"""
     if model_uid != 0x27EFAE16B8:
@@ -1279,6 +1465,13 @@ def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: A
 
     geometry_records = resolve_geometry_records(model_uid, children, index)
     selected_gadget_parts = {
+        0x3B6B1B84DD: {0x3D9BF49AF8}, # Ace folded charge. Exclude debris
+        0x2E78D1D7D0: {0x53984ECCB, 0x7FE537C85}, # Montagne retracted shield
+        0x27EFAE1DD9: {0x23AEC3C7AD}, # Gridlock opened unit. Exclude alternate plates/hull
+        0x40705E87F8: {0x3D9BF75BAC}, # Zero intact camera. Exclude split debris/effects
+        0x6175F5EF50: {0x6146089EDC}, # Rauora intact single-door panel
+        0x6175F5EF52: {0x6146089EDC}, # Rauora intact double-door panel
+
         0x106FD4831: {0x53984EC3C}, # Ash breaching round
         0x233A0B4871: {0x8ABBDCFAB}, # Capitao asphyxiating bolt
         0x2FF67F4533: {0x8ABBDCFB5}, # Capitao smoke bolt
@@ -1405,6 +1598,7 @@ def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: A
             for uid, binding in  mesh_bindings.items()
         }
 
+    mesh_bindings = resolve_gadget_state_bindings(model_uid, model_payload, mesh_bindings)
     mesh_bindings = resolve_gridlock_bindings(model_uid, model_payload, mesh_bindings)
 
     parts = decode_mesh_parts(geometry_records, mesh_bindings)
