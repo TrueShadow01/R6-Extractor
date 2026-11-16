@@ -1137,6 +1137,25 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
             part_materials.append(())
             continue
 
+        if geometry_uid in {0x690524BB81, 0x690524BB88} and parse_file_metadata(payload).uid == 0x69837CC04E:
+            start = mesh_entry.data_offset
+            if start + 12 > mesh_entry.end:
+                raise ValueError("Truncated Noor projectile mesh")
+            bone_count = struct.unpack_from("<I", payload, start + 8)[0]
+            geometry_offset = start + 21 + bone_count * 80
+            if geometry_offset + 20 > mesh_entry.end:
+                raise ValueError("Truncated Noor projectile material table")
+
+            geometry, count, base_material = struct.unpack_from("<QIQ", payload, geometry_offset)
+            override = struct.pack("<IIIQQ", 0xFBF80001, 0, 0x73F86CAC, 0x289DC8ED8C, 0x6885BA3B92,)
+            source = resolved_materials.get(0x6885BA3B92)
+
+            if geometry != geometry_uid or count != 1 or base_material != 0x289DC8ED8C or payload.count(override) != 1 or source is None or source.shader_uid != 0x3327005AD or not source.diffuse_uids:
+                raise ValueError("Noor projectile material mapping changed")
+
+            part_materials.append((source,))
+            continue
+
         if geometry_uid == 0x5514C1781B and parse_file_metadata(payload).uid == 0x55DC2F2157:
             # Alternate state overrides must not turn the intact form into glass
             expected = (
