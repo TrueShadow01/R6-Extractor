@@ -46,7 +46,7 @@ GADGETS = (
     Gadget(0x00000009615E0527, "Echo - Yokai Drone", 0x00000037802D16AC, 0x00000037802D1A12, 0x0000005921DEB03A),
     Gadget(0x000000096ED81F00, "Hibana - X-KAIROS Launcher",  0x00000037802D16B4, 0x000000483B8EB6C5, 0x000000483B8EB6B3),
     Gadget(0x96ED81E97, "Hibana - X-KAIROS pellet (deployed)", 0x37802D16B4, 0x483B8EB6C5, 0x483B8EB6B3),
-    Gadget(0x3B6B1B8499, "Ace - S.E.L.M.A.", 0x3D42207D45, 0x3D4220A13A, 0x3B6B1B84AC),
+    Gadget(0x3B6B1B8499, "Ace - S.E.L.M.A. (folded)", 0x3D42207D45, 0x3D4220A13A, 0x3B6B1B84AC),
     Gadget(0x108F8574A5, "Alibi - Prisma projector", 0x37802D169F, 0x512B6F1306, 0x512B6F0844),
     Gadget(0x30F8369D2C, "Amaru - Garra launcher", 0x37802D16A0, 0x55192E0104, 0x4995CFC2A6),
     Gadget(0x41BDCE5F31, "Aruni - Surya Gate", 0x41BDCE4953, 0x41BDCE5F3C, 0x41BDCE5E99),
@@ -105,6 +105,12 @@ GADGETS = (
     Gadget(0xDEAEB76B3, "Zofia - Impact round", 0x37802D16DA, 0x483B8ECA96, 0x483B8ECA84),
     Gadget(0x8433CF697, "Zofia - Concussion round", 0x37802D16DA, 0x483B8ECA96, 0x483B8ECA84),
     Gadget(0x69837CC04E, "Noor - Projectile", 0x679C49B955, 0x67B7BE9A52, 0x67B7BE2850),
+    Gadget(0x3B6B1B84DD, "Ace - S.E.L.M.A. (unfolded / active)", 0x3D42207D45, 0x3D4220A13A, 0x3B6B1B84AC),
+    Gadget(0x2E78D1D7D0, "Montagne - Le Roc (retracted)", 0x37802D16BF, 0x37802D1DE5, 0x2D2B424598),
+    Gadget(0x27EFAE1DD9, "Gridlock - Trax stinger (opened)", 0x37802D16B3, 0x37802D1B7C, 0x395EBC189C),
+    Gadget(0x40705E87F8, "Zero - Argus camera (deployed)", 0x40705E6CA7, 0x483B8EC43B, 0x483B8EC42C),
+    Gadget(0x6175F5EF50, "Rauora - D.O.M. panel (single door)", 0x6047CFC135, 0x6047CFE7DA, 0x6047CFE72F),
+    Gadget(0x6175F5EF52, "Rauora - D.O.M. panel (double door)", 0x6047CFC135, 0x6047CFE7DA, 0x6047CFE72F),
 )
 
 def get_gadet(uid):
@@ -118,7 +124,17 @@ def validate_gadget(game, gadget):
     if get_gadet(gadget.uid) != gadget:
         raise ValueError("Gadget selection does not match the supported catalogue")
 
-    records = registry._read_records(Path(game) / "datapc64.forge", extra_types=(0x963A496D, 0x31330C03, 0x7FF0E4DF, 0x1C5C0E2D, 0xB75B4226, 0x116951D7),)
+    records = registry._read_records(Path(game) / "datapc64.forge", extra_types=(
+            0x963A496D,
+            0x31330C03,
+            0x7FF0E4DF,
+            0x1C5C0E2D,
+            0xB75B4226,
+            0x116951D7,
+            0x39FF90CE,
+            0x52F685F5,
+        ),
+    )
     operator = registry._record(records, gadget.operator_uid, registry.OPERATOR_TYPE)
     dependency_count = registry._u32(operator.data, 4)
     if dependency_count > 4096:
@@ -184,6 +200,13 @@ def validate_gadget(game, gadget):
         valid_layouts = (bytes.fromhex("74251f0500"),)
 
     projectile_source = {
+        # None selects the compact world-item appearance layout.
+        0x3B6B1B84DD: (0x3B6B1B8499, 0x5A6B9CE245, 0x39FF90CE, 1, 0x5A6B9CE24A, None),
+        0x40705E87F8: (0x40705E87F6, 0x5B38C9928C, 0x52F685F5, 2, 0x5B38C99290, 0),
+        0x27EFAE1DD9: (0x27EFAE16B8, 0x5C50FB7BA8, 0x39FF90CE, 1, 0x5C50FB7B9A, None),
+        0x6175F5EF50: (0x6047CFE767, 0x6175F5EF33, 0x39FF90CE, 1, 0x6175F5EF3F, None),
+        0x6175F5EF52: (0x6047CFE767, 0x6175F5EF2E, 0x39FF90CE, 1, 0x6175F5EF3A, None),
+
         # launcher, projectile item, item type, dependency count, appearance, layout
         0x106FD4831: (0x9B2CAF2E, 0x5B38C8BCB2, 0xB75B4226, 2, 0x5B38C8BCBD, 0),
         0x233A0B4871: (0x2FF67F5827, 0x5B38C91AA3, 0xB75B4226, 2, 0x5B38C91AA5, 0),
@@ -207,7 +230,18 @@ def validate_gadget(game, gadget):
             raise ValueError("Projectile appearance changed. This mapping needs rechecking")
 
         appearance = registry._record(records, appearance_uid, registry.APPEARANCE_TYPE)
-        if appearance.data[29:34] != bytes.fromhex("74251f05") + bytes((layout,)) or gadget.uid not in tuple(
-            registry._u64(appearance.data, n) for n in (34, 42, 50, 58)
-        ):
-            raise ValueError("Projectile model changed. This mapping needs rechecking")
+        if layout is None:
+            valid_model = (
+                len(appearance.data) == 55
+                and appearance.data[29:34] == bytes.fromhex("27742fd501")
+                and registry._u64(appearance.data, 34) == gadget.uid
+            )
+        else:
+            valid_model = (
+                appearance.data[29:34] == bytes.fromhex("74251f05") + bytes((layout,))
+                and gadget.uid in tuple(
+                    registry._u64(appearance.data, n) for n in (34, 42, 50, 58)
+                )
+            )
+        if not valid_model:
+            raise ValueError("Projectile or world-item model changed. This mapping needs rechecking")
