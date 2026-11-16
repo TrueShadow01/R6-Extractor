@@ -1241,7 +1241,7 @@ def read_gadget_animation_endpoint(payload, clip_uid, allow_event=False):
         # Zero ends with a gameplay event channel not a skeletal transform
         if allow_event and bone == 0xFFFFFFD0 and kind == 15 and track_index == len(bones) - 1:
             if (size, frames, keys) != (13, 5, 5):
-                raise ValueError("Zero animation even layout changed")
+                raise ValueError("Zero animation event layout changed")
             break
 
         if clip_uid == 0x3DC5E15D8E and bone == 0xFFFFFFC0 and kind == 36 and track_index == len(bones) - 1:
@@ -1464,6 +1464,53 @@ def resolve_gridlock_bindings(model_uid, payload, bindings):
         resolved[geometry] = replace(binding, joint_node_matrices=tuple(matrices))
     return resolved
 
+def resolve_retracted_montagne_parts(model_uid, parts):
+    if model_uid != 0x2E78D1D7D0:
+        return parts
+
+    expected = {
+        0x53984ECCB: (8196, 753, 76, 108, 94, 84, 72, 2010, 88),
+        0x7FE537C85: (2416, 416, 136, 62),
+    }
+    if {part.uid for part in parts} != set(expected):
+        raise ValueError("Retracted Montagne geometry changed")
+
+    resolved = []
+    for part in parts:
+        if tuple(island.material_id for island in part.islands) != tuple(range(len(expected[part.uid]))) or tuple(len(island.faces) for island in part.islands) != expected[part.uid]:
+            raise ValueError("Retracted Montagne material islands changed")
+        if part.binding is None or not part.joints or not part.weights:
+            raise ValueError("Retracted Montagne glass bindings are missing")
+
+        islands = []
+        for island in part.islands:
+            faces = island.faces
+
+            if part.uid == 0x53984ECCB and island.material_id in {2, 3, 4, 5, 6}:
+                # Hide overlapping damage states on the intact window
+                faces = ()
+            elif island.material_id != 0:
+                if part.uid == 0x7FE537C85:
+                    faces = ()
+                else:
+                    # Keep glass belonging to the fixed viewing window
+                    faces = tuple(
+                        face for face in faces
+                        if all(part.binding.bone_ids[joint] == 0xB6C65665 for vertex in face for joint, weight in zip(part.joints[vertex], part.weights[vertex]) if weight > 0.000001)
+                    )
+            # Preserve empty slots so material assignments do not shift
+            islands.append(replace(island, faces=faces))
+        expected_kept = (
+            (8196, 58, 0, 0, 0, 0, 0, 456, 12)
+            if part.uid == 0x53984ECCB else (2416, 0, 0, 0)
+        )
+        if tuple(len(island.faces) for island in islands) != expected_kept:
+            raise ValueError("Retracted Montagne glass ownership changed")
+
+        resolved.append(replace(part, islands=tuple(islands)))
+
+    return tuple(resolved)
+
 def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: AssetIndex, output_directory: str | Path) -> ModelExportResult:
     """Export every geometry child and linked decodable texture"""
 
@@ -1609,6 +1656,7 @@ def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: A
     mesh_bindings = resolve_gridlock_bindings(model_uid, model_payload, mesh_bindings)
 
     parts = decode_mesh_parts(geometry_records, mesh_bindings)
+    parts = resolve_retracted_montagne_parts(model_uid, parts)
 
     if model_uid in {0x233A0B4871, 0x2FF67F4533}:
         # Approximate UV orientation for 2 legacy bolt atlases

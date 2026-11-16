@@ -956,7 +956,7 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
 
         # Scratch decals, not the shield's transparent pane
         if model_uid in {
-                0x3F3936A334, 0x46B1161F22,
+                0x3F3936A334, 0x2E78D1D7D0, 0x46B1161F22,
                 0x60C4EE7E3B, 0x5DB5BC2B2A,
             } and (slot_textures.material_uid, slot_textures.shader_uid) == (0x6A9F01154, 0x3BD13B9E) and slot_textures.diffuse:
             material["alphaMode"] = "BLEND"
