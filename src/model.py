@@ -1279,6 +1279,14 @@ def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: A
 
     geometry_records = resolve_geometry_records(model_uid, children, index)
     selected_gadget_parts = {
+        0x106FD4831: {0x53984EC3C}, # Ash breaching round
+        0x233A0B4871: {0x8ABBDCFAB}, # Capitao asphyxiating bolt
+        0x2FF67F4533: {0x8ABBDCFB5}, # Capitao smoke bolt
+        0x38F88B7544: {0x3DF910FBA5}, # Tachanka Shumikha round
+        0xDEAEB76B3: {0xEF86253C8}, # Zofia impact round
+        0x8433CF697: {0xEF86253BC}, # Zofia concussion round
+        0x69837CC04E: {0x690524BB81}, # Noor projectile
+
         0x573DBEB520: {0x54B739A877, 0x5747C1552C}, # Thorn body and safety pin
 
         # Frost intact open trap, exclude overlapping damaged version and debris
@@ -1400,6 +1408,20 @@ def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: A
     mesh_bindings = resolve_gridlock_bindings(model_uid, model_payload, mesh_bindings)
 
     parts = decode_mesh_parts(geometry_records, mesh_bindings)
+
+    if model_uid in {0x233A0B4871, 0x2FF67F4533}:
+        # Approximate UV orientation for 2 legacy bolt atlases
+        parts = tuple(
+            replace(
+                part,
+                uvs=[(u, 1.0 - v) for u, v in part.uvs],
+                tangents=[
+                    (x, y, z, -w) for x, y, z, w in part.tangents
+                ],
+            )
+            for part in parts
+        )
+
     texture_uids = resolve_texture_uids(model_uid, children, index)
 
     if selected_gadget_parts is not None or model_uid in (
