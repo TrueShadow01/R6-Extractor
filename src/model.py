@@ -1244,6 +1244,11 @@ def read_gadget_animation_endpoint(payload, clip_uid, allow_event=False):
                 raise ValueError("Zero animation even layout changed")
             break
 
+        if clip_uid == 0x3DC5E15D8E and bone == 0xFFFFFFC0 and kind == 36 and track_index == len(bones) - 1:
+            if (size, frames, keys) != (24, 2, 2) or cursor + 29 > len(payload):
+                raise ValueError("Ace animation control channel changed")
+            break
+
         if kind not in (2, 5) or not 1 <= keys <= frames <= 65535:
             raise ValueError("Unsupported gadget animation track")
         width = 4 if kind == 2 else 3
@@ -1283,6 +1288,7 @@ def read_gadget_animation_endpoint(payload, clip_uid, allow_event=False):
 def resolve_gadget_state_bindings(model_uid, payload, bindings):
     """Apply verified source animation endpoints to alternate gadget states"""
     state = {
+        0x3B6B1B84DD: (0x3DC5E15D8E, {0x3D9BF49AF8}),
         0x40705E87F8: (0x42ED5203F2, {0x3D9BF75BAC}),
         0x27EFAE1DD9: (0x28A87C1A0F, {0x23AEC3C7AD}),
         0x2E78D1D7D0: (0xCFD4AB08, {0x53984ECCB, 0x7FE537C85}),
