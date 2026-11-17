@@ -1519,6 +1519,7 @@ def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: A
 
     geometry_records = resolve_geometry_records(model_uid, children, index)
     selected_gadget_parts = {
+        0xAF48BFE3D: {0x127FB53F50}, # Lion's flying EE-ONE-D
         0x3B6B1B84DD: {0x3D9BF49AF8}, # Ace folded charge. Exclude debris
         0x2E78D1D7D0: {0x53984ECCB, 0x7FE537C85}, # Montagne retracted shield
         0x27EFAE1DD9: {0x23AEC3C7AD}, # Gridlock opened unit. Exclude alternate plates/hull

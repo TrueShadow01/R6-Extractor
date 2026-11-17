@@ -71,6 +71,7 @@ GADGETS = (
     Gadget(0x2418EC2F9D, "Kaid - Electroclaw", 0x37802D16B8, 0x37802D1C97, 0x395EBC1883),
     Gadget(0x33E28D72E6, "Kali - LV Explosive Lance", 0x37802D169C, 0x37802D170A, 0x33E28D72FF),
     Gadget(0x54C4E8C88B, "Lion - EE-ONE-D controller", 0x37802D16BB, 0x4A684BE48B, 0x4A684BE453),
+    Gadget(0xAF48BFE3D, "Lion - EE-ONE-D (flying drone)", 0x37802D16BB, 0x4A684BE48B, 0x4A684BE453),
     Gadget(0xA92106D9E, "Maestro - Evil Eye", 0x37802D16BC, 0x37802D1D5C, 0x3989288025),
     Gadget(0x1F7D4C7B04, "Maverick - Breaching Torch", 0x37802D16BD, 0x483B8EC03C, 0x483B8EBA4E),
     Gadget(0x529BD57E3C, "Melusi - Banshee", 0x3D42207D30, 0x533C4F01B6, 0x518A2BF323),
@@ -201,6 +202,7 @@ def validate_gadget(game, gadget):
 
     projectile_source = {
         # None selects the compact world-item appearance layout.
+        0xAF48BFE3D: (0x54C4E8C88B, 0x53E7D38DF9, 0x39FF90CE, 1, 0x53E7D39A89, None),
         0x3B6B1B84DD: (0x3B6B1B8499, 0x5A6B9CE245, 0x39FF90CE, 1, 0x5A6B9CE24A, None),
         0x40705E87F8: (0x40705E87F6, 0x5B38C9928C, 0x52F685F5, 2, 0x5B38C99290, 0),
         0x27EFAE1DD9: (0x27EFAE16B8, 0x5C50FB7BA8, 0x39FF90CE, 1, 0x5C50FB7B9A, None),
@@ -216,6 +218,9 @@ def validate_gadget(game, gadget):
         0x8433CF697: (0xE7E584CB5, 0x5B52EDB0E7, 0xB75B4226, 2, 0xE7E584311, 1),
         0x69837CC04E: (0x67B7BE27EC, 0x69837CC00E, 0x116951D7, 1, 0x69837CC03D, 0),
     }.get(gadget.uid)
+
+    if gadget.uid == 0xAF48BFE3D and registry._u64(appearance.data, 142) != 0x53E7D38DF9:
+        raise ValueError("Lion drone world-item reference changed")
 
     expected_model = projectile_source[0] if projectile_source else gadget.uid
     if appearance.data[29:34] not in valid_layouts or expected_model not in tuple(

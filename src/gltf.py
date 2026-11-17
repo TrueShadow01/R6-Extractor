@@ -769,7 +769,11 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
             else:
                 alpha_mask = uses_alpha(slot_textures.diffuse)
 
-            if alpha_mask:
+            if (model_uid, slot_textures.material_uid, slot_textures.shader_uid) == (0xAF48BFE3D, 0x16F5E86868, 0x3BD13B9E):
+                # rotor disc uses different alpha for motion blur
+                material["alphaMode"] = "BLEND"
+                material["doubleSided"] = True
+            elif alpha_mask:
                 material["alphaMode"] = "MASK"
                 material["alphaCutoff"] = 0.1
                 material["doubleSided"] = True
