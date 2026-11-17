@@ -748,6 +748,7 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
                 slot_textures.material_uid,
                 slot_textures.shader_uid,
             ) in {
+                (0x510F6B112, 0xC0B911CA, 0x4787DF5D80), # Painted wooden barricade
                 (0x67B7BE27EC, 0x6885BA3B92, 0x3327005AD), # Noor
                 (0x69837CC04E, 0x6885BA3B92, 0x3327005AD), # Noor projectile
                 (0x46B1161F22, 0x671B677CF, 0x3327005AD), # Blitz

@@ -11,6 +11,7 @@ class EnvironmentAsset:
     name: str
     owners: tuple[tuple[str, int], ...]
     markers: tuple[bytes, ...]
+    owner_type: int = 0xFAEB9AB4 # CCTV type
 
     def source(self, game, database):
         from src.model import load_asset_payload, read_mesh_bindings
@@ -28,7 +29,7 @@ class EnvironmentAsset:
 
             payload = load_asset_payload(record)
             header = parse_file_metadata(payload)
-            if header.uid == owner_uid and header.file_type == 0xFAEB9AB4 and all(marker in payload for marker in self.markers) and self.uid in read_mesh_bindings(payload):
+            if header.uid == owner_uid and header.file_type == self.owner_type and all(marker in payload for marker in self.markers) and self.uid in read_mesh_bindings(payload):
                 return record
 
         raise ValueError(f"No verified source for {self.name}. Update the asset index for this game folder.")
@@ -48,4 +49,12 @@ CCTV = EnvironmentAsset(
     ),
 )
 
-ENVIRONMENT_ASSETS = {CCTV.uid: CCTV}
+DOOR_BARRICADE = EnvironmentAsset(
+    uid=0x510F6B112,
+    name="Wooden doorway barricade (intact)",
+    owners=(("datapc64_ondemand_playgo.forge", 0x106FC47E4),),
+    markers=(b"Core_ReinforcementBarricade_SM", b"BarricadeDoor"),
+    owner_type=0xE261EA92,
+)
+
+ENVIRONMENT_ASSETS = {asset.uid: asset for asset in (CCTV, DOOR_BARRICADE)}
