@@ -12,6 +12,11 @@ class EnvironmentAsset:
     owners: tuple[tuple[str, int], ...]
     markers: tuple[bytes, ...]
     owner_type: int = 0xFAEB9AB4 # CCTV type
+    geometry_uid: int | None = None
+
+    @property
+    def mesh_uid(self) -> int:
+        return self.uid if self.geometry_uid is None else self.geometry_uid
 
     def source(self, game, database):
         from src.model import load_asset_payload, read_mesh_bindings
@@ -29,7 +34,7 @@ class EnvironmentAsset:
 
             payload = load_asset_payload(record)
             header = parse_file_metadata(payload)
-            if header.uid == owner_uid and header.file_type == self.owner_type and all(marker in payload for marker in self.markers) and self.uid in read_mesh_bindings(payload):
+            if header.uid == owner_uid and header.file_type == self.owner_type and all(marker in payload for marker in self.markers) and self.mesh_uid in read_mesh_bindings(payload):
                 return record
 
         raise ValueError(f"No verified source for {self.name}. Update the asset index for this game folder.")
@@ -66,6 +71,24 @@ WINDOW_BARRICADE = EnvironmentAsset(
     owner_type=0xE261EA92,
 )
 
+PLANTED_DEFUSER = EnvironmentAsset(
+    uid=0x51190D3C8,
+    name="Defuser (planted)",
+    owners=(("datapc64_ondemand_playgo.forge", 0x1A7366CA6),),
+    markers=(b"BNK_GM_PlantBomb_Diffuser", b"BNK_S_O_GP_DefuserCase"),
+    owner_type=0xE261EA92,
+)
+
+OPEN_DEFUSER = EnvironmentAsset(
+    uid=0x10B3D0958, # open idle clip. Also identifies this selection and its cache
+    name="Defuser (open keyboard)",
+    owners=(("datapc64_ondemand_playgo.forge", 0x106FD48CE),),
+    markers=(b"Core_Defuser_SM",),
+    owner_type=0xE261EA92,
+    geometry_uid=PLANTED_DEFUSER.uid,
+)
+
 ENVIRONMENT_ASSETS = {
-    asset.uid: asset for asset in (CCTV, DOOR_BARRICADE, WINDOW_BARRICADE)
+    asset.uid: asset
+    for asset in (CCTV, DOOR_BARRICADE, WINDOW_BARRICADE, PLANTED_DEFUSER, OPEN_DEFUSER)
 }

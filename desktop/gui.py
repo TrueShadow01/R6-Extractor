@@ -445,7 +445,7 @@ class MainWindow(QMainWindow):
             lines = [
                 asset.name,
                 "Environment model",
-                f"Mesh UID: {asset.uid:016X}",
+                f"Mesh UID: {asset.mesh_uid:016X}",
             ]
         elif isinstance(asset, Gadget):
             lines = [

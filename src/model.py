@@ -1242,6 +1242,11 @@ def read_gadget_animation_endpoint(payload, clip_uid, allow_event=False):
         kind = payload[cursor]
         size, frames, keys = struct.unpack_from("<III", payload, cursor + 1)
 
+        if clip_uid == 0x10B3D0958 and bone == 0xFFFFFFD0:
+            if track_index != len(bones) - 1 or (kind, size, frames, keys) != (15, 7, 2, 2):
+                raise ValueError("Defuser idle event layout changed")
+            break
+
         # Zero ends with a gameplay event channel not a skeletal transform
         if allow_event and bone == 0xFFFFFFD0 and kind == 15 and track_index == len(bones) - 1:
             if (size, frames, keys) != (13, 5, 5):
@@ -1292,6 +1297,7 @@ def read_gadget_animation_endpoint(payload, clip_uid, allow_event=False):
 def resolve_gadget_state_bindings(model_uid, payload, bindings):
     """Apply verified source animation endpoints to alternate gadget states"""
     state = {
+        0x10B3D0958: (0x10B3D0958, {0x51190D3C8}), # Defuser, open keyboard
         0x510F6B21D: (0x4DDA375, {0x510F6B21D}), # Single wooden door, fully deployed
         0x3B6B1B84DD: (0x3DC5E15D8E, {0x3D9BF49AF8}),
         0x40705E87F8: (0x42ED5203F2, {0x3D9BF75BAC}),
@@ -1580,7 +1586,10 @@ def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: A
     }.get(model_uid)
 
     if source_uid is not None:
-        selected_gadget_parts = {model_uid}
+        from src.environment import ENVIRONMENT_ASSETS
+
+        asset = ENVIRONMENT_ASSETS.get(model_uid)
+        selected_gadget_parts = {asset.mesh_uid if asset is not None else model_uid}
 
     if selected_gadget_parts is not None:
         geometry_records = tuple(
