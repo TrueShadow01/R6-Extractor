@@ -46,7 +46,7 @@ def save_portable_blend(destination, args):
     lines = [
         "R6 Portable Blender Export",
         f"Blender: {bpy.app.version_string}",
-        f"Rig requested: {'Source gadget rig' if args.gadget else 'Experimental IK' if args.experimental_ik else 'FK'}",
+        f"Rig requested: {'Source model' if args.gadget else 'Experimental IK' if args.experimental_id else 'FK'}",
         f"Imported model files: {len(args.models)}",
         f"Packed images: {len(images)}",
         "Visual appearance and deformation still require manual review.",

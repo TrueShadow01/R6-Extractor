@@ -29,6 +29,23 @@ def main():
             install(arguments[0])
             return 0
 
+        if worker == "environment-preview":
+            from app_runtime import application_directory
+            from desktop.preview_cache import prepare_preview
+            from src.environment import ENVIRONMENT_ASSETS
+
+            if len(arguments) != 2:
+                raise ValueError("Environment preview requires a game folder and model UID")
+
+            game, uid = arguments
+            asset = ENVIRONMENT_ASSETS.get(int(uid, 16))
+            if asset is None:
+                raise ValueError(f"Unknown environment model {uid}")
+
+            asset.source(game, application_directory() / "output" / "r6-assets.sqlite")
+            prepare_preview(game, asset.uid, operator=asset)
+            return 0
+
         if worker == "gadget-preview":
             from src.gadgets import get_gadet, validate_gadget
             from desktop.preview_cache import prepare_preview

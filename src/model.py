@@ -687,7 +687,11 @@ def operator_model_jobs(operator, database):
     from src.database import load_asset_index
     from src.depgraph import load_depgraph
     from src.metadata import parse_file_metadata
+    from src.environment import EnvironmentAsset
     from src.gadgets import Gadget
+
+    if isinstance(operator, EnvironmentAsset):
+        return [("environment", operator.uid)]
 
     parts = (("gadget", operator),) if isinstance(operator, Gadget) else (
         ("body", operator.body), ("head", operator.head),
@@ -1511,13 +1515,14 @@ def resolve_retracted_montagne_parts(model_uid, parts):
 
     return tuple(resolved)
 
-def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: AssetIndex, output_directory: str | Path) -> ModelExportResult:
+def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: AssetIndex, output_directory: str | Path, *, source_uid: int | None = None) -> ModelExportResult:
     """Export every geometry child and linked decodable texture"""
 
     output_directory = Path(output_directory).resolve()
     output_directory.mkdir(parents=True, exist_ok=True)
 
-    geometry_records = resolve_geometry_records(model_uid, children, index)
+    owner_uid = model_uid if source_uid is None else source_uid
+    geometry_records = resolve_geometry_records(owner_uid, children, index)
     selected_gadget_parts = {
         0xAF48BFE3D: {0x127FB53F50}, # Lion's flying EE-ONE-D
         0x3B6B1B84DD: {0x3D9BF49AF8}, # Ace folded charge. Exclude debris
@@ -1572,6 +1577,10 @@ def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: A
             0x690524BB88,
         },
     }.get(model_uid)
+
+    if source_uid is not None:
+        selected_gadget_parts = {model_uid}
+
     if selected_gadget_parts is not None:
         geometry_records = tuple(
             record for record in geometry_records
@@ -1603,7 +1612,7 @@ def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: A
             if record.uid not in effect_geometry
         )
 
-    model_record = index.primary(model_uid)
+    model_record = index.primary(owner_uid)
     model_payload = (
         load_asset_payload(model_record)
         if model_record is not None
@@ -1672,7 +1681,7 @@ def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: A
             for part in parts
         )
 
-    texture_uids = resolve_texture_uids(model_uid, children, index)
+    texture_uids = resolve_texture_uids(owner_uid, children, index)
 
     if selected_gadget_parts is not None or model_uid in (
         0x0000000106FC47E2,

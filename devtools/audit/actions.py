@@ -46,6 +46,9 @@ class AuditActions:
 
         arguments = [str(game)]
         if not all_operators:
+            if w.asset_tabs.currentWidget() is w.environment_list:
+                w.report_error("Select an operator in the Operators tab first")
+                return
             item = w.operators.currentItem()
             if item is None:
                 w.report_error("Select an operator first")

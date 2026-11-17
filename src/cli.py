@@ -702,6 +702,18 @@ def command_model(args: argparse.Namespace) -> int:
         archives
     ) = resolve_bundle_paths(archive, depgraph_path=args.depgraph, include_textures=True, archive_only=args.archive_only)
 
+    from src.environment import ENVIRONMENT_ASSETS
+
+    requested_uid = uid
+    environment = ENVIRONMENT_ASSETS.get(uid)
+    if environment is not None:
+        if not args.database:
+            raise ValueError("Environment export requires the asset index (--database)")
+
+        source = environment.source(archive.parent, args.database)
+        uid = source.uid
+        depgraph = source.archive.with_suffix(".depgraphbin")
+
     children = load_depgraph(depgraph)
 
     if args.database and uid not in children:
@@ -719,7 +731,7 @@ def command_model(args: argparse.Namespace) -> int:
     else:
         index = build_index(archives)
 
-    result = export_model(uid, children, index, args.output)
+    result = export_model(requested_uid, children, index, args.output, source_uid=uid if environment is not None else None)
 
 
     print(f"Model: {result.model_uid:016X}")
