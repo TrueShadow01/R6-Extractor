@@ -50,11 +50,22 @@ CCTV = EnvironmentAsset(
 )
 
 DOOR_BARRICADE = EnvironmentAsset(
-    uid=0x510F6B112,
+    uid=0x510F6B21D,
     name="Wooden doorway barricade (intact)",
-    owners=(("datapc64_ondemand_playgo.forge", 0x106FC47E4),),
+    owners=(("datapc64_ondemand_playgo.forge", 0x106FC47D2),),
     markers=(b"Core_ReinforcementBarricade_SM", b"BarricadeDoor"),
     owner_type=0xE261EA92,
 )
 
-ENVIRONMENT_ASSETS = {asset.uid: asset for asset in (CCTV, DOOR_BARRICADE)}
+WINDOW_BARRICADE = EnvironmentAsset(
+    uid=0x5545CBAAC,
+    name="Wooden window barricade (intact)",
+    owners=(("datapc64_ondemand_playgo.forge", 0x106FC47E0),),
+    # enabled intact visual in single-window world model
+    markers=(bytes.fromhex("2b80eac50100") + (0xCF0176A1).to_bytes(8, "little"),),
+    owner_type=0xE261EA92,
+)
+
+ENVIRONMENT_ASSETS = {
+    asset.uid: asset for asset in (CCTV, DOOR_BARRICADE, WINDOW_BARRICADE)
+}

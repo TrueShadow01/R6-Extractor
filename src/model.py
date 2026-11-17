@@ -1292,7 +1292,7 @@ def read_gadget_animation_endpoint(payload, clip_uid, allow_event=False):
 def resolve_gadget_state_bindings(model_uid, payload, bindings):
     """Apply verified source animation endpoints to alternate gadget states"""
     state = {
-        0x510F6B112: (0x4DDA375, {0x510F6B112}), # Wooden door, fully deployed
+        0x510F6B21D: (0x4DDA375, {0x510F6B21D}), # Single wooden door, fully deployed
         0x3B6B1B84DD: (0x3DC5E15D8E, {0x3D9BF49AF8}),
         0x40705E87F8: (0x42ED5203F2, {0x3D9BF75BAC}),
         0x27EFAE1DD9: (0x28A87C1A0F, {0x23AEC3C7AD}),
@@ -1381,13 +1381,13 @@ def resolve_gadget_state_bindings(model_uid, payload, bindings):
         for bone, matrix in zip(binding.bone_ids, _default_joint_node_matrices(binding))
         if bone == root
     ]
-    if model_uid in {0x27EFAE1DD9, 0x510F6B112} and not root_matrices:
+    if model_uid in {0x27EFAE1DD9, 0x510F6B21D} and not root_matrices:
         root_matrices = [source[root]]
     if not root_matrices or any(any(abs(a - b) > 0.0001 for a, b in zip(root_matrices[0], matrix)) for matrix in root_matrices):
         raise ValueError("Missing or conflicting gadget root bind pose")
 
     align = _gltf_multiply(root_matrices[0], invert_gltf_matrix(source[root]))
-    if model_uid in {0x510F6B112, 0x6175F5EF50, 0x6175F5EF52}:
+    if model_uid in {0x510F6B21D, 0x6175F5EF50, 0x6175F5EF52}:
         # Display doorway panels upright. Gameplay placement is supplied at runtime
         upright = (
             1.0, 0.0, 0.0, 0.0,
