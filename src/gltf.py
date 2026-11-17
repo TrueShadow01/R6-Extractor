@@ -642,8 +642,8 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
 
         if skin_index is not None:
             mesh_node["skin"] = skin_index
-        elif model_uid == 0x5545CBAAC:
-            # stand the static window panel upright about its mounting point
+        elif model_uid in {0x5545CBAAC, 0x540CFA01B}:
+            # stand static wooden barricades upright about their mounting point
             half_sqrt = math.sqrt(0.5)
             mesh_node["rotation"] = [half_sqrt, 0.0, 0.0, half_sqrt]
 
@@ -753,6 +753,8 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
                 slot_textures.shader_uid,
             ) in {
                 (0x510F6B21D, 0xC0B911CA, 0x4787DF5D80), # Single doorway
+                (0x540CFA01B, 0xC0B911CA, 0x4787DF5D80), # Double-door hardware
+                (0x540CFA01B, 0x5CEE64A224, 0x99E2E5B2), # Double-door boards
                 (0x5545CBAAC, 0xC0B911CA, 0x4787DF5D80), # Window hardware
                 (0x5545CBAAC, 0x5CEE64A224, 0x99E2E5B2), # Window boards
                 (0x67B7BE27EC, 0x6885BA3B92, 0x3327005AD), # Noor

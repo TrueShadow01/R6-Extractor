@@ -88,7 +88,19 @@ OPEN_DEFUSER = EnvironmentAsset(
     geometry_uid=PLANTED_DEFUSER.uid,
 )
 
+DOUBLE_DOOR_BARRICADE = EnvironmentAsset(
+    uid=0x540CFA01B,
+    name="Wooden double doorway barricade (intact)",
+    owners=(("datapc64_ondemand_playgo.forge", 0x106FC47C6),),
+    # enabled intact visual in the double-door world package
+    markers=(bytes.fromhex("2b80eac50100") + (0xCF016F58).to_bytes(8, "little"),),
+    owner_type=0xE261EA92,
+)
+
 ENVIRONMENT_ASSETS = {
     asset.uid: asset
-    for asset in (CCTV, DOOR_BARRICADE, WINDOW_BARRICADE, PLANTED_DEFUSER, OPEN_DEFUSER)
+    for asset in (
+            CCTV, DOOR_BARRICADE, DOUBLE_DOOR_BARRICADE,
+            WINDOW_BARRICADE, PLANTED_DEFUSER, OPEN_DEFUSER
+        )
 }
