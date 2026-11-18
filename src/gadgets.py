@@ -112,6 +112,9 @@ GADGETS = (
     Gadget(0x40705E87F8, "Zero - Argus camera (deployed)", 0x40705E6CA7, 0x483B8EC43B, 0x483B8EC42C),
     Gadget(0x6175F5EF50, "Rauora - D.O.M. panel (single door)", 0x6047CFC135, 0x6047CFE7DA, 0x6047CFE72F),
     Gadget(0x6175F5EF52, "Rauora - D.O.M. panel (double door)", 0x6047CFC135, 0x6047CFE7DA, 0x6047CFE72F),
+    Gadget(0x106FD48B3, "Thermite / Breach charge - Handheld activator", 0x37802D16D4, 0x37802D20B9, 0x38FA6B1AFA),
+    Gadget(0x61F5F3362B, "Clash - CCE shield activator", 0x37802D16A9, 0x60C4EE826E, 0x60C4EE7E40),
+    Gadget(0x650A6148DE, "Solid Snake - OSP pouch (dropped)", 0x64D62DB918, 0x650A6107C2, 0x64D62E7354),
 )
 
 def get_gadet(uid):
@@ -202,6 +205,9 @@ def validate_gadget(game, gadget):
 
     projectile_source = {
         # None selects the compact world-item appearance layout.
+        0x106FD48B3: (0x9B2CAEFC, 0x441DE0A334, 0x39FF90CE, 1, 0x441DE0A32C, 0),
+        0x61F5F3362B: (0x60C4EE7E3B, 0x61F5F3362F, 0x39FF90CE, 1, 0x61F5F3362A, 0),
+        0x650A6148DE: (0x64D62E744E, 0x655B61C856, 0x39FF90CE, 1, 0x655B61C85F, None),
         0xAF48BFE3D: (0x54C4E8C88B, 0x53E7D38DF9, 0x39FF90CE, 1, 0x53E7D39A89, None),
         0x3B6B1B84DD: (0x3B6B1B8499, 0x5A6B9CE245, 0x39FF90CE, 1, 0x5A6B9CE24A, None),
         0x40705E87F8: (0x40705E87F6, 0x5B38C9928C, 0x52F685F5, 2, 0x5B38C99290, 0),
@@ -221,6 +227,16 @@ def validate_gadget(game, gadget):
 
     if gadget.uid == 0xAF48BFE3D and registry._u64(appearance.data, 142) != 0x53E7D38DF9:
         raise ValueError("Lion drone world-item reference changed")
+
+    if gadget.uid in (0x106FD48B3, 0x61F5F3362B):
+        activator_uid = projectile_source[1]
+        if registry._u64(appearance.data, 134) != activator_uid:
+            raise ValueError("Equipment activator reference changed")
+
+        if gadget.uid == 0x106FD48B3:
+            breach = registry._record(records, 0x24F9498281, registry.APPEARANCE_TYPE)
+            if registry._u64(breach.data, 134) != activator_uid:
+                raise ValueError("Breach charge no longer shares Thermite's activator")
 
     expected_model = projectile_source[0] if projectile_source else gadget.uid
     if appearance.data[29:34] not in valid_layouts or expected_model not in tuple(

@@ -105,11 +105,42 @@ WALL_REINFORCEMENT = EnvironmentAsset(
     owner_type=0xE261EA92,
 )
 
+def enabled_visual(uid):
+    return bytes.fromhex("2b80eac50100") + uid.to_bytes(8, "little")
+
+PROP_MAPS = (
+    ("datapc64_onb02_tutorial_mod_playgo.forge", 0x69260940A1),
+    ("datapc64_pvp02_oregon_v2_mod.forge", 0x66535FF3DB),
+)
+
+FIRE_EXTINGUISHER = EnvironmentAsset(
+    uid=0x5F4C5238DE,
+    name="Fire extinguisher (intact)",
+    owners=PROP_MAPS,
+    markers=(b"BNK_S_GDI_FireExtinguisher", enabled_visual(0x5FFF471C56)),
+)
+
+GAS_PIPE = EnvironmentAsset(
+    uid=0x6075D21103,
+    name="Gas pipe (intact)",
+    owners=PROP_MAPS,
+    markers=(b"BNK_S_GDI_GasPipe", enabled_visual(0x60F0FAC868)),
+)
+
+OBSERVATION_PHONE = EnvironmentAsset(
+    uid=0x53984ECF3,
+    name="Observation phone (shared)",
+    owners=(("datapc64_ondemand_playgo.forge", 0x106FC5C90),),
+    markers=(enabled_visual(0xBE6A0054),),
+    owner_type=0xE261EA92,
+)
+
 ENVIRONMENT_ASSETS = {
     asset.uid: asset
     for asset in (
             CCTV, DOOR_BARRICADE, DOUBLE_DOOR_BARRICADE,
             WINDOW_BARRICADE, PLANTED_DEFUSER, OPEN_DEFUSER,
-            WALL_REINFORCEMENT
+            WALL_REINFORCEMENT, FIRE_EXTINGUISHER, GAS_PIPE,
+            OBSERVATION_PHONE
         )
 }

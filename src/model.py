@@ -1531,6 +1531,7 @@ def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: A
     owner_uid = model_uid if source_uid is None else source_uid
     geometry_records = resolve_geometry_records(owner_uid, children, index)
     selected_gadget_parts = {
+        0x650A6148DE: {0x652C34E0BA}, # Solid Snake's intact OSP pickup
         0xAF48BFE3D: {0x127FB53F50}, # Lion's flying EE-ONE-D
         0x3B6B1B84DD: {0x3D9BF49AF8}, # Ace folded charge. Exclude debris
         0x2E78D1D7D0: {0x53984ECCB, 0x7FE537C85}, # Montagne retracted shield
@@ -1772,6 +1773,19 @@ def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: A
 
             export_parts = tuple(rebased_parts)
             material_textures = tuple(resolved_materials)
+
+    if model_uid in (0x5F4C5238DE, 0x6075D21103):
+        # per-instance paint values in the tutorial and oregon map packages
+        prop_colors = {
+            0x6240E0F31D: (0.5, 0.0, 0.0, 1.0),
+            0x6240E0F55F: (0.0, 0.0, 0.0, 1.0),
+            0x5F719EB2DB: (0.0, 0.0, 0.0, 1.0),
+        }
+        material_textures = tuple(
+            replace(slot, solid_color=prop_colors[slot.material_uid])
+            if slot.material_uid in prop_colors else slot
+            for slot in material_textures
+        )
 
     material_textures = tuple(
         bake_tinted_material(slot, output_directory)

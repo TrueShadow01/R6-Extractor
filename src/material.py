@@ -1060,6 +1060,13 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
             if all(math.isfinite(value) and 0.0 <= value <= 1.0 for value in candidate):
                 solid_color = candidate
 
+        if (shader_uid, material_uid) == (0xE09ED870, 0x7185D293):
+            # handset's scrambled screen artwork lives in texture role 3
+            for selector in selectors:
+                if selector.role == 3 and selector.spec_uid == 0x576A64E9D:
+                    roles[DIFFUSE_ROLE] = selector.texture_uids
+                    break
+
         resolved_materials[material_uid] = MaterialTextureSet(
             diffuse_uids=roles.get(DIFFUSE_ROLE, ()),
             normal_uids=roles.get(NORMAL_ROLE, ()),
