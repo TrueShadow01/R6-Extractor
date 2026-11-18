@@ -1154,6 +1154,17 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
 
     apply_skeleton_hierachy(document, skeletons)
 
+    if model_uid == 0x614D71100B:
+        scene = document["scenes"][document["scene"]]
+        half_sqrt = math.sqrt(0.5)
+        root = {
+            "name": "Wall mounting frame",
+            "rotation": [half_sqrt, 0.0, 0.0, half_sqrt],
+            "children": scene["nodes"],
+        }
+        scene["nodes"] = [len(nodes)]
+        nodes.append(root)
+
     binary_path.write_bytes(binary.data)
 
     gltf_path.write_text(

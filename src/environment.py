@@ -97,10 +97,19 @@ DOUBLE_DOOR_BARRICADE = EnvironmentAsset(
     owner_type=0xE261EA92,
 )
 
+WALL_REINFORCEMENT = EnvironmentAsset(
+    uid=0x614D71100B, # fully deployed 2m panel with all 14 fasteners
+    name="Wall reinforcement (fully deployed, 2m)",
+    owners=(("datapc64_ondemand_playgo.forge", 0x614D711006),),
+    markers=(b"Core_ReinforcementBarricade_SM", b"Wall_Full_Height"),
+    owner_type=0xE261EA92,
+)
+
 ENVIRONMENT_ASSETS = {
     asset.uid: asset
     for asset in (
             CCTV, DOOR_BARRICADE, DOUBLE_DOOR_BARRICADE,
-            WINDOW_BARRICADE, PLANTED_DEFUSER, OPEN_DEFUSER
+            WINDOW_BARRICADE, PLANTED_DEFUSER, OPEN_DEFUSER,
+            WALL_REINFORCEMENT
         )
 }
