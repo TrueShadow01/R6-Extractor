@@ -135,12 +135,20 @@ OBSERVATION_PHONE = EnvironmentAsset(
     owner_type=0xE261EA92,
 )
 
+HATCH_REINFORCEMENT = EnvironmentAsset(
+    uid=0x5F0654F7D4,
+    name="Hatch reinforcement (fully deployed)",
+    owners=(("datapc64_ondemand_playgo.forge", 0x5E8C091400),),
+    markers=(enabled_visual(0x5F0654F7C9),),
+    owner_type=0xE261EA92,
+)
+
 ENVIRONMENT_ASSETS = {
     asset.uid: asset
     for asset in (
             CCTV, DOOR_BARRICADE, DOUBLE_DOOR_BARRICADE,
             WINDOW_BARRICADE, PLANTED_DEFUSER, OPEN_DEFUSER,
             WALL_REINFORCEMENT, FIRE_EXTINGUISHER, GAS_PIPE,
-            OBSERVATION_PHONE
+            OBSERVATION_PHONE, HATCH_REINFORCEMENT
         )
 }
