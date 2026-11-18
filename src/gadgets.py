@@ -33,6 +33,7 @@ GADGETS = (
     Gadget(0x000000067C9C5173, "Valkyrie - Black Eye", 0x00000037802D16D6, 0x00000037802D213D, 0x000000395EBC18E0),
     Gadget(0x000000009B2CAF26, "Fuze - Cluster Charge", 0x00000037802D16B0, 0x00000037802D1AE8, 0x00000038FA6AE807),
     Gadget(0x000000009B2CAF2C, "Kapkan - Entry Denial Device", 0x00000037802D16B9, 0x0000005580BC9622, 0x0000005580BC9D9D),
+    Gadget(0x1A736DC79, "Kapkan - Placement drill", 0x37802D16B9, 0x5580BC9622, 0x5580BC9D9D),
     Gadget(0x000000009B2CAEF8, "Twitch - Shock Drone", 0x00000037802D16D5, 0x00000037802D20F9, 0x00000041EBBDCA29),
     Gadget(0x0000000106FC86BF, "Doc - Stim Pistol", 0x00000037802D16AA, 0x000000483B8E9E92, 0x000000483B8E9E88),
     Gadget(0x0000002A4CEB7295, "IQ - Scanner", 0x00000037802D16B5, 0x00000037802D1BDB, 0x0000002A4CEB72A0),
@@ -207,6 +208,7 @@ def validate_gadget(game, gadget):
         # None selects the compact world-item appearance layout.
         0x106FD48B3: (0x9B2CAEFC, 0x441DE0A334, 0x39FF90CE, 1, 0x441DE0A32C, 0),
         0x61F5F3362B: (0x60C4EE7E3B, 0x61F5F3362F, 0x39FF90CE, 1, 0x61F5F3362A, 0),
+        0x1A736DC79: (0x9B2CAF2C, 0x56EFA1431D, 0x39FF90CE, 1, 0x1A736DC7C, None),
         0x650A6148DE: (0x64D62E744E, 0x655B61C856, 0x39FF90CE, 1, 0x655B61C85F, None),
         0xAF48BFE3D: (0x54C4E8C88B, 0x53E7D38DF9, 0x39FF90CE, 1, 0x53E7D39A89, None),
         0x3B6B1B84DD: (0x3B6B1B8499, 0x5A6B9CE245, 0x39FF90CE, 1, 0x5A6B9CE24A, None),
@@ -227,6 +229,9 @@ def validate_gadget(game, gadget):
 
     if gadget.uid == 0xAF48BFE3D and registry._u64(appearance.data, 142) != 0x53E7D38DF9:
         raise ValueError("Lion drone world-item reference changed")
+
+    if gadget.uid == 0x1A736DC79 and registry._u64(appearance.data, 134) != projectile_source[1]:
+        raise ValueError("Kapkan placement drill reference changed")
 
     if gadget.uid in (0x106FD48B3, 0x61F5F3362B):
         activator_uid = projectile_source[1]
