@@ -824,6 +824,28 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
         if entry.metadata.file_type == CURRENT_TEXTURE_MAP
     }
 
+    def lookup_texture_map(spec_uid: int) -> tuple[int, int, tuple[int, ...]] | None:
+        """Return the role, map UID and compiled texture UIDs for a specification"""
+        spec_entry = spec_entries.get(spec_uid)
+        if spec_entry is None:
+            return None
+
+        spec = read_texture_map_spec(payload, spec_entry)
+        if spec is None:
+            return None
+
+        role, map_uid = spec
+        map_entry = texture_map_entries.get(map_uid)
+        if map_entry is None:
+            return None
+
+        map_blob = payload[map_entry.offset:map_entry.end]
+        compiled_uids = referenced_uids(map_blob, texture_uids)
+        if not compiled_uids:
+            return None
+
+        return role, map_uid, compiled_uids
+
     mesh_entries = [
         entry
         for entry in entries
@@ -847,22 +869,11 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
         selectors = []
 
         for spec_uid in referenced_uids(material_blob, spec_entries.keys()):
-            spec = read_texture_map_spec(payload, spec_entries[spec_uid])
-
-            if spec is None:
+            texture_map = lookup_texture_map(spec_uid)
+            if texture_map is None:
                 continue
 
-            texture_role, texture_map_uid = spec
-            texture_map_entry = texture_map_entries.get(texture_map_uid)
-
-            if texture_map_entry is None:
-                continue
-
-            texture_map_blob = payload[texture_map_entry.offset:texture_map_entry.end]
-            compile_uids = referenced_uids(texture_map_blob, texture_uids)
-
-            if not compile_uids:
-                continue
+            texture_role, texture_map_uid, compile_uids = texture_map
 
             selector_source, selector_binding = _material_selector_source(material_blob, spec_uid, bindings_by_spec.get(shader_uid, {}), bindings_by_index.get(shader_uid, {}))
 
@@ -897,29 +908,19 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
         if shader_uid == SOLID_COSMETIC_SHADER:
             clothing_uniforms, clothing_patterns = read_clothing_preview_patterns(material_blob)
             for binding, spec_uid in clothing_patterns:
-                spec_entry = spec_entries.get(spec_uid)
-                spec = read_texture_map_spec(payload, spec_entry) if spec_entry else None
-                if spec is None:
+                texture_map = lookup_texture_map(spec_uid)
+                if texture_map is None:
                     continue
 
-                texture_role, texture_map_uid = spec
-                map_entry = texture_map_entries.get(texture_map_uid)
-                if map_entry is None:
-                    continue
-
-                compile_uids = referenced_uids(
-                    payload[map_entry.offset:map_entry.end],
-                    texture_uids
-                )
-                if compile_uids:
-                    selectors.append(MaterialTextureSelector(
-                        role=texture_role,
-                        spec_uid=spec_uid,
-                        texture_map_uid=texture_map_uid,
-                        texture_uids=compile_uids,
-                        source="shader",
-                        shader_binding=binding
-                    ))
+                role, map_uid, compiled_uids = texture_map
+                selectors.append(MaterialTextureSelector(
+                    role=role,
+                    spec_uid=spec_uid,
+                    texture_map_uid=map_uid,
+                    texture_uids=compiled_uids,
+                    source="shader",
+                    shader_binding=binding
+                ))
 
         material_bindings = tuple(bindings_by_shader.get(shader_uid, ()))
         binding_names = {
