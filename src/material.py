@@ -763,6 +763,17 @@ def _material_selector_source(material_blob: bytes, spec_uid: int, bindings_by_s
 
     return "unknown", None
 
+def _read_required_header_color(payload: bytes, entry: NestedEntry, label: str) -> tuple[float, float, float, float]:
+    """Read 4 RGBA floats immediately after the material's shader UID"""
+    color_offset = entry.data_offset + 12
+    if color_offset + 16 > entry.end:
+        raise ValueError(f"Truncated {label} color")
+
+    color = struct.unpack_from("<4f", payload, color_offset)
+    if not all(math.isfinite(value) and 0.0 <= value <= 1.0 for value in color):
+        raise ValueError(f"Invalid {label} color")
+    return color
+
 def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int], geometry_uids: Iterable[int]) -> tuple[tuple[MaterialTextureSet, ...], ...]:
     """Resolve local mesh material slots for each geometry part"""
 
@@ -986,23 +997,11 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
             (0x0000000040D7FCF0, 0x00000006EA53F15A),
             (0x00000003327005AD, 0x000000073FA82522)
         }:
-            if material_start + 28 > material_entry.end:
-                raise ValueError("Truncated Black Eye material color")
-
-            candidate = struct.unpack_from("<4f", payload, material_start + 12)
-            if not all(math.isfinite(value) and 0.0 <= value <= 1.0 for value in candidate):
-                raise ValueError("Invalid Black Eye material color")
-
-            solid_color = candidate
+            solid_color = _read_required_header_color(payload, material_entry, "Black eye material")
 
         # Castle's interior core uses a white texture and a source color
         if (material_uid, shader_uid) == (0x00000005BC241708, 0x00000003327005AD):
-            if material_start + 28 > material_entry.end:
-                raise ValueError("Truncated Castle core material color")
-            candidate = struct.unpack_from("<4f", payload, material_start + 12)
-            if not all(math.isfinite(value) and 0.0 <= value <= 1.0 for value in candidate):
-                raise ValueError("Invalid Castle core material color")
-            solid_color = candidate
+            solid_color = _read_required_header_color(payload, material_entry, "Castle core material")
 
         # Candela's three indicator materials store their green color here
         if shader_uid == 0x0000000040D7FCF0 and material_uid in {
@@ -1010,12 +1009,7 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
             0x0000000BB1FAC470,
             0x0000000BB1FAC47C
         }:
-            if material_start + 28 > material_entry.end:
-                raise ValueError("Truncated Candela indicator color")
-            candidate = struct.unpack_from("<4f", payload, material_start + 12)
-            if not all(math.isfinite(value) and 0.0 <= value <= 1.0 for value in candidate):
-                raise ValueError("Invalid Candela indicator color")
-            solid_color = candidate
+            solid_color = _read_required_header_color(payload, material_entry, "Candela indicator")
 
         # Inspected gadget colors. 2 textured exceptions use white masks
         if (not roles.get(DIFFUSE_ROLE) or (shader_uid, material_uid) in {
@@ -1042,12 +1036,7 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
             (0x14BCCBDB, 0x33BAEC4606),
             (0x959B5D7CD, 0xBA5A08957),
         }:
-            if material_start + 28 > material_entry.end:
-                raise ValueError("Truncated gadget material color")
-            candidate = struct.unpack_from("<4f", payload, material_start + 12)
-            if not all(math.isfinite(value) and 0.0 <= value <= 1.0 for value in candidate):
-                raise ValueError("Invalid gadget material color")
-            solid_color = candidate
+            solid_color = _read_required_header_color(payload, material_entry, "gadget material")
 
         # Source header color. Approximate texture modulation
         if (shader_uid == 0x0000000099E2C947 and material_uid in {

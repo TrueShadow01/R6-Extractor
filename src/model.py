@@ -42,8 +42,6 @@ from src.parser import (
 )
 from src.texture import save_png
 
-# Fuck me, I hate this - Aiden
-# Brother what - Shadow
 COMPILED_MESH_OBJ = 0xABEB2DFB
 
 TEXTURE_TYPES = {
