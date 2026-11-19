@@ -1673,6 +1673,40 @@ def _prepare_mesh_bindings(model_uid: int, model_payload: bytes | None, index: A
     bindings = resolve_gadget_state_bindings(model_uid, model_payload, bindings)
     return resolve_gridlock_bindings(model_uid, model_payload, bindings)
 
+def _prepare_material_slots(model_uid: int, parts: tuple[MeshPart, ...], model_payload: bytes | None, texture_uids: tuple[int, ...], decoded_textures: list[tuple[int, int, str]]) -> tuple[tuple[MeshPart, ...], tuple[MaterialTextures, ...]]:
+    """Map each part's local material slots into on glTF material list"""
+    if model_payload is None:
+        return parts, ()
+
+    part_texture_sets = resolve_material_texture_sets(model_payload, texture_uids, (part.uid for part in parts))
+    if not any(part_texture_sets):
+        return parts, ()
+
+    export_parts = []
+    all_slots = []
+    for part, texture_sets in zip(parts, part_texture_sets):
+        slot_ids = tuple(dict.fromkeys(island.material_id for island in part.islands))
+
+        # Mozzie's launcher stores textures in numeric slot order
+        if (model_uid, part.uid) == (0x24F948E738, 0x278FADDBCA):
+            if slot_ids != (0, 1, 2, 4, 3) or len(texture_sets) != 5:
+                raise ValueError(f"Gadget material slots changed for {model_uid:016X}/{part.uid:016X}")
+            slot_ids = tuple(sorted(slot_ids))
+
+        offset = len(all_slots)
+        slot_count = max(slot_ids, default=-1) + 1
+        local_slots = [MaterialTextureSet() for _ in range(slot_count)]
+        for slot_id, texture_set in zip(slot_ids, texture_sets):
+            local_slots[slot_id] = texture_set
+        all_slots.extend(local_slots)
+
+        islands = tuple(
+            replace(island, material_id=offset + island.material_id)
+            for island in part.islands
+        )
+        export_parts.append(replace(part, islands=islands))
+    return tuple(export_parts), resolve_export_material_textures(all_slots, decoded_textures)
+
 def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: AssetIndex, output_directory: str | Path, *, source_uid: int | None = None) -> ModelExportResult:
     """Resolve the selected meshes, materials and skeletons then write glTF"""
     output_directory = Path(output_directory).resolve()
@@ -1732,61 +1766,7 @@ def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: A
         specular
     ) = decode_model_textures(texture_uids, index, output_directory)
 
-    export_parts = parts
-    material_textures: tuple[MaterialTextures, ...] = ()
-
-    if model_payload is not None:
-        part_texture_sets = resolve_material_texture_sets(model_payload, texture_uids, (record.uid for record in geometry_records))
-
-        if any(part_texture_sets):
-            rebased_parts = []
-            resolved_materials = []
-            material_offset = 0
-
-            for part, texture_set in zip(parts, part_texture_sets):
-                local_material_ids = tuple(dict.fromkeys(island.material_id for island in part.islands))
-
-                # Verified numeric slot order for these specific geometries
-                expected_order = {
-                    (0x24F948E738, 0x278FADDBCA): (0, 1, 2, 4, 3),
-                }.get((model_uid, part.uid))
-
-                if expected_order is not None:
-                    if local_material_ids != expected_order or len(texture_set) != len(expected_order):
-                        raise ValueError(f"Gadget material slots changed for {model_uid:016X}/{part.uid:016X}")
-                    local_material_ids = tuple(sorted(local_material_ids))
-
-                local_material_count = max(local_material_ids, default=-1) + 1
-
-                slot_sets = [
-                    MaterialTextureSet()
-                    for _ in range(local_material_count)
-                ]
-
-                for material_id, texture_set_for_slot in zip(local_material_ids, texture_set):
-                    slot_sets[material_id] = texture_set_for_slot
-
-                rebased_parts.append(
-                    replace(
-                        part,
-                        islands=tuple(
-                            replace(
-                                island,
-                                material_id=(
-                                    island.material_id + material_offset
-                                )
-                            )
-                            for island in part.islands
-                        )
-                    )
-                )
-
-                resolved_materials.extend(resolve_export_material_textures(slot_sets, decoded_textures))
-
-                material_offset += local_material_count
-
-            export_parts = tuple(rebased_parts)
-            material_textures = tuple(resolved_materials)
+    export_parts, material_textures = _prepare_material_slots(model_uid, parts, model_payload, texture_uids, decoded_textures)
 
     if model_uid in (0x5F4C5238DE, 0x6075D21103):
         # per-instance paint values in the tutorial and oregon map packages
