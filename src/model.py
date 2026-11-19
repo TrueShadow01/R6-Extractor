@@ -1522,14 +1522,8 @@ def resolve_retracted_montagne_parts(model_uid, parts):
 
     return tuple(resolved)
 
-def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: AssetIndex, output_directory: str | Path, *, source_uid: int | None = None) -> ModelExportResult:
-    """Export every geometry child and linked decodable texture"""
-
-    output_directory = Path(output_directory).resolve()
-    output_directory.mkdir(parents=True, exist_ok=True)
-
-    owner_uid = model_uid if source_uid is None else source_uid
-    geometry_records = resolve_geometry_records(owner_uid, children, index)
+def _select_export_geometry(model_uid: int, geometry_records: tuple[AssetRecord, ...], *, source_uid: int | None) -> tuple[tuple[AssetRecord, ...], set[int] | None]:
+    """Select physical meshes and return any explicit UID filter used by later stages"""
     selected_gadget_parts = {
         0x650A6148DE: {0x652C34E0BA}, # Solid Snake's intact OSP pickup
         0xAF48BFE3D: {0x127FB53F50}, # Lion's flying EE-ONE-D
@@ -1623,6 +1617,16 @@ def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: A
             if record.uid not in effect_geometry
         )
 
+    return geometry_records, selected_gadget_parts
+
+def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: AssetIndex, output_directory: str | Path, *, source_uid: int | None = None) -> ModelExportResult:
+    """Resolve the selected meshes, materials and skeletons then write glTF"""
+    output_directory = Path(output_directory).resolve()
+    output_directory.mkdir(parents=True, exist_ok=True)
+
+    owner_uid = model_uid if source_uid is None else source_uid
+    geometry_records = resolve_geometry_records(owner_uid, children, index)
+    geometry_records, selected_gadget_parts = _select_export_geometry(model_uid, geometry_records, source_uid=source_uid)
     model_record = index.primary(owner_uid)
     model_payload = (
         load_asset_payload(model_record)
