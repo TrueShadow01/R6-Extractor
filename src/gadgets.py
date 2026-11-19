@@ -20,6 +20,8 @@ class Gadget:
     def model_groups(self):
         return((self.uid,),)
 
+BREACH_ACTIVATOR = Gadget(0x106FD48B3, "Breach charge activator", 0x37802D16D4, 0x37802D20B9, 0x38FA6B1AFA)
+
 GADGETS = (
     Gadget(0x000000009B2CAF32, "Rook - Armor pack (closed)", 0x00000037802D16CF, 0x00000037802D1F7A, 0x0000003C8F418B8C),
     Gadget(0x00000000CE8EA8B5, "Rook - Armor pack (open)", 0x00000037802D16CF, 0x00000037802D1F7A, 0x0000003C8F418B8C),
@@ -113,13 +115,12 @@ GADGETS = (
     Gadget(0x40705E87F8, "Zero - Argus camera (deployed)", 0x40705E6CA7, 0x483B8EC43B, 0x483B8EC42C),
     Gadget(0x6175F5EF50, "Rauora - D.O.M. panel (single door)", 0x6047CFC135, 0x6047CFE7DA, 0x6047CFE72F),
     Gadget(0x6175F5EF52, "Rauora - D.O.M. panel (double door)", 0x6047CFC135, 0x6047CFE7DA, 0x6047CFE72F),
-    Gadget(0x106FD48B3, "Thermite / Breach charge - Handheld activator", 0x37802D16D4, 0x37802D20B9, 0x38FA6B1AFA),
     Gadget(0x61F5F3362B, "Clash - CCE shield activator", 0x37802D16A9, 0x60C4EE826E, 0x60C4EE7E40),
     Gadget(0x650A6148DE, "Solid Snake - OSP pouch (dropped)", 0x64D62DB918, 0x650A6107C2, 0x64D62E7354),
 )
 
 def get_gadet(uid):
-    for gadget in GADGETS:
+    for gadget in (*GADGETS, BREACH_ACTIVATOR):
         if gadget.uid == uid:
             return gadget
     raise ValueError(f"Unsupported gadget model {uid:016X}")

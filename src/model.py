@@ -1590,7 +1590,7 @@ def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: A
         from src.environment import ENVIRONMENT_ASSETS
 
         asset = ENVIRONMENT_ASSETS.get(model_uid)
-        selected_gadget_parts = {asset.mesh_uid if asset is not None else model_uid}
+        selected_gadget_parts = set(asset.mesh_uids) if asset is not None else {model_uid}
 
     if selected_gadget_parts is not None:
         geometry_records = tuple(

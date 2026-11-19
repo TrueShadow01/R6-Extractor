@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
 
 from src.operator_registry import read_operator_registry
 from src.model import operator_model_jobs
-from src.environment import ENVIRONMENT_ASSETS, EnvironmentAsset
+from src.environment import ENVIRONMENT_GROUPS, EnvironmentAsset
 from src.gadgets import Gadget, GADGETS, validate_gadget
 from desktop.preview_widget import PreviewWidget
 from desktop.preview_cache import CacheLease, clean_preview_cache
@@ -230,11 +230,19 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(self.asset_selector)
 
         self.environment_list = QListWidget()
-        for asset in ENVIRONMENT_ASSETS.values():
-            row = QListWidgetItem(asset.name)
-            row.setData(Qt.ItemDataRole.UserRole, asset)
-            self.environment_list.addItem(row)
-        self.environment_list.setCurrentRow(0)
+        for title, assets in ENVIRONMENT_GROUPS.items():
+            heading = QListWidgetItem(title)
+            heading.setFlags(Qt.ItemFlag.NoItemFlags)
+            font = heading.font()
+            font.setBold(True)
+            heading.setFont(font)
+            self.environment_list.addItem(heading)
+
+            for asset in assets:
+                row = QListWidgetItem(asset.name)
+                row.setData(Qt.ItemDataRole.UserRole, asset)
+                self.environment_list.addItem(row)
+        self.environment_list.setCurrentRow(1)
 
         self.asset_tabs = QTabWidget()
         self.asset_tabs.addTab(left, "Operators")
@@ -483,7 +491,7 @@ class MainWindow(QMainWindow):
             return
 
         game = Path(self.game_path.text().strip()).resolve()
-        if not isinstance(operator, EnvironmentAsset) and game != self.registry_game_path:
+        if self.asset_tabs.currentWidget() is not self.environment_list and game != self.registry_game_path:
             self.report_error("Reload operators after changing the game folder")
             return
 
@@ -859,7 +867,7 @@ class MainWindow(QMainWindow):
             return
 
         game = Path(self.game_path.text().strip()).resolve()
-        if not isinstance(operator, EnvironmentAsset) and game != self.registry_game_path:
+        if self.asset_tabs.currentWidget() is not self.environment_list and game != self.registry_game_path:
             self.report_error("Reload operators after changing the game folder")
             return
 

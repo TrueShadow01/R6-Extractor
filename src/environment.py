@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from src.database import load_asset_index
+from src.gadgets import BREACH_ACTIVATOR
 from src.metadata import parse_file_metadata
 
 @dataclass(frozen=True)
@@ -13,6 +14,11 @@ class EnvironmentAsset:
     markers: tuple[bytes, ...]
     owner_type: int = 0xFAEB9AB4 # CCTV type
     geometry_uid: int | None = None
+    extra_meshes: tuple[int, ...] = ()
+
+    @property
+    def mesh_uids(self):
+        return (self.mesh_uid, *self.extra_meshes)
 
     @property
     def mesh_uid(self) -> int:
@@ -34,7 +40,7 @@ class EnvironmentAsset:
 
             payload = load_asset_payload(record)
             header = parse_file_metadata(payload)
-            if header.uid == owner_uid and header.file_type == self.owner_type and all(marker in payload for marker in self.markers) and self.mesh_uid in read_mesh_bindings(payload):
+            if header.uid == owner_uid and header.file_type == self.owner_type and all(marker in payload for marker in self.markers) and set(self.mesh_uids).issubset(read_mesh_bindings(payload)):
                 return record
 
         raise ValueError(f"No verified source for {self.name}. Update the asset index for this game folder.")
@@ -143,12 +149,47 @@ HATCH_REINFORCEMENT = EnvironmentAsset(
     owner_type=0xE261EA92,
 )
 
+def equipment(name, mesh, owner, visual, archive, *extra_meshes):
+    return EnvironmentAsset(
+        uid=mesh,
+        name=name,
+        owners=((archive, owner),),
+        markers=(enabled_visual(visual),),
+        owner_type=0xE261EA92,
+        extra_meshes=extra_meshes,
+    )
+
+ON_DEMAND = "datapc64_ondemand.forge"
+PLAYGO = "datapc64_ondemand_playgo.forge"
+SET01 = "datapc64_ondemand_set01.forge"
+SET02 = "datapc64_ondemand_set02.forge"
+
+ENVIRONMENT_GROUPS = {
+    "Map props and equipment": (
+        CCTV, DOOR_BARRICADE, DOUBLE_DOOR_BARRICADE, WINDOW_BARRICADE,
+        PLANTED_DEFUSER, OPEN_DEFUSER, WALL_REINFORCEMENT, HATCH_REINFORCEMENT,
+        FIRE_EXTINGUISHER, GAS_PIPE, OBSERVATION_PHONE, BREACH_ACTIVATOR
+    ),
+    "Attackger gadgets": (
+        equipment("Hard breach charge", 0x43C4DB4CCF, 0x3F547D17BF, 0x43C4DB4CCA, PLAYGO),
+        equipment("Soft breach charge", 0x539850B81, 0x24F9498260, 0x61EB5BA9, PLAYGO),
+        equipment("Claymore", 0x8C1A46EF8, 0x356FD1B2B4, 0x8C1A46EF5, SET01),
+        equipment("Frag grenade", 0x45CB3E5E0, 0x24F9498250, 0x13096816, PLAYGO, 0x45CB3E5DF, 0x45CB3E5DE),
+        equipment("Stun grenade", 0x526B02A34, 0x9B2CAF0E, 0xCEFFD93, PLAYGO, 0x526B02A33, 0x526B02A32),
+        equipment("Smoke grenade", 0x119CFDDEE, 0x9B2CAF14, 0x2E53FD9C, PLAYGO, 0x526B033E7),
+    ),
+    "Defender gadgets": (
+        equipment("Proximity alarm", 0x1BC016173A, 0x1018C91F6D, 0x1BC0161737, SET01),
+        equipment("Barbed wire (deployed)", 0x10A05486E, 0x3C8F4197B4, 0x1CA3C34C, PLAYGO),
+        equipment("Nitro cell", 0x119CF4D22, 0xC6227CBC, 0x680A8ABA, ON_DEMAND),
+        equipment("Bulletproof camera", 0x10463D49ED, 0x103D71009E, 0x10463D49EB, SET02),
+        equipment("Observation blocker", 0x59FE711F56, 0x55610D2000, 0x5694E28DFF, ON_DEMAND),
+    ),
+}
+
 ENVIRONMENT_ASSETS = {
     asset.uid: asset
-    for asset in (
-            CCTV, DOOR_BARRICADE, DOUBLE_DOOR_BARRICADE,
-            WINDOW_BARRICADE, PLANTED_DEFUSER, OPEN_DEFUSER,
-            WALL_REINFORCEMENT, FIRE_EXTINGUISHER, GAS_PIPE,
-            OBSERVATION_PHONE, HATCH_REINFORCEMENT
-        )
+    for group in ENVIRONMENT_GROUPS.values()
+    for asset in group
+    if isinstance(asset, EnvironmentAsset)
 }
