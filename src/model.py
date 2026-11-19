@@ -1619,6 +1619,60 @@ def _select_export_geometry(model_uid: int, geometry_records: tuple[AssetRecord,
 
     return geometry_records, selected_gadget_parts
 
+def _align_tachanka_head(bindings: dict[int, MeshBinding], index: AssetIndex) -> dict[int, MeshBinding]:
+    body_record = index.primary(0x156B73543D)
+    if body_record is None:
+        raise ValueError("Tachanka head alignment requires body model 156B73543D")
+
+    body_bindings = read_mesh_bindings(load_asset_payload(body_record))
+    body = body_bindings.get(0x9D00E0074)
+    helmet = bindings.get(0x9D00E00BB)
+    if body is None or helmet is None:
+        raise ValueError("Tachanka attachment bindings have changed")
+
+    body_frames = dict(zip(body.bone_ids, _default_joint_node_matrices(body)))
+    helmet_frames = dict(zip(helmet.bone_ids, _default_joint_node_matrices(helmet)))
+    shared_bones = body_frames.keys() & helmet_frames.keys()
+    if HOST_HEAD_ROOT not in shared_bones or len(shared_bones) < 3:
+        raise ValueError("Insufficent shared bones for Tachanka head alignment")
+
+    correction = _gltf_multiply(body_frames[HOST_HEAD_ROOT], invert_gltf_matrix(helmet_frames[HOST_HEAD_ROOT]))
+    for bone_id in shared_bones:
+        bone_correction = _gltf_multiply(body_frames[bone_id], invert_gltf_matrix(helmet_frames[bone_id]))
+        if max(abs(a - b) for a, b in zip(correction, bone_correction)) > 1e-4:
+            raise ValueError("Tachanka body and helmet attachment frames disagree")
+
+    # Apply same correction to the helmet, face and eyes
+    return {
+        uid: replace(
+            binding,
+            joint_node_matrices=tuple(
+                _gltf_multiply(correction, frame)
+                for frame in _default_joint_node_matrices(binding)
+            ),
+        )
+        for uid, binding in bindings.items()
+    }
+
+def _prepare_mesh_bindings(model_uid: int, model_payload: bytes | None, index: AssetIndex, selected_mesh_uids: set[int] | None) -> dict[int, MeshBinding]:
+    bindings = {}
+    if model_payload is not None:
+        bindings = read_mesh_bindings(model_payload)
+        if selected_mesh_uids is not None:
+            bindings = {
+                uid: binding for uid, binding in bindings.items()
+                if uid in selected_mesh_uids
+            }
+        bindings = resolve_static_attachment_bindings(model_payload, bindings)
+        bindings = resolve_attachment_frames(bindings)
+        bindings = resolve_static_face_bindings(bindings, model_payload)
+
+    if model_uid == 0x156B734234:
+        bindings = _align_tachanka_head(bindings, index)
+
+    bindings = resolve_gadget_state_bindings(model_uid, model_payload, bindings)
+    return resolve_gridlock_bindings(model_uid, model_payload, bindings)
+
 def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: AssetIndex, output_directory: str | Path, *, source_uid: int | None = None) -> ModelExportResult:
     """Resolve the selected meshes, materials and skeletons then write glTF"""
     output_directory = Path(output_directory).resolve()
@@ -1633,52 +1687,8 @@ def export_model(model_uid: int, children: Mapping[int, Iterable[int]], index: A
         if model_record is not None
         else None
     )
-    mesh_bindings = (
-        read_mesh_bindings(model_payload)
-        if model_payload is not None
-        else {}
-    )
-    if selected_gadget_parts is not None:
-        mesh_bindings = {
-            uid: binding
-            for uid, binding in mesh_bindings.items()
-            if uid in selected_gadget_parts
-        }
 
-    if model_payload is not None:
-        mesh_bindings = resolve_static_face_bindings(resolve_attachment_frames(resolve_static_attachment_bindings(model_payload, mesh_bindings)), model_payload)
-
-    if model_uid == 0x156B734234:
-        body_record = index.primary(0x156B73543D)
-        if body_record is None:
-            raise ValueError("Tachanka head alignment requires body model 156B73543D")
-
-        body_bindings = read_mesh_bindings(load_asset_payload(body_record))
-        body = body_bindings.get(0x9D00E0074)
-        helmet = mesh_bindings.get(0x9D00E00BB)
-        if body is None or helmet is None:
-            raise ValueError("Tachanka attachment bindings have changed")
-
-        body_by_bone = dict(zip(body.bone_ids, _default_joint_node_matrices(body)))
-        helmet_by_bone = dict(zip(helmet.bone_ids, _default_joint_node_matrices(helmet)))
-        common = body_by_bone.keys() & helmet_by_bone.keys()
-
-        if HOST_HEAD_ROOT not in common or len(common) < 3:
-            raise ValueError("Insufficient shared bones for Tachanka head alignment")
-
-        correction = _gltf_multiply(body_by_bone[HOST_HEAD_ROOT], invert_gltf_matrix(helmet_by_bone[HOST_HEAD_ROOT]))
-
-        if any(max(abs(a - b) for a, b in zip(correction, _gltf_multiply(body_by_bone[bone_id], invert_gltf_matrix(helmet_by_bone[bone_id])))) > 1e-4 for bone_id in common):
-            raise ValueError("Tachanka body and helmet attachment frames disagree")
-
-        # Keep the assembled face, eyes and helmet together
-        mesh_bindings = {
-            uid: replace(binding, joint_node_matrices=tuple(_gltf_multiply(correction, matrix) for matrix in _default_joint_node_matrices(binding)))
-            for uid, binding in  mesh_bindings.items()
-        }
-
-    mesh_bindings = resolve_gadget_state_bindings(model_uid, model_payload, mesh_bindings)
-    mesh_bindings = resolve_gridlock_bindings(model_uid, model_payload, mesh_bindings)
+    mesh_bindings = _prepare_mesh_bindings(model_uid, model_payload, index, selected_gadget_parts)
 
     parts = decode_mesh_parts(geometry_records, mesh_bindings)
     parts = resolve_retracted_montagne_parts(model_uid, parts)
