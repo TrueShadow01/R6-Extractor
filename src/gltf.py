@@ -305,6 +305,40 @@ def siege_to_gltf_vector(value: tuple[float, float, float]) -> tuple[float, floa
 
     return x, z, -y
 
+def _validate_mesh_part(part: MeshPartLike) -> None:
+    label = f"Part {part.uid:016X}"
+    vertex_count = len(part.vertices)
+    if vertex_count == 0:
+        raise ValueError(f"{label} has no vertice")
+    if len(part.uvs) != vertex_count:
+        raise ValueError(f"{label} has mismatched UVs")
+    if len(part.normals) != vertex_count:
+        raise ValueError(f"{label} has mismatched normals")
+    if part.tangents and len(part.tangents) != vertex_count:
+        raise ValueError(f"{label} has mismatched tangents")
+
+    if bool(part.joints) != bool(part.weights):
+        raise ValueError(f"{label} must contain both joints and weights")
+    if part.joints and len(part.joints) != vertex_count:
+        raise ValueError(f"{label} has mismatched joint indices")
+    if part.weights and len(part.weights) != vertex_count:
+        raise ValueError(f"{label} has mismatched skin weights")
+
+    binding = part.binding
+    if binding is None:
+        return
+
+    bone_count = len(binding.bone_ids)
+    if not part.joints:
+        raise ValueError(f"{label} has a binding but no joints")
+    if len(binding.inverse_bind_matrices) != bone_count:
+        raise ValueError(f"{label} has mismatched bone IDs and inverse bind matrices")
+    if binding.joint_node_matrices and len(binding.joint_node_matrices) != bone_count:
+        raise ValueError(f"{label} has mismatched joint node matrices")
+
+    if any(joint >= bone_count for joints, weights in zip(part.joints, part.weights) for joint, weight in zip(joints, weights) if weight > 0.0):
+        raise ValueError(f"{label} references a joint outside its binding table")
+    
 def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: str | Path, *, diffuse: str | None = None, normal: str | None = None, specular: str | None = None, material_textures: Sequence[MaterialTextures] | None = None, skeletons=None, head_bone_ids=()) -> Path:
     """Write a multi-part glTF using external PNG textures"""
 
@@ -351,48 +385,8 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
         return index
 
     for part in parts:
-        if not part.vertices:
-            raise ValueError(f"Part {part.uid:016X} has no vertices")
-
-        if len(part.uvs) != len(part.vertices):
-            raise ValueError(f"Part {part.uid:016X} has mismatched UVs")
-
-        if len(part.normals) != len(part.vertices):
-            raise ValueError(f"Part {part.uid:016X} has mismatched normals")
-
-        if part.tangents and len(part.tangents) != len(part.vertices):
-            raise ValueError(f"Part {part.uid:016X} has mismatched tangents")
-
-        if bool(part.joints) != bool(part.weights):
-            raise ValueError(f"Part {part.uid:016X} must contain both joints and weights")
-
-        if part.joints and len(part.joints) != len(part.vertices):
-            raise ValueError(f"Part {part.uid:016X} has mismatched joint indices")
-
-        if part.weights and len(part.weights) != len(part.vertices):
-            raise ValueError(f"Part {part.uid:016X} has mismatched skin weights")
-
+        _validate_mesh_part(part)
         binding = part.binding
-
-        if binding is not None:
-            if not part.joints:
-                raise ValueError(f"Part {part.uid:016X} has a binding but no joints")
-
-            if len(binding.bone_ids) != len(binding.inverse_bind_matrices):
-                raise ValueError(f"Part {part.uid:016X} has mismatched bone IDs and inverse bind matrices")
-
-            if binding.joint_node_matrices and len(binding.joint_node_matrices) != len(binding.bone_ids):
-                raise ValueError(f"Part {part.uid:016X} has mismatched joint node matrices")
-
-            used_joints = [
-                joint
-                for vertex_joints, vertex_weights in zip(part.joints, part.weights)
-                for joint, weight in zip(vertex_joints, vertex_weights)
-                if weight > 0.0
-            ]
-
-            if used_joints and max(used_joints) >= len(binding.bone_ids):
-                raise ValueError(f"Part {part.uid:016X} references a joint outside its binding table")
 
         converted_vertices = [
             siege_to_gltf_vector(vertex)
