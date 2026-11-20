@@ -774,6 +774,90 @@ def _read_required_header_color(payload: bytes, entry: NestedEntry, label: str) 
         raise ValueError(f"Invalid {label} color")
     return color
 
+def _material_shader_uniforms(entry, blob, shader_uid, bindings, parsed_uniforms, clothing_uniforms):
+    names = {binding.name for binding in bindings}
+    defaults = tuple(
+        uniform for uniform in parsed_uniforms
+        if uniform.uniform_type == 1 and uniform.values and uniform.name in names
+    )
+
+    if shader_uid == 0x2B188360D9:
+        return apply_eye_overlay_property_overrides(blob, defaults)
+
+    parameter = SOLID_COLOR_PARAMETERS.get(shader_uid, UNTEXTURED_COLOR_PARAMETERS.get(shader_uid))
+    uniforms = apply_material_uniform_overrides(blob, defaults, bindings, parameter_index=parameter)
+    material_uid = entry.metadata.uid
+
+    if shader_uid == TINTED_HEADGEAR_SHADER or (shader_uid == 0x99E2C947 and material_uid in LEGACY_TINT_MATERIALS):
+        uniforms += tuple(
+            ShaderUniform(material_uid, index, name, 1, values=values)
+            for index, (name, values) in enumerate(read_tint_parameters(blob))
+        )
+    elif shader_uid == SOLID_COSMETIC_SHADER:
+        uniforms += read_clothing_preview_colors(blob) + clothing_uniforms
+    elif shader_uid == 0x557005948D:
+        uniforms = apply_eye_property_overrides(blob, uniforms)
+    elif shader_uid in (0x3051C028, 0x55B93242F6):
+        # offsets are relative to the material data inside the entry's blob
+        start = entry.metadata.data_offset
+        if start + 174 <= len(blob):
+            marker, kind = struct.unpack_from("<I4xI", blob, start + 130)
+            if marker == UNIFORM_MARKER and kind == 0xF6348091:
+                values = struct.unpack_from("<8f", blob, start + 142)
+                if -3.0 <= values[0] <= 3.0 and all(0.0 <= v <= 1.0 for v in values[1:]):
+                    uniforms += (ShaderUniform(material_uid, 0, "ExperimentalHairSourceV1", 1, values=values),)
+    return uniforms
+
+# each pair is (shader UID, material UID)
+_REQUIRED_HEADER_COLORS = {
+    (0x3BD13B9E, 0x6EA53F13A): "Black eye material",
+    (0x40D7FCF0, 0x6EA53F15A): "Black eye material",
+    (0x3327005AD, 0x73FA82522): "Black eye material",
+    (0x3327005AD, 0x5BC241708): "Castle core material",
+    (0x40D7FCF0, 0xBB1FAC464): "Candela indicator",
+    (0x40D7FCF0, 0xBB1FAC470): "Candela indicator",
+    (0x40D7FCF0, 0xBB1FAC47C): "Candela indicator",
+    (0x1397A3EEB7, 0x2D1BEFAC46): "gadget material",
+    (0x959B5D7CD, 0xBA5A08957): "gadget material",
+}
+
+_UNTEXTURED_GADGET_COLORS = {
+    (0x3327005AD, 0x5B96E63987), (0x3327005AD, 0x731C35563),
+    (0x3327005AD, 0x5CE744A9E5), (0x3327005AD, 0x25B13DCCC1),
+    (0x3327005AD, 0x2591BE9437), (0x3327005AD, 0x316F5CF0D0),
+    (0x3327005AD, 0x5C82A0B701), (0x3327005AD, 0x2591BC2AA2),
+    (0x3327005AD, 0x1FE0103D4B), (0x3327005AD, 0x25B13DCDDD),
+    (0x40D7FCF0, 0x18A4B0B612), (0x40D7FCF0, 0x18A4B0B61E),
+    (0x40D7FCF0, 0x2B2488E8E7), (0x1397A3EEB7, 0x2DE308A6A1),
+    (0x1397A3EEB7, 0x2E84C7F63A), (0x1397A3EEB7, 0x2EEE2AD9A6),
+    (0x14BCCBDB, 0x33BAEC4606),
+}
+
+def _material_shader_color(payload, entry, blob, shader_uid, *, has_diffuse):
+    material_uid = entry.metadata.uid
+    key = (shader_uid, material_uid)
+    label = _REQUIRED_HEADER_COLORS.get(key)
+    if label is None and not has_diffuse and key in _UNTEXTURED_GADGET_COLORS:
+        label = "gadget material"
+    if label is not None:
+        return _read_required_header_color(payload, entry, label)
+
+    untextured_header = not has_diffuse and (
+        shader_uid in (0x523BA2BF, 0x3BD13B9E, 0x2B188360D9)
+        or key == (0xF2BB85C7E, 0x5978CB7154)
+    )
+
+    # source header color used to approximate texture modulation on legacy gear
+    tinted_texture = has_diffuse and shader_uid == 0x99E2C947 and material_uid in (
+        0xA8715F23D, 0x995497897, 0x995497909, 0x99549791D,
+    )
+    if (untextured_header or tinted_texture) and entry.data_offset + 28 <= entry.end:
+        color = struct.unpack_from("<4f", payload, entry.data_offset + 12)
+        if all(0.0 <= value <= 1.0 for value in color):
+            return color
+
+    return read_solid_material_color(blob, shader_uid, has_diffuse=has_diffuse)
+
 def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int], geometry_uids: Iterable[int]) -> tuple[tuple[MaterialTextureSet, ...], ...]:
     """Resolve local mesh material slots for each geometry part"""
 
@@ -923,132 +1007,9 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
                 ))
 
         material_bindings = tuple(bindings_by_shader.get(shader_uid, ()))
-        binding_names = {
-            binding.name
-            for binding in material_bindings
-        }
 
-        default_uniforms = tuple(
-            uniform
-            for uniform in parsed_uniforms
-            if uniform.uniform_type == 1 and uniform.values and uniform.name in binding_names
-        )
-
-        material_parameter = SOLID_COLOR_PARAMETERS.get(shader_uid)
-
-        if material_parameter is None:
-            material_parameter = UNTEXTURED_COLOR_PARAMETERS.get(shader_uid)
-
-        if shader_uid == 0x0000002B188360D9:
-            material_uniforms = apply_eye_overlay_property_overrides(material_blob, default_uniforms)
-        else:
-            material_uniforms = apply_material_uniform_overrides(material_blob, default_uniforms, material_bindings, parameter_index=material_parameter)
-
-        if shader_uid == TINTED_HEADGEAR_SHADER or (shader_uid == 0x99E2C947 and material_uid in LEGACY_TINT_MATERIALS):
-            material_uniforms += tuple(
-                ShaderUniform(
-                    owner_uid=material_uid,
-                    index=index,
-                    name=name,
-                    uniform_type=1,
-                    values=values
-                )
-                for index, (name, values) in enumerate(read_tint_parameters(material_blob))
-            )
-
-        if shader_uid == SOLID_COSMETIC_SHADER:
-            material_uniforms += (read_clothing_preview_colors(material_blob) + clothing_uniforms)
-
-        if shader_uid == 0x000000557005948D:
-            material_uniforms = apply_eye_property_overrides(material_blob, material_uniforms)
-
-        if shader_uid in (0x000000003051C028, 0x00000055B93242F6) and material_start + 174 <= material_entry.end:
-            if struct.unpack_from("<I", payload, material_start + 130)[0] == UNIFORM_MARKER and struct.unpack_from("<I", payload, material_start + 138)[0] == 0xF6348091:
-                hair_values = struct.unpack_from("<8f", payload, material_start + 142)
-                if all(math.isfinite(value) for value in hair_values) and -3.0 <= hair_values[0] <= 3.0 and all(0.0 <= value <= 1.0 for value in hair_values[1:]):
-                    material_uniforms += (
-                        ShaderUniform(
-                            owner_uid=material_uid,
-                            index=0,
-                            name="ExperimentalHairSourceV1",
-                            uniform_type=1,
-                            values=hair_values
-                        ),
-                    )
-
-        solid_color = read_solid_material_color(material_blob, shader_uid, has_diffuse=bool(roles.get(DIFFUSE_ROLE)),)
-
-        # This shader stores its color directly after the shader UID
-        if (shader_uid in {
-            0x00000000523BA2BF,
-            0x000000003BD13B9E,
-            0x0000002B188360D9
-        } or (material_uid, shader_uid) == (
-            0x0000005978CB7154,
-            0x0000000F2BB85C7E
-        )) and not roles.get(DIFFUSE_ROLE):
-            if material_start + 28 <= material_entry.end:
-                candidate = struct.unpack_from("<4f", payload, material_start + 12)
-                if all(math.isfinite(value) and 0.0 <= value <= 1.0 for value in candidate):
-                    solid_color = candidate
-
-        # Black Eye camera: white textures are modulated by these source colors.
-        if (shader_uid, material_uid) in {
-            (0x000000003BD13B9E, 0x00000006EA53F13A),
-            (0x0000000040D7FCF0, 0x00000006EA53F15A),
-            (0x00000003327005AD, 0x000000073FA82522)
-        }:
-            solid_color = _read_required_header_color(payload, material_entry, "Black eye material")
-
-        # Castle's interior core uses a white texture and a source color
-        if (material_uid, shader_uid) == (0x00000005BC241708, 0x00000003327005AD):
-            solid_color = _read_required_header_color(payload, material_entry, "Castle core material")
-
-        # Candela's three indicator materials store their green color here
-        if shader_uid == 0x0000000040D7FCF0 and material_uid in {
-            0x0000000BB1FAC464,
-            0x0000000BB1FAC470,
-            0x0000000BB1FAC47C
-        }:
-            solid_color = _read_required_header_color(payload, material_entry, "Candela indicator")
-
-        # Inspected gadget colors. 2 textured exceptions use white masks
-        if (not roles.get(DIFFUSE_ROLE) or (shader_uid, material_uid) in {
-            (0x1397A3EEB7, 0x2D1BEFAC46),
-            (0x959B5D7CD, 0xBA5A08957),
-        }) and (shader_uid, material_uid) in {
-            (0x3327005AD, 0x5B96E63987),
-            (0x3327005AD, 0x731C35563),
-            (0x3327005AD, 0x5CE744A9E5),
-            (0x3327005AD, 0x25B13DCCC1),
-            (0x3327005AD, 0x2591BE9437),
-            (0x3327005AD, 0x316F5CF0D0),
-            (0x3327005AD, 0x5C82A0B701),
-            (0x3327005AD, 0x2591BC2AA2),
-            (0x3327005AD, 0x1FE0103D4B),
-            (0x3327005AD, 0x25B13DCDDD),
-            (0x40D7FCF0, 0x18A4B0B612),
-            (0x40D7FCF0, 0x18A4B0B61E),
-            (0x40D7FCF0, 0x2B2488E8E7),
-            (0x1397A3EEB7, 0x2DE308A6A1),
-            (0x1397A3EEB7, 0x2D1BEFAC46),
-            (0x1397A3EEB7, 0x2E84C7F63A),
-            (0x1397A3EEB7, 0x2EEE2AD9A6),
-            (0x14BCCBDB, 0x33BAEC4606),
-            (0x959B5D7CD, 0xBA5A08957),
-        }:
-            solid_color = _read_required_header_color(payload, material_entry, "gadget material")
-
-        # Source header color. Approximate texture modulation
-        if (shader_uid == 0x0000000099E2C947 and material_uid in {
-            0x0000000A8715F23D,  # Glaz bandana
-            0x0000000995497897,  # Mute vest
-            0x0000000995497909,  # Smoke vest
-            0x000000099549791D,  # Smoke equipment
-        } and roles.get(DIFFUSE_ROLE) and material_start + 28 <= material_entry.end):
-            candidate = struct.unpack_from("<4f", payload, material_start + 12)
-            if all(math.isfinite(value) and 0.0 <= value <= 1.0 for value in candidate):
-                solid_color = candidate
+        material_uniforms = _material_shader_uniforms(material_entry, material_blob, shader_uid, material_bindings, parsed_uniforms, clothing_uniforms)
+        solid_color = _material_shader_color(payload, material_entry, material_blob, shader_uid, has_diffuse=bool(roles.get(DIFFUSE_ROLE)))
 
         if (shader_uid, material_uid) == (0xE09ED870, 0x7185D293):
             # handset's scrambled screen artwork lives in texture role 3
