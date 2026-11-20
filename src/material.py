@@ -1076,20 +1076,22 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
 
         position += 4
 
+    return _resolve_mesh_material_slots(payload, geometry_uids, mesh_entries, material_entries, material_overrides, resolved_materials)
+
+def _resolve_mesh_material_slots(payload: bytes, geometry_uids: Iterable[int], mesh_entries: list[NestedEntry], material_entries: dict[int, NestedEntry], material_overrides: dict[int, int], resolved_materials: dict[int, MaterialTextureSet]) -> tuple[tuple[MaterialTextureSet, ...], ...]:
+    """Return one ordered material-slot tuple per requested geometry"""
+    candidate_material_uids = material_entries.keys() | material_overrides.keys()
     part_materials = []
 
     for geometry_uid in geometry_uids:
         geometry_reference = struct.pack("<Q", geometry_uid)
-
         mesh_entry = next(
             (
-                entry
-                for entry in mesh_entries
-                if geometry_reference in payload[entry.offset:entry.end]
+                entry for entry in mesh_entries
+                if payload.find(geometry_reference, entry.offset, entry.end) >= 0
             ),
-            None
+            None,
         )
-
 
         if mesh_entry is None:
             part_materials.append(())
@@ -1211,14 +1213,8 @@ def resolve_material_texture_sets(payload: bytes, texture_uids: Collection[int],
             continue
 
         mesh_blob = payload[mesh_entry.offset:mesh_entry.end]
-
-        base_material_uids = referenced_uids(mesh_blob, material_entries.keys() | material_overrides.keys(), preserve_duplicates=True)
-
-        part_materials.append(
-            tuple(
-                resolved_materials.get(material_overrides.get(base_uid, base_uid), MaterialTextureSet())
-                for base_uid in base_material_uids
-            )
-        )
+        base_uids = referenced_uids(mesh_blob, candidate_material_uids, preserve_duplicates=True)
+        slot_uids = (material_overrides.get(uid, uid) for uid in base_uids)
+        part_materials.append(tuple(resolved_materials.get(uid) or MaterialTextureSet() for uid in slot_uids))
 
     return tuple(part_materials)
