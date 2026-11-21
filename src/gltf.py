@@ -621,7 +621,7 @@ def _prepare_shield_material(material: dict, model_uid: int, slot: MaterialTextu
             slot = _with_lens_profile(slot, 0.18)
         else:
             hide_layer = True
-    elif (model_uid, uid, shader) == (0x5DB5BC2B2A, 0x62FCA06100, 0x3BD13B9E):
+    elif (model_uid, uid, shader) == (0x5DB5BC2B2A, 0x65669876F, 0x3BD13B9E):
         hide_layer = True
         note = "Static undamaged shield approximation. Impact overlay hidden."
     elif (model_uid, uid, shader) == (0x5DB5BC2B2A, 0x62FCA06100, 0x3BD13B9E):
@@ -658,6 +658,70 @@ def _prepare_shield_material(material: dict, model_uid: int, slot: MaterialTextu
         material["alphaMode"] = "BLEND"
         material.pop("alphaCutoff", None)
     return slot, note
+
+def _apply_gadget_surface(material: dict, model_uid: int, slot: MaterialTextures) -> None:
+    key = (model_uid, slot.material_uid, slot.shader_uid)
+    if model_uid == 0x532A0CC9AF:
+        note = (
+            "Kona Static static approximation. The Runtime healing "
+            "cross projection is hidden. Live projection and "
+            "animation is not reproduced."
+        )
+    elif key == (0x573DBEB520, 0x557222D2AA, 0xE09ED870):
+        material["pbrMetallicRoughness"]["baseColorFactor"][3] = 0.0
+        material["alphaMode"] = "BLEND"
+        material.pop("alphaCutoff", None)
+        material["name"] += "_Approx_Inactive_Overlay"
+        note = (
+            "Static inactive Razorbloom approximation. Runtime activation "
+            "overlay hidden. Activation lighting is not reproduced."
+        )
+    elif key in {
+        (0x233A0B4871, 0x8ABBDCFD2, 0x3327005AD),
+        (0x2FF67F4533, 0x8ABBDCFBF, 0x3327005AD),
+    }:
+        material["name"] += "_Approx_Bolt_UV"
+        note = (
+            "Capitao bolt UV approximation. Source textures use a vertical "
+            "UV flip. The exact game UV transformation has not been recovered."
+        )
+    else:
+        return
+    material.setdefault("extras", {})["siegeMaterialApproximation"] = note
+
+def _apply_gadget_optics(material: dict, model_uid: int, slot: MaterialTextures) -> None:
+    slot, shield_note = _prepare_shield_material(material, model_uid, slot)
+    apply_optical_preview(material, slot)
+
+    if model_uid == 0x24F948E738 and slot.shader_uid is None and slot.material_uid in {
+        0x36D604A6, 0x257CB37667,
+    }:
+        note = "Source sight definitions unavailable. Neutral thin-glass lens approximation."
+        material["name"] += "_Approx_Sight"
+        extras = material.setdefault("extras", {})
+        if slot.material_uid == 0x36D604A6:
+            extras["siegeOpticalApproximation"] = note
+
+    if shield_note is not None:
+        extras = material.setdefault("extras", {})
+        extras["siegeMaterialApproximation"] = shield_note
+        if "siegeGlassPreviewV1" in extras:
+            extras["siegeOpticalApproximation"] = shield_note
+
+def _set_glass_base_texture(material, slot, output_directory, texture_cache, add_texture):
+    extras = material.get("extras", {})
+    if "siegeGlassPreviewV1" not in extras or not slot.diffuse:
+        return
+
+    # Other slots may still use the alpha channel from the original texture
+    source_path = output_directory / slot.diffuse
+    glass_filename = source_path.stem + "_glass_rgb.png"
+    if glass_filename not in texture_cache:
+        with Image.open(source_path) as source_image:
+            source_image.convert("RGB").save(output_directory / glass_filename)
+
+    extras["siegeGlassSourceBaseColor"] = slot.diffuse
+    material["pbrMetallicRoughness"]["baseColorTexture"] = {"index": add_texture(glass_filename)}
 
 def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: str | Path, *, diffuse: str | None = None, normal: str | None = None, specular: str | None = None, material_textures: Sequence[MaterialTextures] | None = None, skeletons=None, head_bone_ids=()) -> Path:
     """Write a multi-part glTF using external PNG textures"""
@@ -883,69 +947,10 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
             pbr["baseColorFactor"][3] = 1.0
 
         _write_shader_metadata(material, slot_textures)
-
         _apply_static_display(material, model_uid, slot_textures)
-
-        if model_uid == 0x532A0CC9AF:
-            material.setdefault("extras", {})["siegeMaterialApproximation"] = (
-                "Kona Station static approximation. The Runtime healing "
-                "cross projection is hidden. Live projection and "
-                "animation is not reproduced."
-            )
-
-        slot_textures, shield_note = _prepare_shield_material(material, model_uid, slot_textures)
-
-        if model_uid == 0x573DBEB520 and (slot_textures.material_uid, slot_textures.shader_uid) == (0x557222D2AA, 0xE09ED870):
-            pbr["baseColorFactor"][3] = 0.0
-            material["alphaMode"] = "BLEND"
-            material.pop("alphaCutoff", None)
-            material["name"] += "_Approx_Inactive_Overlay"
-            material.setdefault("extras", {})["siegeMaterialApproximation"] = (
-                "Static inactive Razorbloom approximation. Runtime activation "
-                "overlay hidden. Activation lighting is not reproduced."
-            )
-
-        if (model_uid, slot_textures.material_uid, slot_textures.shader_uid) in {
-            (0x233A0B4871, 0x8ABBDCFD2, 0x3327005AD),
-            (0x2FF67F4533, 0x8ABBDCFBF, 0x3327005AD),
-        }:
-            material["name"] += "_Approx_Bolt_UV"
-            material.setdefault("extras", {})["siegeMaterialApproximation"] = (
-                "Capitao bolt UV approximation. Source textures use a vertical "
-                "UV flip. The exact game UV transformation has not been recovered."
-            )
-
-        apply_optical_preview(material, slot_textures)
-
-        if model_uid == 0x24F948E738 and slot_textures.shader_uid is None and slot_textures.material_uid in {0x36D604A6, 0x257CB37667}:
-            note = (
-                "Source sight definitions unavailable. Neutral thin-glass lens "
-                "approximation."
-            )
-            material["name"] += "_Approx_Sight"
-            material.setdefault("extras", {})["siegeMaterialApproximation"] = note
-            if slot_textures.material_uid == 0x36D604A6:
-                material["extras"]["siegeOpticalApproximation"] = note
-
-        if shield_note is not None:
-            material.setdefault("extras", {})["siegeMaterialApproximation"] = shield_note
-            if "siegeGlassPreviewV1" in material["extras"]:
-                material["extras"]["siegeOpticalApproximation"] = shield_note
-
-        if "siegeGlassPreviewV1" in material.get("extras", {}) and slot_textures.diffuse:
-            # Atlas alpha may encode selectors rather than  transparency
-            # Preserve the original texture for the other material slots
-            source_path = output_directory / slot_textures.diffuse
-            glass_filename = source_path.stem + "_glass_rgb.png"
-
-            if glass_filename not in texture_cache:
-                with Image.open(source_path) as source_image:
-                    source_image.convert("RGB").save(output_directory / glass_filename)
-
-            material["extras"]["siegeGlassSourceBaseColor"] = slot_textures.diffuse
-            pbr["baseColorTexture"] = {
-                "index": add_texture(glass_filename)
-            }
+        _apply_gadget_surface(material, model_uid, slot_textures)
+        _apply_gadget_optics(material, model_uid, slot_textures)
+        _set_glass_base_texture(material, slot_textures, output_directory, texture_cache, add_texture)
         materials.append(material)
 
     document = {
