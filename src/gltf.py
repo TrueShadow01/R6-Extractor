@@ -426,6 +426,76 @@ def _write_skin(part: MeshPartLike, prefix: str, nodes, skins, add_accessor, hea
     })
     return skin_index
 
+_OPAQUE_DIFFUSE_MATERIALS = {
+    # (model UID, material UID, shader UID)
+    (0x510F6B21D, 0xC0B911CA, 0x4787DF5D80), # Single doorway
+    (0x540CFA01B, 0xC0B911CA, 0x4787DF5D80), # Double-door hardware
+    (0x540CFA01B, 0x5CEE64A224, 0x99E2E5B2), # Double-door boards
+    (0x5545CBAAC, 0xC0B911CA, 0x4787DF5D80), # Window hardware
+    (0x5545CBAAC, 0x5CEE64A224, 0x99E2E5B2), # Window boards
+    (0x67B7BE27EC, 0x6885BA3B92, 0x3327005AD), # Noor
+    (0x69837CC04E, 0x6885BA3B92, 0x3327005AD), # Noor projectile
+    (0x46B1161F22, 0x671B677CF, 0x3327005AD), # Blitz
+    (0x2E78D1D7D0, 0xA251826E, 0x3327005AD), # Montagne retracted
+    (0x6175F5EF50, 0x60E0180952, 0xE09ED870), # Rauora single-door hardware
+    (0x6175F5EF52, 0x60E0180952, 0xE09ED870), # Rauora double-door hardware
+    (0x3F3936A334, 0xA251826E, 0x3327005AD), # Montagne
+    (0x59A6BD7EA9, 0x5909BEFCD3, 0x3327005AD), # Grim
+    (0x5E8C093B6C, 0x5E1104D61B, 0x3327005AD), # Deimos
+    (0x5D048D31A9, 0x5D597E1AB1, 0x4787DF5D80), # Tubarão
+}
+
+def _build_base_material(model_uid, material_id, slot, add_texture, uses_alpha, *, paired_transition):
+    color = (1.0, 1.0, 1.0, 1.0)
+    if slot.solid_color is not None:
+        color = siege_color_to_gltf(slot.solid_color)
+
+    pbr = {
+        "baseColorFactor": list(color),
+        "metallicFactor": 0.0,
+        "roughnessFactor": 0.8,
+    }
+    material = {
+        "name": f"{model_uid:016X}_SiegeMaterial_{material_id}",
+        "pbrMetallicRoughness": pbr,
+        "alphaMode": "OPAQUE",
+    }
+
+    if slot.diffuse:
+        pbr["baseColorTexture"] = {"index": add_texture(slot.diffuse)}
+        key = (model_uid, slot.material_uid, slot.shader_uid)
+        if key in _OPAQUE_DIFFUSE_MATERIALS:
+            masked = False
+        elif slot.shader_uid in ALPHA_MASK_SHADER_UIDS:
+            masked = True
+        elif slot.shader_uid in OPAQUE_SHADER_UIDS:
+            masked = False
+        else:
+            masked = uses_alpha(slot.diffuse)
+
+        if key == (0xAF48BFE3D, 0x16F5E86868, 0x3BD13B9E): # rotor motion blur
+            material["alphaMode"] = "BLEND"
+            material["doubleSided"] = True
+        elif masked:
+            material["alphaMode"] = "MASK"
+            material["alphaCutoff"] = 0.1
+            material["doubleSided"] = True
+
+    glass = slot.shader_uid in GLASS_SHADER_UIDS
+    hidden = slot.shader_uid in HIDDEN_BY_DEFAULT_SHADER_UIDS
+    if glass or hidden or paired_transition:
+        material["alphaMode"] = "BLEND"
+        material["doubleSided"] = True
+        material.pop("alphaCutoff", None)
+        if hidden:
+            pbr["baseColorFactor"][3] = 0.0
+        elif glass:
+            pbr["baseColorFactor"][3] = 0.1
+
+    if slot.normal:
+        material["normalTexture"] = {"index": add_texture(slot.normal), "scale": 1.0}
+    return material
+
 def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: str | Path, *, diffuse: str | None = None, normal: str | None = None, specular: str | None = None, material_textures: Sequence[MaterialTextures] | None = None, skeletons=None, head_bone_ids=()) -> Path:
     """Write a multi-part glTF using external PNG textures"""
 
@@ -640,100 +710,13 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
                 )
             )
 
-        pbr = {
-            "baseColorFactor": list(
-                siege_color_to_gltf(slot_textures.solid_color)
-                if slot_textures.solid_color is not None
-                else (
-                    1.0,
-                    1.0,
-                    1.0,
-                    1.0
-                )
-            ),
-            "metallicFactor": 0.0,
-            "roughnessFactor": 0.8
-        }
-
-        material = {
-            "name": f"{model_uid:016X}_SiegeMaterial_{material_id}",
-            "pbrMetallicRoughness": pbr,
-            "alphaMode": "OPAQUE"
-        }
-
-        if slot_textures.diffuse:
-            pbr["baseColorTexture"] = {
-                "index": add_texture(slot_textures.diffuse)
-            }
-
-            if (
-                model_uid,
-                slot_textures.material_uid,
-                slot_textures.shader_uid,
-            ) in {
-                (0x510F6B21D, 0xC0B911CA, 0x4787DF5D80), # Single doorway
-                (0x540CFA01B, 0xC0B911CA, 0x4787DF5D80), # Double-door hardware
-                (0x540CFA01B, 0x5CEE64A224, 0x99E2E5B2), # Double-door boards
-                (0x5545CBAAC, 0xC0B911CA, 0x4787DF5D80), # Window hardware
-                (0x5545CBAAC, 0x5CEE64A224, 0x99E2E5B2), # Window boards
-                (0x67B7BE27EC, 0x6885BA3B92, 0x3327005AD), # Noor
-                (0x69837CC04E, 0x6885BA3B92, 0x3327005AD), # Noor projectile
-                (0x46B1161F22, 0x671B677CF, 0x3327005AD), # Blitz
-                (0x2E78D1D7D0, 0xA251826E, 0x3327005AD), # Montagne retracted
-                (0x6175F5EF50, 0x60E0180952, 0xE09ED870), # Rauora single-door hardware
-                (0x6175F5EF52, 0x60E0180952, 0xE09ED870), # Rauora double-door hardware
-                (0x3F3936A334, 0xA251826E, 0x3327005AD), # Montagne
-                (0x59A6BD7EA9, 0x5909BEFCD3, 0x3327005AD), # Grim
-                (0x5E8C093B6C, 0x5E1104D61B, 0x3327005AD), # Deimos
-                (0x5D048D31A9, 0x5D597E1AB1, 0x4787DF5D80), # Tubarao
-            }:
-                # These physical surfaces are opaque
-                # Their diffuse alpha is not cutout coverage
-                alpha_mask = False
-            elif slot_textures.shader_uid in ALPHA_MASK_SHADER_UIDS:
-                alpha_mask = True
-            elif slot_textures.shader_uid in OPAQUE_SHADER_UIDS:
-                alpha_mask = False
-            else:
-                alpha_mask = uses_alpha(slot_textures.diffuse)
-
-            if (model_uid, slot_textures.material_uid, slot_textures.shader_uid) == (0xAF48BFE3D, 0x16F5E86868, 0x3BD13B9E):
-                # rotor disc uses different alpha for motion blur
-                material["alphaMode"] = "BLEND"
-                material["doubleSided"] = True
-            elif alpha_mask:
-                material["alphaMode"] = "MASK"
-                material["alphaCutoff"] = 0.1
-                material["doubleSided"] = True
-
-        if slot_textures.shader_uid in GLASS_SHADER_UIDS:
-            material["alphaMode"] = "BLEND"
-            material["doubleSided"] = True
-            material.pop("alphaCutoff", None)
-            pbr["baseColorFactor"][3] = 0.1
-
-        if slot_textures.shader_uid in HIDDEN_BY_DEFAULT_SHADER_UIDS:
-            material["alphaMode"] = "BLEND"
-            material["doubleSided"] = True
-            material.pop("alphaCutoff", None)
-            pbr["baseColorFactor"][3] = 0.0
-
-        paired_transition_base = (
+        paired_transition = (
             material_textures is not None
             and 0 < material_id < len(material_textures)
             and material_textures[material_id - 1].shader_uid in HIDDEN_BY_DEFAULT_SHADER_UIDS
         )
-
-        if paired_transition_base:
-            material["alphaMode"] = "BLEND"
-            material["doubleSided"] = True
-            material.pop("alphaCutoff", None)
-
-        if slot_textures.normal:
-            material["normalTexture"] = {
-                "index": add_texture(slot_textures.normal),
-                "scale": 1.0
-            }
+        material = _build_base_material(model_uid, material_id, slot_textures, add_texture, uses_alpha, paired_transition=paired_transition)
+        pbr = material["pbrMetallicRoughness"]
 
         if slot_textures.material_uid == 0x00000001134CB4E0 and slot_textures.shader_uid == 0x000000003BD13B9E and slot_textures.diffuse == "0000000C9C9CCB4F.png":
             # Ace headlamp lens: use its low, nonzero texture alpha.
