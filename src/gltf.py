@@ -589,6 +589,76 @@ def _apply_static_display(material: dict, model_uid: int, slot: MaterialTextures
     material["name"] += "_Approx_Static_Display"
     material.setdefault("extras", {})["siegeMaterialApproximation"] = _STATIC_DISPLAY_NOTES.get(model_uid, "Static gadget display approximation. Blank screen or hidden runtime overlay. Live readings and animations are not reproduced.")
 
+def _with_lens_profile(slot: MaterialTextures, alpha: float) -> MaterialTextures:
+    profile = ("ExperimentalGlassLensV1", (alpha, 0.08, 1.5))
+    return replace(slot, shader_uniforms=(*slot.shader_uniforms, profile))
+
+def _prepare_shield_material(material: dict, model_uid: int, slot: MaterialTextures):
+    uid = slot.material_uid
+    shader = slot.shader_uid
+    pbr = material["pbrMetallicRoughness"]
+    note = None
+    hide_layer = False
+
+    if (uid, shader) == (0x6A9F01154, 0x3BD13B9E) and slot.diffuse and model_uid in {
+        0x3F3936A334, 0x2E78D1D7D0, 0x46B1161F22, 0x60C4EE7E3B, 0x5DB5BC2B2A,
+    }:
+        # scratch decal uses texture alpha
+        material["alphaMode"] = "BLEND"
+        material.pop("alphaCutoff", None)
+
+    if model_uid in {0x60C4EE7E3B, 0x5DB5BC2B2A} and shader == 0x83A0CD9B3 and uid in {
+        0x2B225339E, 0x2B22533AA, 0x2B22533B6, 0x2B22533C2, 0x2B22533CE,
+    }:
+        material["name"] += "_Approx_Undamaged_Shield"
+        note = (
+            "Static undamaged shield approximation. Source glass texture "
+            "format is unsupported. Neutral tinted pane. Overlapping "
+            "damage states hidden."
+        )
+        if (model_uid, uid) == (0x60C4EE7E3B, 0x2B225339E):
+            pbr["baseColorFactor"] = [0.65, 0.8, 0.88, 0.18]
+            slot = _with_lens_profile(slot, 0.18)
+        else:
+            hide_layer = True
+    elif (model_uid, uid, shader) == (0x5DB5BC2B2A, 0x62FCA06100, 0x3BD13B9E):
+        hide_layer = True
+        note = "Static undamaged shield approximation. Impact overlay hidden."
+    elif (model_uid, uid, shader) == (0x5DB5BC2B2A, 0x62FCA06100, 0x3BD13B9E):
+        slot = _with_lens_profile(slot, 0.18)
+        material["name"] += "_Approx_Undamaged_Shield"
+        note = (
+            "Static undamaged Blackbear shield approximation. "
+            "Source pan tint retained. Coverage, roughness and IOR "
+            "approximated. Overlapping damage states hidden."
+        )
+    elif model_uid == 0x55DC2F2157 and shader == 0x83A0CD9B3 and uid in {
+        0x5481EA7080, 0x5481EA7081, 0x5481EA7086,
+        0x5481EA7084, 0x5481EA7083, 0x5481EA7085,
+    }:
+        hide_layer = True
+        material["name"] += "_Approx_Undamaged_Shield"
+        note = (
+            "Static undamaged Osa shield approximation. Overlapping "
+            "damage layers hidden. Runtime damage progression is not reproduced."
+        )
+    elif model_uid == 0x55DC2F2157 and shader == 0x3327005AD and uid in {
+        0x54469B20F4, 0x54469B20C5, 0x54469B21D4,
+    }:
+        slot = _with_lens_profile(slot, 0.22)
+        material["name"] += "_Approx_Tinted_Shield_Glass"
+        note = (
+            "Osa shield glass approximation. Source green tint retained. "
+            "Coverage, Roughness and IOR approximated. Runtime damage "
+            "progression is not reproduced."
+        )
+
+    if hide_layer:
+        pbr["baseColorFactor"][3] = 0.0
+        material["alphaMode"] = "BLEND"
+        material.pop("alphaCutoff", None)
+    return slot, note
+
 def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: str | Path, *, diffuse: str | None = None, normal: str | None = None, specular: str | None = None, material_textures: Sequence[MaterialTextures] | None = None, skeletons=None, head_bone_ids=()) -> Path:
     """Write a multi-part glTF using external PNG textures"""
 
@@ -795,13 +865,7 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
             slot_textures = fallback_textures
 
         if model_uid == 0x000000156B734198 and slot_textures.material_uid == 0x00000001134CB4E0 and slot_textures.shader_uid == 0x000000003BD13B9E:
-            slot_textures = replace(
-                slot_textures,
-                shader_uniforms=(
-                    *slot_textures.shader_uniforms,
-                    ("ExperimentalGlassLensV1", (0.60, 0.08, 1.5))
-                )
-            )
+            slot_textures = _with_lens_profile(slot_textures, 0.60)
 
         paired_transition = (
             material_textures is not None
@@ -829,95 +893,7 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
                 "animation is not reproduced."
             )
 
-        # Scratch decals, not the shield's transparent pane
-        if model_uid in {
-                0x3F3936A334, 0x2E78D1D7D0, 0x46B1161F22,
-                0x60C4EE7E3B, 0x5DB5BC2B2A,
-            } and (slot_textures.material_uid, slot_textures.shader_uid) == (0x6A9F01154, 0x3BD13B9E) and slot_textures.diffuse:
-            material["alphaMode"] = "BLEND"
-            material.pop("alphaCutoff", None)
-
-        shield_note = None
-        pane_uid = {
-            0x5DB5BC2B2A: 0x62FCA06100,
-            0x60C4EE7E3B: 0x2B225339E,
-        }.get(model_uid)
-
-        if pane_uid is not None:
-            damage_materials = {
-                0x2B225339E, 0x2B22533AA, 0x2B22533B6,
-                0x2B22533C2, 0x2B22533CE,
-            }
-
-            if slot_textures.shader_uid == 0x83A0CD9B3 and slot_textures.material_uid in damage_materials:
-                shield_note = (
-                    "Static undamaged shield approximation. Source glass texture "
-                    "format is unsupported. Neutral tinted pane. Overlapping "
-                    "damage states hidden."
-                )
-                if slot_textures.material_uid == pane_uid:
-                    pbr["baseColorFactor"] = [0.65, 0.8, 0.88, 0.18]
-                    slot_textures = replace(
-                        slot_textures,
-                        shader_uniforms=(*slot_textures.shader_uniforms, ("ExperimentalGlassLensV1", (0.18, 0.08, 1.5)),),
-                    )
-                else:
-                    pbr["baseColorFactor"][3] = 0.0
-                    material["alphaMode"] = "BLEND"
-                    material.pop("alphaCutoff", None)
-                material["name"] += "_Approx_Undamaged_Shield"
-            elif model_uid == 0x5DB5BC2B2A and (slot_textures.material_uid, slot_textures.shader_uid) == (0x65669876F, 0x3BD13B9E):
-                pbr["baseColorFactor"][3] = 0.0
-                material["alphaMode"] = "BLEND"
-                material.pop("alphaCutoff", None)
-                shield_note = (
-                    "Static undamaged shield approximation. Impact overlay hidden."
-                )
-
-        if model_uid == 0x55DC2F2157 and slot_textures.shader_uid == 0x83A0CD9B3 and slot_textures.material_uid in {
-            0x5481EA7080, 0x5481EA7081, 0x5481EA7086,
-            0x5481EA7084, 0x5481EA7083, 0x5481EA7085,
-        }:
-            pbr["baseColorFactor"][3] = 0.0
-            material["alphaMode"] = "BLEND"
-            material.pop("alphaCutoff", None)
-            material["name"] += "_Approx_Undamaged_Shield"
-            shield_note = (
-                "Static undamaged Osa shield approximation. Overlapping "
-                "damage layers hidden. Runtime damage progression is not reproduced."
-            )
-
-        if model_uid == 0x5DB5BC2B2A and (slot_textures.material_uid, slot_textures.shader_uid) == (0x62FCA06100, 0x3BD13B9E):
-            slot_textures = replace(
-                slot_textures,
-                shader_uniforms=(
-                    *slot_textures.shader_uniforms,
-                    ("ExperimentalGlassLensV1", (0.18, 0.08, 1.5)),
-                ),
-            )
-            material["name"] += "_Approx_Undamaged_Shield"
-            shield_note = (
-                "Static undamaged Blackbeard shield approximation. "
-                "Source pane tint retained. Coverage, Rougenss and IOR "
-                "approximated. Overlapping damage states hidden."
-            )
-
-        if model_uid == 0x55DC2F2157 and slot_textures.shader_uid == 0x3327005AD and slot_textures.material_uid in {
-            0x54469B20F4, 0x54469B20C5, 0x54469B21D4,
-        }:
-            slot_textures = replace(
-                slot_textures,
-                shader_uniforms=(
-                    *slot_textures.shader_uniforms,
-                    ("ExperimentalGlassLensV1", (0.22, 0.08, 1.5)),
-                ),
-            )
-            material["name"] += "_Approx_Tinted_Shield_Glass"
-            shield_note = (
-                "Osa shield glass approximation. Source green tint retained. "
-                "Coverage, Roughness and IOR approximated. Runtime damage "
-                "progression is not reproduced."
-            )
+        slot_textures, shield_note = _prepare_shield_material(material, model_uid, slot_textures)
 
         if model_uid == 0x573DBEB520 and (slot_textures.material_uid, slot_textures.shader_uid) == (0x557222D2AA, 0xE09ED870):
             pbr["baseColorFactor"][3] = 0.0
