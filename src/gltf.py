@@ -545,6 +545,50 @@ def _write_shader_metadata(material: dict, slot: MaterialTextures) -> None:
     if extras:
         material["extras"] = extras
 
+# (model UID, material UID, shader UID) -> static display alpha
+_STATIC_DISPLAY_ALPHA = {
+    (0x2A4CEB7295, 0x2EA41517D, 0xBE258F7C): 1.0, # IQ
+    (0x2A4CEB7295, 0x53328BB931, 0xE09ED870): 0.0,
+    (0x64935FA57D, 0x5CE744A9E5, 0x3327005AD): 1.0, # Thatcher
+    (0x64935FA57D, 0x64C21D7647, 0xE09ED870): 0.0,
+    (0x24F948E738, 0x257CB37667, None): 0.0, # Mozzie
+    (0x547BC75B93, 0xBE25903E, 0xE3683314): 1.0, # Pulse
+    (0x547BC75B93, 0x5842481E97, 0xE09ED870): 0.0,
+    (0x64D62E744E, 0x5CE744A9E5, 0x3327005AD): 1.0, # Solid Snake
+    (0x13D0BCD6A8, 0x67683E37D0, 0xE09ED870): 0.0, # Dokkaebi
+    (0x67B7BE27EC, 0x694AFF0888, 0x4299B60FE3): 0.0, # Noor
+    (0x67B7BE27EC, 0x6A22BCB5B9, 0x4299B60FE3): 0.0,
+    (0x67B7BE27EC, 0x6A22BCB5AB, 0x4299B60FE3): 0.0,
+    (0x5A363A3B24, 0x5A542B77DB, 0xE09ED870): 1.0, # Solis
+    (0x532A0CC9AF, 0x542BDF6BFF, 0x1E972CCA2D): 0.0, # Thunderbird
+}
+
+
+_STATIC_DISPLAY_NOTES = {
+    0x2A4CEB7295: (
+        "IQ static display approximation: blank dark screen. "
+        "Extra effect layer hidden. Live scan rendering is not reproduced."
+    ),
+    0x64935FA57D: (
+        "Thatcher static display approximation: blank dark screen. "
+        "Live scan overlay and runtime scan effects are omitted."
+    ),
+}
+
+def _apply_static_display(material: dict, model_uid: int, slot: MaterialTextures) -> None:
+    alpha = _STATIC_DISPLAY_ALPHA.get((model_uid, slot.material_uid, slot.shader_uid))
+    if alpha is None or slot.diffuse:
+        return
+
+    pbr = material["pbrMetallicRoughness"]
+    pbr["baseColorFactor"] = [0.005, 0.015, 0.03, alpha]
+    pbr["metallicFactor"] = 0.0
+    pbr["roughnessFactor"] = 0.3
+    material["alphaMode"] = "OPAQUE" if alpha else "BLEND"
+    material.pop("alphaCutoff", None)
+    material["name"] += "_Approx_Static_Display"
+    material.setdefault("extras", {})["siegeMaterialApproximation"] = _STATIC_DISPLAY_NOTES.get(model_uid, "Static gadget display approximation. Blank screen or hidden runtime overlay. Live readings and animations are not reproduced.")
+
 def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: str | Path, *, diffuse: str | None = None, normal: str | None = None, specular: str | None = None, material_textures: Sequence[MaterialTextures] | None = None, skeletons=None, head_bone_ids=()) -> Path:
     """Write a multi-part glTF using external PNG textures"""
 
@@ -776,84 +820,10 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
 
         _write_shader_metadata(material, slot_textures)
 
-        # IQ's live display has no baked texture, using labelled static fallback
-        if model_uid == 0x0000002A4CEB7295:
-            display_alpha = {
-                (0x00000002EA41517D, 0x00000000BE258F7C): 1.0,
-                (0x00000053328BB931, 0x00000000E09ED870): 0.0,
-            }.get((slot_textures.material_uid, slot_textures.shader_uid))
-
-            if display_alpha is not None and not slot_textures.diffuse:
-                pbr["baseColorFactor"] = [0.005, 0.015, 0.03, display_alpha]
-                pbr["metallicFactor"] = 0.0
-                pbr["roughnessFactor"] = 0.3
-                material["alphaMode"] = "OPAQUE" if display_alpha else "BLEND"
-                material.pop("alphaCutoff", None)
-                material["name"] += "_Approx_Static_Display"
-                material.setdefault("extras", {})["siegeMaterialApproximation"] = (
-                    "IQ static display approximation: blank dark screen. "
-                    "Extra effect layer hidden. Live scan rendering is not reproduced."
-                )
-
-        if model_uid == 0x00000064935FA57D:
-            display_alpha = {
-                (0x0000005CE744A9E5, 0x00000003327005AD): 1.0,
-                (0x00000064C21D7647, 0x00000000E09ED870): 0.0,
-            }.get((slot_textures.material_uid, slot_textures.shader_uid))
-            if display_alpha is not None and not slot_textures.diffuse:
-                pbr["baseColorFactor"] = [0.005, 0.015, 0.03, display_alpha]
-                pbr["metallicFactor"] = 0.0
-                pbr["roughnessFactor"] = 0.3
-                material["alphaMode"] = "OPAQUE" if display_alpha else "BLEND"
-                material.pop("alphaCutoff", None)
-                material["name"] += "_Approx_Static_Display"
-                material.setdefault("extras", {})["siegeMaterialApproximation"] = (
-                    "Thatcher static display approximation: blank dark screen. "
-                    "Live scan overlay and runtime scan effects are omitted."
-                )
-
-        # Runtime displays are explicitly labelled static approximations
-        display_alpha = {
-            0x24F948E738: {
-                (0x257CB37667, None): 0.0,
-            },
-            0x547BC75B93: {
-                (0xBE25903E, 0xE3683314): 1.0,
-                (0x5842481E97, 0xE09ED870): 0.0,
-            },
-            0x64D62E744E: {
-                (0x5CE744A9E5, 0x3327005AD): 1.0,
-            },
-            0x13D0BCD6A8: {
-                (0x67683E37D0, 0xE09ED870): 0.0,
-            },
-            0x67B7BE27EC: {
-                (0x694AFF0888, 0x4299B60FE3): 0.0,
-                (0x6A22BCB5B9, 0x4299B60FE3): 0.0,
-                (0x6A22BCB5AB, 0x4299B60FE3): 0.0,
-            },
-            0x5A363A3B24: {
-                (0x5A542B77DB, 0xE09ED870): 1.0,
-            },
-            0x532A0CC9AF: {
-                (0x542BDF6BFF, 0x1E972CCA2D): 0.0,
-            },
-        }.get(model_uid, {}).get((slot_textures.material_uid, slot_textures.shader_uid))
-
-        if display_alpha is not None and not slot_textures.diffuse:
-            pbr["baseColorFactor"] = [0.005, 0.015, 0.03, display_alpha]
-            pbr["metallicFactor"] = 0.0
-            pbr["roughnessFactor"] = 0.3
-            material["alphaMode"] = "OPAQUE" if display_alpha else "BLEND"
-            material.pop("alphaCutoff", None)
-            material["name"] += "_Approx_Static_Display"
-            material.setdefault("extras", {})["siegeMaterialApproximation"] = (
-                "Static gadget display approximation. Blank screen or hidden "
-                "runtime overlay. Live readings and animations are not reproduced."
-            )
+        _apply_static_display(material, model_uid, slot_textures)
 
         if model_uid == 0x532A0CC9AF:
-            material["extras"]["siegeMaterialApproximation"] = (
+            material.setdefault("extras", {})["siegeMaterialApproximation"] = (
                 "Kona Station static approximation. The Runtime healing "
                 "cross projection is hidden. Live projection and "
                 "animation is not reproduced."
