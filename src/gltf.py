@@ -309,7 +309,7 @@ def _validate_mesh_part(part: MeshPartLike) -> None:
     label = f"Part {part.uid:016X}"
     vertex_count = len(part.vertices)
     if vertex_count == 0:
-        raise ValueError(f"{label} has no vertice")
+        raise ValueError(f"{label} has no vertices")
     if len(part.uvs) != vertex_count:
         raise ValueError(f"{label} has mismatched UVs")
     if len(part.normals) != vertex_count:
@@ -338,7 +338,53 @@ def _validate_mesh_part(part: MeshPartLike) -> None:
 
     if any(joint >= bone_count for joints, weights in zip(part.joints, part.weights) for joint, weight in zip(joints, weights) if weight > 0.0):
         raise ValueError(f"{label} references a joint outside its binding table")
-    
+
+def _write_vertex_attributes(part: MeshPartLike, prefix: str, add_accessor) -> dict[str, int]:
+    vertex_count = len(part.vertices)
+
+    def write_floats(rows, value_type, suffix, **bounds):
+        values = [value for row in rows for value in row]
+        return add_accessor(
+            pack_floats(values), target=ARRAY_BUFFER, component_type=FLOAT,
+            count=vertex_count, value_type=value_type, name=f"{prefix}_{suffix}",
+            **bounds
+        )
+
+    positions = [siege_to_gltf_vector(vertex) for vertex in part.vertices]
+    attributes = {
+        "POSITION": write_floats(
+            positions, "VEC3", "positions",
+            minimum=component_minimums(positions), maximum=component_maximums(positions)
+        ),
+        "NORMAL": write_floats(
+            (siege_to_gltf_vector(normal) for normal in part.normals), "VEC3", "normals"
+        ),
+        # mesh parser flips V, convert it back for glTF
+        "TEXCOORD_0": write_floats(((u, 1.0 - v) for u, v in part.uvs), "VEC2", "uvs")
+    }
+
+    if part.tangents:
+        tangents = ((*siege_to_gltf_vector((x, y, z)), w) for x, y, z, w in part.tangents)
+        attributes["TANGENT"] = write_floats(tangents, "VEC4", "tangents")
+
+    if not part.joints:
+        return attributes
+
+    influence_count = len(part.joints[0])
+    if influence_count not in (4, 8) or any(len(joints) != influence_count or len(weights) != influence_count for joints, weights in zip(part.joints, part.weights)):
+        raise ValueError(f"Part {part.uid:016X} has unsupported skin influence counts")
+
+    for group in range(influence_count // 4):
+        start = group * 4
+        joints = [joint for row in part.joints for joint in row[start:start + 4]]
+        attributes[f"JOINTS_{group}"] = add_accessor(
+            pack_unsigned_bytes(joints), target=ARRAY_BUFFER, component_type=UNSIGNED_BYTE,
+            count=vertex_count, value_type="VEC4", name=f"{prefix}_joints_{group}"
+        )
+        weights = (row[start:start + 4] for row in part.weights)
+        attributes[f"WEIGHTS_{group}"] = write_floats(weights, "VEC4", f"weights_{group}")
+    return attributes
+
 def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: str | Path, *, diffuse: str | None = None, normal: str | None = None, specular: str | None = None, material_textures: Sequence[MaterialTextures] | None = None, skeletons=None, head_bone_ids=()) -> Path:
     """Write a multi-part glTF using external PNG textures"""
 
@@ -388,110 +434,16 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
         _validate_mesh_part(part)
         binding = part.binding
 
-        converted_vertices = [
-            siege_to_gltf_vector(vertex)
-            for vertex in part.vertices
-        ]
-
-        converted_normals = [
-            siege_to_gltf_vector(normal)
-            for normal in part.normals
-        ]
-
-        converted_tangents = [
-            (
-                *siege_to_gltf_vector(
-                    (
-                        tangent[0],
-                        tangent[1],
-                        tangent[2]
-                    )
-                ),
-                tangent[3]
-            )
-            for tangent in part.tangents
-        ]
-
-        positions = [
-            component
-            for vertex in converted_vertices
-            for component in vertex
-        ]
-
-        normals = [
-            component
-            for normal_value in converted_normals
-            for component in normal_value
-        ]
-
-        tangents = [
-            component
-            for tangent in converted_tangents
-            for component in tangent
-        ]
-
-        # The mesh parser flips Siege UVs vertically.
-        # Convert them for glTF's upper-left texture origin
-        texture_coordinates = [
-            component
-            for u, v in part.uvs
-            for component in (u, 1.0 - v)
-        ]
-
         island_groups = [
-            (
-                island.material_id,
-                island.faces
-            )
+            (island.material_id, island.faces)
             for island in part.islands
             if island.faces
         ]
-
         if not island_groups:
             raise ValueError(f"Part {part.uid:016X} has no material islands")
 
         prefix = f"part_{part.uid:016X}"
-
-        position_accessor = add_accessor(pack_floats(positions), target=ARRAY_BUFFER, component_type=FLOAT, count=len(part.vertices), value_type="VEC3", name=f"{prefix}_positions", minimum=component_minimums(converted_vertices), maximum=component_maximums(converted_vertices))
-        normal_accessor = add_accessor(pack_floats(normals), target=ARRAY_BUFFER, component_type=FLOAT, count=len(part.normals), value_type="VEC3", name=f"{prefix}_normals")
-        uv_accessor = add_accessor(pack_floats(texture_coordinates), target=ARRAY_BUFFER, component_type=FLOAT, count=len(part.uvs), value_type="VEC2", name=f"{prefix}_uvs")
-        tangent_accessor = None
-        skin_attributes = {}
-
-        if converted_tangents:
-            tangent_accessor = add_accessor(pack_floats(tangents), target=ARRAY_BUFFER, component_type=FLOAT, count=len(converted_tangents), value_type="VEC4", name=f"{prefix}_tangents")
-
-        if part.joints:
-            influence_count = len(part.joints[0])
-            if influence_count not in (4, 8) or any(len(j) != influence_count or len(w) != influence_count for j, w in zip(part.joints, part.weights)):
-                raise ValueError(f"Part {part.uid:016X} has unsupported skin influence counts")
-
-            for group in range(influence_count // 4):
-                start = group * 4
-                joints = [
-                    value for values in part.joints
-                    for value in values[start:start + 4]
-                ]
-                weights = [
-                    value for values in part.weights
-                    for value in values[start:start + 4]
-                ]
-                skin_attributes[f"JOINTS_{group}"] = add_accessor(
-                    pack_unsigned_bytes(joints),
-                    target=ARRAY_BUFFER,
-                    component_type=UNSIGNED_BYTE,
-                    count=len(part.joints),
-                    value_type="VEC4",
-                    name=f"{prefix}_joints_{group}"
-                )
-                skin_attributes[f"WEIGHTS_{group}"] = add_accessor(
-                    pack_floats(weights),
-                    target=ARRAY_BUFFER,
-                    component_type=FLOAT,
-                    count=len(part.weights),
-                    value_type="VEC4",
-                    name=f"{prefix}_weights_{group}"
-                )
+        vertex_attributes = _write_vertex_attributes(part, prefix, add_accessor)
 
         primitives = []
         alpha_accessor = None
@@ -541,15 +493,7 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
             primitives.append(
                 {
                     "attributes": {
-                        "POSITION": position_accessor,
-                        "NORMAL": normal_accessor,
-                        "TEXCOORD_0": uv_accessor,
-                        **(
-                            {"TANGENT": tangent_accessor}
-                            if tangent_accessor is not None
-                            else {}
-                        ),
-                        **skin_attributes,
+                        **vertex_attributes,
                         **color_attributes
                     },
                     "indices": index_accessor,
