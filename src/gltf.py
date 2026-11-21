@@ -385,6 +385,47 @@ def _write_vertex_attributes(part: MeshPartLike, prefix: str, add_accessor) -> d
         attributes[f"WEIGHTS_{group}"] = write_floats(weights, "VEC4", f"weights_{group}")
     return attributes
 
+def _write_skin(part: MeshPartLike, prefix: str, nodes, skins, add_accessor, head_bone_ids) -> int | None:
+    binding = part.binding
+    if binding is None:
+        return None
+
+    inverse_binds = [siege_to_gltf_matrix(matrix) for matrix in binding.inverse_bind_matrices]
+    values = [value for matrix in inverse_binds for value in matrix]
+    accessor = add_accessor(
+        pack_floats(values), target=None, component_type=FLOAT,
+        count=len(inverse_binds), value_type="MAT4", name=f"{prefix}_inverse_bind_matrices"
+    )
+
+    # explicit joint matrices are already in glTF space
+    joint_matrices = binding.joint_node_matrices
+    if not joint_matrices:
+        joint_matrices = [invert_gltf_matrix(matrix) for matrix in inverse_binds]
+
+    joint_nodes = []
+    for index, (bone_id, matrix) in enumerate(zip(binding.bone_ids, joint_matrices)):
+        bone_hex = f"{bone_id:08X}"
+        bone_name = BONE_NAMES.get(bone_id, bone_hex)
+        extras = {"siegeBoneId": bone_hex}
+        if bone_id in head_bone_ids:
+            extras["siegeHeadDescendant"] = True
+
+        joint_nodes.append(len(nodes))
+        nodes.append({
+            "name": f"{prefix}_join_{index:03d}_{bone_name}",
+            "extras": extras,
+            "matrix": list(matrix)
+        })
+
+    skin_index = len(skins)
+    skins.append({
+        "name": f"{prefix}_skin",
+        "joints": joint_nodes,
+        "inverseBindMatrices": accessor,
+        "extras": {"siegeGeometryUid": f"{part.uid:016X}"}
+    })
+    return skin_index
+
 def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: str | Path, *, diffuse: str | None = None, normal: str | None = None, specular: str | None = None, material_textures: Sequence[MaterialTextures] | None = None, skeletons=None, head_bone_ids=()) -> Path:
     """Write a multi-part glTF using external PNG textures"""
 
@@ -432,7 +473,6 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
 
     for part in parts:
         _validate_mesh_part(part)
-        binding = part.binding
 
         island_groups = [
             (island.material_id, island.faces)
@@ -512,66 +552,7 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
             }
         )
 
-        skin_index = None
-
-        if binding is not None:
-            converted_inverse_bind_matrices = tuple(
-                siege_to_gltf_matrix(matrix)
-                for matrix in binding.inverse_bind_matrices
-            )
-
-            inverse_bind_values = [
-                value
-                for matrix in converted_inverse_bind_matrices
-                for value in matrix
-            ]
-
-            inverse_bind_accessor = add_accessor(pack_floats(inverse_bind_values), target=None, component_type=FLOAT, count=len(converted_inverse_bind_matrices), value_type="MAT4", name=f"{prefix}_inverse_bind_matrices")
-
-            joint_node_matrices = (
-                tuple(
-                    tuple(matrix)
-                    for matrix in binding.joint_node_matrices
-                )
-                if binding.joint_node_matrices
-                else tuple(
-                    invert_gltf_matrix(inverse_bind_matrix)
-                    for inverse_bind_matrix in converted_inverse_bind_matrices
-                )
-            )
-
-            joint_nodes = []
-
-            for bone_index, (bone_id, joint_node_matrix) in enumerate(zip(binding.bone_ids, joint_node_matrices)):
-                joint_nodes.append(len(nodes))
-
-                nodes.append(
-                    {
-                        "name": f"{prefix}_join_{bone_index:03d}_{BONE_NAMES.get(bone_id, f'{bone_id:08X}')}",
-                        "extras": {
-                            "siegeBoneId": f"{bone_id:08X}",
-                            **(
-                                {"siegeHeadDescendant": True}
-                                if bone_id in head_bone_ids
-                                else {}
-                            ),
-                        },
-                        "matrix": list(joint_node_matrix)
-                    }
-                )
-
-            skin_index = len(skins)
-
-            skins.append(
-                {
-                    "name": f"{prefix}_skin",
-                    "joints": joint_nodes,
-                    "inverseBindMatrices": inverse_bind_accessor,
-                    "extras": {
-                        "siegeGeometryUid": f"{part.uid:016X}"
-                    }
-                }
-            )
+        skin_index = _write_skin(part, prefix, nodes, skins, add_accessor, head_bone_ids)
 
         mesh_node = {
             "name": prefix,
