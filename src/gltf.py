@@ -496,6 +496,55 @@ def _build_base_material(model_uid, material_id, slot, add_texture, uses_alpha, 
         material["normalTexture"] = {"index": add_texture(slot.normal), "scale": 1.0}
     return material
 
+def _apply_material_approximations(material: dict, slot: MaterialTextures, extras: dict) -> None:
+    if "ExperimentalLegacyABTintV1" in extras.get("siegeShaderUniforms", {}):
+        material["name"] += "_Experimental_AB_Tint"
+        extras["siegeMaterialApproximation"] = "Source A/B colors. Approximate legacy tint blending."
+
+    if slot.shader_uid == 0x99E2C947 and slot.solid_color is not None:
+        if slot.material_uid == 0xA8715F23D:
+            material["name"] += "_Approx_Source_Color"
+            extras["siegeMaterialApproximation"] = "Source header color. Approximate multiplication with the bandana texture"
+        elif slot.material_uid in {0x995497897, 0x995497909, 0x99549791D}:
+            material["name"] += "_Approx_Source_Color"
+            extras["siegeMaterialApproximation"] = "Source A/B colors and head color. Approximate legacy tint and texture modulation."
+
+    if (slot.material_uid, slot.shader_uid, slot.diffuse) in {
+        (0x43F942F4DD, 0x3051C028, "00000043F942F4BE.png"),
+        (0x684ADFEF6B, 0x55B93242F6, "000000684ADFEF83.png"),
+    }:
+        material["alphaMode"] = "BLEND"
+        material.pop("alphaCutoff", None)
+        material["doubleSided"] = True
+        material["name"] += "_Approx_Hair_Coverage"
+        extras["siegeHairCoverageApproximationV1"] = True
+        extras["siegeMaterialApproximation"] = "Original texture alpha. Approximate hair coverage."
+
+def _write_shader_metadata(material: dict, slot: MaterialTextures) -> None:
+    extras = {}
+    if slot.material_uid is not None:
+        extras["siegeMaterialUid"] = f"{slot.material_uid:016X}"
+    if slot.shader_uid is not None:
+        extras["siegeShaderUid"] = f"{slot.shader_uid:016X}"
+    if slot.shader_uniforms:
+        extras["siegeShaderUniforms"] = {
+            name: list(values) for name, values in slot.shader_uniforms
+        }
+
+    _apply_material_approximations(material, slot, extras)
+
+    if slot.specular:
+        extras["siegePackedMaterialTexture"] = slot.specular
+    if slot.mask:
+        extras["siegeMaskTexture"] = slot.mask
+    if slot.detail_normals:
+        extras["siegeDetailNormalTextures"] = slot.detail_normals
+    if slot.shader_textures:
+        extras["siegeShaderTextures"] = dict(slot.shader_textures)
+
+    if extras:
+        material["extras"] = extras
+
 def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: str | Path, *, diffuse: str | None = None, normal: str | None = None, specular: str | None = None, material_textures: Sequence[MaterialTextures] | None = None, skeletons=None, head_bone_ids=()) -> Path:
     """Write a multi-part glTF using external PNG textures"""
 
@@ -725,66 +774,7 @@ def write_gltf(model_uid: int, parts: Iterable[MeshPartLike], output_directory: 
             material.pop("alphaCutoff", None)
             pbr["baseColorFactor"][3] = 1.0
 
-        extras = {}
-
-        if slot_textures.material_uid is not None:
-            extras["siegeMaterialUid"] = f"{slot_textures.material_uid:016X}"
-
-        if slot_textures.shader_uid is not None:
-            extras["siegeShaderUid"] = f"{slot_textures.shader_uid:016X}"
-
-        if slot_textures.shader_uniforms:
-            extras["siegeShaderUniforms"] = {
-                name: list(values)
-                for name, values in slot_textures.shader_uniforms
-            }
-
-        if "ExperimentalLegacyABTintV1" in extras.get("siegeShaderUniforms", {}):
-            material["name"] += "_Experimental_AB_Tint"
-            extras["siegeMaterialApproximation"] = (
-                "Source A/B colors. Approximate legacy tint blending."
-            )
-
-        if slot_textures.material_uid == 0x0000000A8715F23D and slot_textures.shader_uid == 0x0000000099E2C947 and slot_textures.solid_color is not None:
-            material["name"] += "_Approx_Source_Color"
-            extras["siegeMaterialApproximation"] = ("Source header color. Approximate multiplication with the bandana texture")
-
-        if slot_textures.shader_uid == 0x0000000099E2C947 and slot_textures.material_uid in {0x0000000995497897, 0x0000000995497909, 0x000000099549791D} and slot_textures.solid_color is not None:
-            material["name"] += "_Approx_Source_Color"
-            extras["siegeMaterialApproximation"] = (
-                "Source A/B colors and head color. Approximate legacy tint and texture modulation."
-            )
-
-        if (slot_textures.material_uid, slot_textures.shader_uid, slot_textures.diffuse) in {
-            (0x00000043F942F4DD, 0x000000003051C028, "00000043F942F4BE.png"),
-            (0x000000684ADFEF6B, 0x00000055B93242F6, "000000684ADFEF83.png")
-        }:
-            material["alphaMode"] = "BLEND"
-            material.pop("alphaCutoff", None)
-            material["doubleSided"] = True
-            material["name"] += "_Approx_Hair_Coverage"
-            extras["siegeHairCoverageApproximationV1"] = True
-            extras["siegeMaterialApproximation"] = (
-                "Original texture alpha. Approximate hair coverage."
-            )
-
-        if slot_textures.specular:
-            extras["siegePackedMaterialTexture"] = slot_textures.specular
-
-        if slot_textures.mask:
-            extras["siegeMaskTexture"] = slot_textures.mask
-
-        if slot_textures.detail_normals:
-            extras["siegeDetailNormalTextures"] = slot_textures.detail_normals
-
-        if slot_textures.shader_textures:
-            extras["siegeShaderTextures"] = {
-                binding: filename
-                for binding, filename in slot_textures.shader_textures
-            }
-
-        if extras:
-            material["extras"] = extras
+        _write_shader_metadata(material, slot_textures)
 
         # IQ's live display has no baked texture, using labelled static fallback
         if model_uid == 0x0000002A4CEB7295:
